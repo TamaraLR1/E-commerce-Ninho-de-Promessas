@@ -1,0 +1,46 @@
+/* O Overlay é a camada escura que cobre a página inteira */
+.modalOverlay {
+  position: fixed; /* Isso retira o modal do fluxo da página */
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.6); /* Fundo escurecido */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999; /* Garante que fique acima de tudo */
+}
+
+/* O cartModal é a sua caixinha branca */
+.cartModal {
+  background: white;
+  width: 90%;
+  max-width: 500px;
+  padding: 2rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  max-height: 80vh;
+  overflow-y: auto; /* Scroll caso o conteúdo seja grande */
+}
+
+/* Adicione também esses para melhorar a usabilidade */
+.inputField {
+  width: 100%;
+  padding: 0.8rem;
+  margin: 0.5rem 0;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.actionButton {
+  width: 100%;
+  padding: 1rem;
+  background: #28a745;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+}

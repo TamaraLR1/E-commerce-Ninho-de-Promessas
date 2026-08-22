@@ -1,0 +1,113 @@
+import { Request, Response } from 'express';
+import { prisma } from '../lib/prisma';
+
+export const corController = {
+  async listar(req: Request, res: Response) {
+    try {
+      const cores = await prisma.cor.findMany({
+        orderBy: { nome: 'asc' },
+      });
+      return res.status(200).json(cores);
+    } catch (error) {
+      console.error('Erro ao listar cores:', error);
+      return res.status(500).json({ message: 'Erro interno ao buscar cores.' });
+    }
+  },
+
+  async criar(req: Request, res: Response) {
+    try {
+      const { nome, slug, hex } = req.body;
+
+      if (!nome || !slug) {
+        return res.status(400).json({ message: 'Nome e slug são obrigatórios.' });
+      }
+
+      const corExistente = await prisma.cor.findUnique({
+        where: { slug },
+      });
+
+      if (corExistente) {
+        return res.status(400).json({ message: 'Já existe uma cor cadastrada com este slug.' });
+      }
+
+      const novaCor = await prisma.cor.create({
+        data: {
+          nome,
+          slug,
+          hex: hex || '#000000',
+        },
+      });
+
+      return res.status(201).json(novaCor);
+    } catch (error) {
+      console.error('Erro ao criar cor:', error);
+      return res.status(500).json({ message: 'Erro interno ao cadastrar cor.' });
+    }
+  },
+
+  async atualizar(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { nome, slug, hex } = req.body;
+
+      const corExistente = await prisma.cor.findUnique({
+        where: { id: String(id) },
+      });
+
+      if (!corExistente) {
+        return res.status(404).json({ message: 'Cor não encontrada.' });
+      }
+
+      // Se o slug foi alterado, verifica se já pertence a outra cor
+      if (slug && slug !== corExistente.slug) {
+        const slugEmUso = await prisma.cor.findUnique({
+          where: { slug },
+        });
+
+        if (slugEmUso) {
+          return res.status(400).json({ message: 'Já existe outra cor cadastrada com este slug.' });
+        }
+      }
+
+      const corAtualizada = await prisma.cor.update({
+        where: { id: String(id) },
+        data: {
+          nome: nome !== undefined ? nome : corExistente.nome,
+          slug: slug !== undefined ? slug : corExistente.slug,
+          hex: hex !== undefined ? hex : corExistente.hex,
+        },
+      });
+
+      return res.status(200).json(corAtualizada);
+    } catch (error) {
+      console.error('Erro ao atualizar cor:', error);
+      return res.status(500).json({ message: 'Erro interno ao atualizar cor.' });
+    }
+  },
+
+  async excluir(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+
+      // Verificação de vínculo com produtos (ajuste para a tabela/relação atualizada de estoque)
+      const produtosVinculados = await prisma.produtoEstoque.count({
+        where: { corId: String(id) },
+      });
+
+      if (produtosVinculados > 0) {
+        return res.status(400).json({
+          message: `Não é possível excluir esta cor pois ela está em uso por ${produtosVinculados} produto(s).`
+        });
+      }
+
+      await prisma.cor.delete({ 
+        where: { id: String(id) } 
+      });
+
+      return res.status(200).json({ message: 'Cor excluída com sucesso.' });
+    } catch (error) {
+      console.error('Erro ao excluir cor:', error);
+      return res.status(500).json({ message: 'Erro interno ao excluir cor.' });
+    }
+  },
+};

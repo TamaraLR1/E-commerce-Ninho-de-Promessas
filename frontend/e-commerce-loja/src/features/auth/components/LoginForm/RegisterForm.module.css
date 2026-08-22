@@ -1,0 +1,153 @@
+.container {
+  display: flex;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, sans-serif;
+  background-color: #ffffff;
+}
+
+/* LADO ESQUERDO: Exatamente 50% da tela */
+.leftSide {
+  flex: 1; /* Ocupa metade exata */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 2.5rem 10%;
+  box-sizing: border-box;
+  border-right: 1px solid #e2e8f0; /* Linha sutil de divisão bem no meio */
+}
+
+.backLink {
+  color: #0066cc;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 2rem;
+  display: inline-block;
+}
+
+.backLink:hover {
+  text-decoration: underline;
+}
+
+.title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #222222;
+  margin-bottom: 0.5rem;
+}
+
+.subtitle {
+  font-size: 1rem;
+  color: #666666;
+  margin-bottom: 2.5rem;
+}
+
+.formGroup {
+  margin-bottom: 1.25rem;
+  position: relative;
+}
+
+.label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #444444;
+  margin-bottom: 0.5rem;
+}
+
+.input {
+  width: 100%;
+  padding: 0.8rem 1rem;
+  border: 1px solid #cccccc;
+  border-radius: 6px;
+  font-size: 1rem;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #0066cc;
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.15);
+}
+
+/* Checkbox de Termos */
+.checkboxGroup {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.checkboxLabel {
+  font-size: 0.9rem;
+  color: #444444;
+  line-height: 1.4;
+}
+
+.registerButton {
+  width: 100%;
+  padding: 0.85rem;
+  background-color: #0066cc;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-top: 0.5rem;
+}
+
+.registerButton:hover {
+  background-color: #0052a3;
+}
+
+.loginText {
+  margin-top: 2rem;
+  font-size: 0.9rem;
+  color: #555555;
+  text-align: center;
+}
+
+.loginLink {
+  color: #0066cc;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.loginLink:hover {
+  text-decoration: underline;
+}
+
+/* LADO DIREITO: Exatamente 50% da tela */
+.rightSide {
+  flex: 1; /* Ocupa metade exata */
+  background: linear-gradient(rgba(0, 51, 102, 0.85), rgba(0, 26, 51, 0.9)), 
+              url('https://images.unsplash.com/photo-1441986300917-64674bd600d8?q=80&w=1200') no-repeat center/cover;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 4rem;
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+  .rightSide { display: none; }
+  .leftSide { border-right: none; }
+}
+
+.brandContainer { margin-top: auto; margin-bottom: auto; }
+.brandName { font-size: 3rem; font-weight: 800; letter-spacing: -1px; margin-bottom: 1rem; color: white; }
+.brandTagline { font-size: 1.2rem; opacity: 0.9; line-height: 1.6; max-width: 400px; color: white; }
+
+.contactFooter { border-top: 1px solid rgba(255, 255, 255, 0.2); padding-top: 1.5rem; }
+.contactLabel { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; opacity: 0.6; margin-bottom: 0.25rem; color: white; }
+.contactPhone { font-size: 1.2rem; font-weight: 700; color: #ffffff; }

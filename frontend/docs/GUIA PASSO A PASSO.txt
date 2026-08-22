@@ -1,0 +1,321 @@
+🛠️ PARTE 1: Inicialização, Dependências e Configuração de Ambiente
+Passo 1: Criar a estrutura do Vite com TypeScript
+Abra o terminal na pasta onde guarda seus projetos e execute:
+Bash
+npx create-vite@5 meu-app-login --template react-ts
+
+Passo 2: Instalar as Dependências
+Entre na pasta criada e instale o pacote de rotas (react-router-dom):
+Bash
+cd meu-app-login
+npm install
+npm install react-router-dom
+
+Passo 3: Faxina e Estrutura de Pastas de Mercado
+Exclua o arquivo src/App.css por completo (usaremos CSS Modules para evitar conflitos de escopo).
+Deixe o arquivo src/index.css completamente em branco (vamos preenchê-lo com o reset global no Passo 9).
+Monte a seguinte estrutura de pastas dentro de src/:
+Plaintext
+src/
+├── features/
+│   ├── auth/
+│   │   └── components/
+│   │       └── LoginForm/
+│   │           ├── LoginForm.tsx
+│   │           ├── RegisterForm.tsx
+│   │           └── LoginForm.module.css
+│   └── ecommerce/
+│       └── components/
+│           └── Home/
+│               ├── Home.tsx
+│               ├── Home.module.css
+│               └── Navbar.module.css
+
+Passo 4: Configurar as Declarações de Tipos (src/vite-env.d.ts)
+Abra o arquivo src/vite-env.d.ts, apague o conteúdo padrão e cole o código abaixo. Isso blinda o TypeScript para que ele reconheça as importações de estilos globais e modulares sem acusar erros na IDE:
+TypeScript
+/// <reference types="vite/client" />
+
+declare module '*.module.css' {
+  const classes: { [key: string]: string };
+  export default classes;
+}
+
+declare module '*.css' {
+  const content: Record<string, string>;
+  export default content;
+}
+
+💻 PARTE 2: Códigos dos Componentes (Lógica e Rotas)
+Passo 5: O Mapa de Rotas Principal (src/App.tsx)
+TypeScript
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { Home } from './features/ecommerce/components/Home/Home';
+import { LoginForm } from './features/auth/components/LoginForm/LoginForm';
+import { RegisterForm } from './features/auth/components/LoginForm/RegisterForm';
+import './index.css';
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Rota principal livre para a vitrine do e-commerce */}
+        <Route path="/" element={<Home />} />
+        
+        {/* Rotas de autenticação acessadas via navegação */}
+        <Route path="/login" element={<LoginForm />} />
+        <Route path="/cadastro" element={<RegisterForm />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+export default App;
+
+Passo 6: Vitrine do E-commerce e Navbar (src/features/ecommerce/components/Home/Home.tsx)
+TypeScript
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import styles from './Home.module.css';
+import navStyles from './Navbar.module.css';
+
+const Navbar = () => {
+  const navigate = useNavigate();
+  return (
+    <nav className={navStyles.navbar}>
+      <div className={navStyles.logo} onClick={() => navigate('/')}>MinhaLoja</div>
+      <div className={navStyles.navLinks}>
+        <span className={navStyles.link}>Produtos</span>
+        <span className={navStyles.link}>Ofertas</span>
+        <button className={navStyles.loginButton} onClick={() => navigate('/login')}>Entrar</button>
+      </div>
+    </nav>
+  );
+};
+
+export const Home: React.FC = () => {
+  const products = [
+    { id: 1, name: 'Smartphone Premium Pro', price: 'R$ 5.499,00', image: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?q=80&w=500' },
+    { id: 2, name: 'Notebook Ultra Productivity', price: 'R$ 4.200,00', image: 'https://images.unsplash.com/photo-1531297484001-80022131f5a1?q=80&w=500' },
+    { id: 3, name: 'Fone de Ouvido Noise Cancelling', price: 'R$ 299,00', image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?q=80&w=500' },
+    { id: 4, name: 'Smartwatch Fitness Tracker', price: 'R$ 1.150,00', image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?q=80&w=500' },
+  ];
+
+  return (
+    <div className={styles.container}>
+      <Navbar />
+      <header className={styles.hero}>
+        <h1>Bem-vindo à Melhor Experiência de Compra</h1>
+        <p>Encontre os melhores produtos com os melhores preços.</p>
+      </header>
+      <main className={styles.productsSection}>
+        <h2>Produtos em Destaque</h2>
+        <div className={styles.grid}>
+          {products.map(product => (
+            <div key={product.id} className={styles.productCard}>
+              <img src={product.image} alt={product.name} className={styles.productImage} />
+              <div className={styles.productInfo}>
+                <h3>{product.name}</h3>
+                <p className={styles.price}>{product.price}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </main>
+    </div>
+  );
+};
+
+Passo 7: Tela de Login (src/features/auth/components/LoginForm/LoginForm.tsx)
+TypeScript
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import styles from './LoginForm.module.css';
+
+export const LoginForm: React.FC = () => {
+  const navigate = useNavigate();
+  const [formData, setFormData] = useState({ email: '', password: '' });
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    console.log('Login solicitado:', formData);
+  };
+
+  return (
+    <div className={styles.container}>
+      <div className={styles.card}>
+        <h2 className={styles.title}>Seja bem-vindo</h2>
+        <p className={styles.subtitle}>Insira seus dados para acessar a plataforma</p>
+        <form onSubmit={handleSubmit} noValidate>
+          <div className={styles.formGroup}>
+            <label htmlFor="email" className={styles.label}>E-mail</label>
+            <input type="email" id="email" name="email" className={styles.input} value={formData.email} onChange={handleChange} placeholder="seu@email.com" required />
+          </div>
+          <div className={styles.formGroup}>
+            <label htmlFor="password" className={styles.label}>Senha</label>
+            <input type="password" id="password" name="password" className={styles.input} value={formData.password} onChange={handleChange} placeholder="••••••••" required />
+          </div>
+          <button type="submit" className={styles.button}>Entrar</button>
+        </form>
+        <p className={styles.footerText}>
+          Não tem uma conta?{' '}
+          <button type="button" onClick={() => navigate('/cadastro')} className={styles.linkButton}>Cadastre-se aqui</button>
+        </p>
+      </div>
+    </div>
+  );
+};
+
+Passo 8: Tela de Cadastro (src/features/auth/components/LoginForm/RegisterForm.tsx)
+TypeScript
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import styles from './LoginForm.module.css';
+
+export const RegisterForm: React.FC = () => {
+  const navigate = useNavigate();
+  const [formData, setFormData] = useState({ fullName: '', email: '', password: '' });
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    console.log('Cadastro solicitado:', formData);
+  };
+
+  return (
+    <div className={styles.container}>
+      <div className={styles.card}>
+        <h2 className={styles.title}>Crie sua conta</h2>
+        <p className={styles.subtitle}>Preencha os campos abaixo para se cadastrar</p>
+        <form onSubmit={handleSubmit} noValidate>
+          <div className={styles.formGroup}>
+            <label htmlFor="fullName" className={styles.label}>Nome Completo</label>
+            <input type="text" id="fullName" name="fullName" className={styles.input} value={formData.fullName} onChange={handleChange} placeholder="Seu nome e sobrenome" required />
+          </div>
+          <div className={styles.formGroup}>
+            <label htmlFor="email" className={styles.label}>E-mail</label>
+            <input type="email" id="email" name="email" className={styles.input} value={formData.email} onChange={handleChange} placeholder="seu@email.com" required />
+          </div>
+          <div className={styles.formGroup}>
+            <label htmlFor="password" className={styles.label}>Senha</label>
+            <input type="password" id="password" name="password" className={styles.input} value={formData.password} onChange={handleChange} placeholder="Crie uma senha forte" required />
+          </div>
+          <button type="submit" className={styles.button}>Cadastrar</button>
+        </form>
+        <p className={styles.footerText}>
+          Já tem uma conta?{' '}
+          <button type="button" onClick={() => navigate('/login')} className={styles.linkButton}>Faça login aqui</button>
+        </p>
+      </div>
+    </div>
+  );
+};
+
+🎨 PARTE 3: Arquivos de Estilização (Visuais Dedicados)
+Passo 9: Reset Global de CSS (src/index.css)
+CSS
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #f4f6f9;
+  font-family: system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+Passo 10: Estilo da Vitrine (src/features/ecommerce/components/Home/Home.module.css)
+CSS
+.container {
+  min-height: 100vh;
+}
+.hero {
+  background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), url('https://images.unsplash.com/photo-1441986300917-64674bd600d8?q=80&w=2070') no-repeat center/cover;
+  height: 350px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  text-align: center;
+  padding: 0 1rem;
+}
+.hero h1 { font-size: 2.5rem; margin-bottom: 0.5rem; font-weight: 700; }
+.hero p { font-size: 1.1rem; opacity: 0.9; }
+.productsSection { padding: 3rem 5%; }
+.productsSection h2 { margin-bottom: 2rem; color: #222; font-size: 1.75rem; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 2rem; }
+.productCard { background: white; border-radius: 8px; padding: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.06); transition: transform 0.2s, box-shadow 0.2s; display: flex; flex-direction: column; }
+.productCard:hover { transform: translateY(-4px); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+.productImage { width: 100%; height: 200px; object-fit: cover; border-radius: 6px; margin-bottom: 1rem; background-color: #f0f0f0; }
+.productInfo h3 { font-size: 1.05rem; color: #333; margin-bottom: 0.5rem; font-weight: 600; }
+.price { color: #0066cc; font-size: 1.2rem; font-weight: 700; margin-top: auto; }
+
+Passo 11: Estilo do Navbar (src/features/ecommerce/components/Home/Navbar.module.css)
+CSS
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 5%;
+  background-color: #ffffff;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+.logo { font-size: 1.5rem; font-weight: 700; color: #0066cc; cursor: pointer; letter-spacing: -0.5px; }
+.navLinks { display: flex; gap: 2rem; align-items: center; }
+.link { text-decoration: none; color: #555; font-weight: 500; cursor: pointer; transition: color 0.2s; }
+.link:hover { color: #0066cc; }
+.loginButton { background-color: #0066cc; color: white; border: none; padding: 0.6rem 1.5rem; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
+.loginButton:hover { background-color: #0052a3; }
+
+Passo 12: Estilo Compartilhado Autenticação (src/features/auth/components/LoginForm/LoginForm.module.css)
+CSS
+.container {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #f4f6f9;
+  padding: 1rem;
+}
+.card { background: #ffffff; padding: 2.5rem; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); width: 100%; max-width: 400px; }
+.title { font-size: 1.75rem; color: #111111; margin-bottom: 0.5rem; font-weight: 700; text-align: center; }
+.subtitle { font-size: 0.95rem; color: #666666; margin-bottom: 2rem; text-align: center; }
+.formGroup { margin-bottom: 1.25rem; }
+.label { display: block; font-size: 0.85rem; font-weight: 600; color: #444444; margin-bottom: 0.5rem; }
+.input { width: 100%; padding: 0.75rem 1rem; border: 1px solid #dddddd; border-radius: 6px; font-size: 1rem; transition: border-color 0.2s; box-sizing: border-box; }
+.input:focus { outline: none; border-color: #0066cc; box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.15); }
+.button { width: 100%; padding: 0.8rem; background-color: #0066cc; color: #ffffff; border: none; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background-color 0.2s; margin-top: 0.5rem; }
+.button:hover { background-color: #0052a3; }
+.footerText { margin-top: 1.5rem; font-size: 0.9rem; color: #555555; text-align: center; }
+.linkButton { background: none; border: none; color: #0066cc; font-weight: 600; font-size: 0.9rem; cursor: pointer; padding: 0; text-decoration: underline; }
+.linkButton:hover { color: #004080; }
+
+⚡ PARTE 4: Inicialização do Servidor Local
+No terminal do seu VS Code, certifique-se de que está na pasta do projeto e ligue o ambiente de desenvolvimento local:
+Bash
+npm run dev
+

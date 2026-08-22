@@ -1,0 +1,119 @@
+datasource db {
+  provider = "mysql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id               Int      @id @default(autoincrement())
+  nome             String
+  sobrenome        String
+  cpf              String   @unique
+  email            String   @unique
+  telefone         String
+  senhaHash        String
+  dataNascimento   DateTime?
+  sexo             String?
+  receberNovidades Boolean  @default(false)
+  createdAt        DateTime @default(now())
+}
+
+model Admin {
+  id        Int      @id @default(autoincrement())
+  nome      String
+  email     String   @unique
+  senha     String
+  createdAt DateTime @default(now())
+
+  @@map("admins")
+}
+
+model Categoria {
+  id        String    @id @default(uuid())
+  nome      String    @unique
+  slug      String    @unique
+  produtos  Produto[]
+
+  @@map("categorias")
+}
+
+model Tamanho {
+  id        String           @id @default(uuid())
+  nome      String           @unique
+  slug      String           @unique
+  estoques ProdutoEstoque[]
+
+  @@map("tamanhos")
+}
+
+model Cor {
+  id        String   @id @default(uuid())
+  nome      String   @unique
+  slug      String   @unique
+  hex       String?  // Código da cor (ex: #ff69b4 para rosa)
+  estoques  ProdutoEstoque[] // Relação com o estoque
+
+  @@map("cores")
+}
+
+model Produto {
+  id          String           @id @default(uuid())
+  nome        String           @db.VarChar(100) // Máximo 100 caracteres
+  preco       Decimal          @db.Decimal(10, 2) // Preço monetário
+  descricao   String?          @db.Text
+  categoryId  String
+  categoria   Categoria        @relation(fields: [categoryId], references: [id])
+  
+  estoques    ProdutoEstoque[]
+  imagens     ProdutoImagem[]  // Até 10 imagens do produto
+  movimentacoes       MovimentacaoEstoque[]
+
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("produtos")
+}
+
+model ProdutoEstoque {
+  id        String   @id @default(uuid())
+  produtoId String
+  tamanhoId String? 
+  corId     String? 
+  estoque   Int      @default(0)
+  ativo     Boolean  @default(true) 
+
+  produto   Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  tamanho   Tamanho? @relation(fields: [tamanhoId], references: [id], onDelete: Restrict)
+  cor       Cor?     @relation(fields: [corId], references: [id], onDelete: Restrict)
+
+  @@unique([produtoId, tamanhoId, corId])
+  @@map("produto_estoques")
+}
+
+// Tabela para armazenar as imagens do produto (limite de até 10)
+model ProdutoImagem {
+  id        String   @id @default(uuid())
+  url       String
+  produtoId String
+
+  produto   Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+
+  @@map("produto_imagens")
+}
+
+model MovimentacaoEstoque {
+  id          String   @id @default(uuid())
+  produtoId   String
+  corNome     String
+  tamanho     String
+  tipo        String   // 'ENTRADA' ou 'SAIDA'
+  quantidade  Int
+  motivo      String
+  data        DateTime @default(now())
+  
+  produto     Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+
+  @@map("movimentacoes_estoque")
+}

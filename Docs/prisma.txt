@@ -1,0 +1,16 @@
+### criar uma tabela no arquivo schema.prisma. Rode o comando: 
+npx prisma db push
+
+
+### Se você alterou o schema.prisma recentemente, o código TypeScript pode estar desatualizado em relação às novas tabelas. Para corrigir, rode no terminal:
+npx prisma generate
+
+
+### Para executar o arquivo de seed e criar os admins
+npx prisma db seed
+
+
+### Para resetar o banco
+npx prisma migrate reset
+npx prisma db push
+npx prisma migrate dev

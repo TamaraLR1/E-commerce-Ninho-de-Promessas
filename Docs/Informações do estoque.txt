@@ -1,0 +1,34 @@
+📥 Motivos para Entrada de Estoque
+Compra de Fornecedores / Reposição: Recebimento de novos lotes de mercadorias adquiridas de fabricantes ou fornecedores para reabastecer a vitrine.
+
+Devolução de Clientes: Retorno de um produto enviado ao cliente (por desistência, defeito ou troca de tamanho/cor) que retorna em condições de ser recomercializado.
+
+Estorno ou Cancelamento de Pedido: Retorno físico de itens cujos pedidos foram cancelados antes da expedição definitiva ou que voltaram da transportadora.
+
+Ajuste de Inventário (Sobra): Correção positiva após uma contagem física (inventário) que identificou produtos fisicamente disponíveis além do que constava no sistema.
+
+Brindes ou Amostras Recebidas: Entrada de itens promocionais ou brindes enviados por fornecedores para acompanhamento de vendas.
+
+Produção Própria / Fabricação: Adição de produtos recém-confeccionados ou manufaturados internamente (comum em marcas próprias ou artesanato).
+
+
+
+📤 Motivos para Saída de Estoque
+Vendas Realizadas: Baixa automática gerada pela finalização de um pedido no e-commerce (geralmente integrada ao gateway de pagamento ou emissão de nota fiscal).
+
+Trocas e Garantias: Saída de um produto novo enviado para substituir outro com defeito ou trocado pelo cliente.
+
+Avarias e Danos: Produtos que sofreram danos no armazém (queda, vazamento, umidade, pragas) e tornaram-se imprestáveis para venda.
+
+Perdas e Extravios: Mercadorias furtadas, extraviadas dentro do centro de distribuição ou perdidas por transportadoras.
+
+Ajuste de Inventário (Falta): Baixa corretiva após uma auditoria física que detectou divergência (quebra de estoque ou furto interno/externo).
+
+Uso Interno / Brindes / Marketing: Retirada de itens para envio de assessoria de imprensa, influenciadores, ações promocionais, brindes ou uso pela própria equipe.
+
+
+Condições do estoque
+
+A lógica de cores do estoque aplicada corretamente é (0 un = vermelho, 1 a 3 un = amarelo, e 4 ou mais = verde).
+
+
