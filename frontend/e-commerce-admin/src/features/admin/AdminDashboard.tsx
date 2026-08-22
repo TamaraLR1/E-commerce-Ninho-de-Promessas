@@ -61,6 +61,7 @@ export const AdminDashboard: React.FC = () => {
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [stockSearchQuery, setStockSearchQuery] = useState('');
+  const [stockFilter, setStockFilter] = useState<'todos' | 'esgotado' | 'baixo'>('todos');
 
   const [selectedProductDetails, setSelectedProductDetails] = useState<ProductMaster | null>(null);
   const [selectedColorForDetails, setSelectedColorForDetails] = useState<string | null>(null);
@@ -247,7 +248,6 @@ export const AdminDashboard: React.FC = () => {
       .replace(/\s+/g, '-');
   };
 
-  // --- CRUD DE CATEGORIAS ---
   const handleSaveCategoria = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!novaCategoriaNome) return;
@@ -302,7 +302,6 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // --- CRUD DE TAMANHOS ---
   const handleSaveTamanho = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!novoTamanhoNome) return;
@@ -357,7 +356,6 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // --- CRUD DE CORES ---
   const handleSaveCor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!novaCorNome) return;
@@ -524,7 +522,6 @@ export const AdminDashboard: React.FC = () => {
       setNewCategoryId(catMatch.id);
     }
 
-    // Filtra apenas estoques ativos para evitar que cores/tamanhos inativados reapareçam
     const rawSizesAtivos = prod.rawSizes ? prod.rawSizes.filter((item: any) => item.ativo !== false) : [];
 
     const coresIds: string[] = rawSizesAtivos.length > 0 
@@ -602,25 +599,57 @@ export const AdminDashboard: React.FC = () => {
     const arrayPlanoTamanhos: { tamanhoId: string; corId?: string; estoque: number }[] = [];
     const setCoresGeraisGeral = new Set<string>();
 
+    const produtoAntigo = editingProductId ? products.find(p => p.id === editingProductId) : null;
+
     colorSizeConfigs.forEach(config => {
       setCoresGeraisGeral.add(config.corId);
       const tamanhosIds = config.tamanhosIds || [];
       const estoquesMap = config.estoques || {};
       
       if (tamanhosIds.length === 0) {
-        const qtdEstoque = editingProductId ? 0 : parseInt(estoquesMap[''] || '0', 10);
+        const inputVal = estoquesMap[''] || '0';
+        let qtdEstoque = parseInt(inputVal, 10);
+        if (isNaN(qtdEstoque)) qtdEstoque = 0;
+
+        if (editingProductId && produtoAntigo) {
+          const itemExistente = produtoAntigo.rawSizes?.find(
+            s => s.corId === config.corId && (!s.tamanhoId || s.tamanhoId === '')
+          );
+          
+          // REGRA APLICADA: Se o item já existiu (mesmo que excluído logicamente), 
+          // preservamos o estoque antigo e impedimos adicionar estoque inicial por aqui.
+          if (itemExistente) {
+            qtdEstoque = itemExistente.estoque ?? 0;
+          }
+        }
+
         arrayPlanoTamanhos.push({
           tamanhoId: '',
           corId: config.corId,
-          estoque: isNaN(qtdEstoque) ? 0 : qtdEstoque
+          estoque: qtdEstoque
         });
       } else {
         tamanhosIds.forEach(tamanhoId => {
-          const qtdEstoque = editingProductId ? 0 : parseInt(estoquesMap[tamanhoId] || '0', 10);
+          const inputVal = estoquesMap[tamanhoId] || '0';
+          let qtdEstoque = parseInt(inputVal, 10);
+          if (isNaN(qtdEstoque)) qtdEstoque = 0;
+
+          if (editingProductId && produtoAntigo) {
+            const itemExistente = produtoAntigo.rawSizes?.find(
+              s => s.corId === config.corId && s.tamanhoId === tamanhoId
+            );
+            
+            // REGRA APLICADA: Se o item já existia no histórico, mantemos o estoque 
+            // antigo dele e redirecionamos ajustes para o controle de estoque.
+            if (itemExistente) {
+              qtdEstoque = itemExistente.estoque ?? 0;
+            }
+          }
+
           arrayPlanoTamanhos.push({
             tamanhoId: tamanhoId,
             corId: config.corId,
-            estoque: isNaN(qtdEstoque) ? 0 : qtdEstoque
+            estoque: qtdEstoque
           });
         });
       }
@@ -680,10 +709,41 @@ export const AdminDashboard: React.FC = () => {
     prod.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const filteredStockProducts = stockSearchQuery.trim() === '' ? [] : products.filter(prod => 
-    prod.name.toLowerCase().includes(stockSearchQuery.toLowerCase()) ||
-    prod.id.toLowerCase().includes(stockSearchQuery.toLowerCase())
-  );
+  const filteredStockProducts = products.filter(prod => {
+    const matchesSearch = stockSearchQuery.trim() === '' || 
+      prod.name.toLowerCase().includes(stockSearchQuery.toLowerCase()) ||
+      prod.id.toLowerCase().includes(stockSearchQuery.toLowerCase());
+
+    if (!matchesSearch) return false;
+    if (stockFilter === 'todos') return true;
+
+    const rawList = prod.rawSizes || [];
+    let temEsgotado = false;
+    let temBaixo = false;
+
+    if (rawList.length > 0) {
+      rawList.forEach((item: any) => {
+        const cName = item.cor?.nome || 'Padrão';
+        const sName = item.tamanho?.nome || item.tamanhoId || 'Único';
+        const baseEstoque = item.estoque ?? 0;
+        const currentStockVal = getAvailableStockByColorAndSize(prod.id, cName, sName, baseEstoque);
+
+        if (currentStockVal === 0) temEsgotado = true;
+        if (currentStockVal > 0 && currentStockVal <= 3) temBaixo = true;
+      });
+    } else {
+      prod.sizes.forEach(sz => {
+        const currentStockVal = getAvailableStockByColorAndSize(prod.id, 'Padrão', sz, 0);
+        if (currentStockVal === 0) temEsgotado = true;
+        if (currentStockVal > 0 && currentStockVal <= 3) temBaixo = true;
+      });
+    }
+
+    if (stockFilter === 'esgotado') return temEsgotado;
+    if (stockFilter === 'baixo') return temBaixo;
+
+    return true;
+  });
 
   const handleDeleteProductDirect = async (productId: string) => {
     const confirmacao = window.confirm('Tem certeza que deseja excluir este produto? Esta ação não pode ser desfeita.');
@@ -725,7 +785,6 @@ export const AdminDashboard: React.FC = () => {
       <aside className={`${styles.sidebar} ${isMenuOpen ? styles.sidebarOpen : ''}`}>
         <h2>Painel Admin</h2>
         <nav>
-          {/* Aba ativa de cadastro apenas se activeTab for 'cadastro' E NÃO estiver editando um produto existente */}
           <div 
             className={`${styles.navItem} ${activeTab === 'cadastro' && !editingProductId ? styles.active : ''}`} 
             onClick={() => { 
@@ -880,6 +939,11 @@ export const AdminDashboard: React.FC = () => {
                                   const isChecked = configCurrent.tamanhosIds.includes(tam.id);
                                   const estoqueValor = configCurrent.estoques?.[tam.id] || '';
 
+                                  const produtoOriginal = editingProductId ? products.find(p => p.id === editingProductId) : null;
+                                  const itemJaExistia = produtoOriginal?.rawSizes?.some(
+                                    s => s.corId === cId && s.tamanhoId === tam.id
+                                  );
+
                                   return (
                                     <div 
                                       key={tam.id} 
@@ -896,10 +960,10 @@ export const AdminDashboard: React.FC = () => {
                                         </label>
                                       </div>
 
-                                      {isChecked && !editingProductId && (
+                                      {isChecked && (!editingProductId || !itemJaExistia) && (
                                         <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                           <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>
-                                            Estoque Inicial:
+                                            Estoque Inicial (Novo Item):
                                           </label>
                                           <input 
                                             type="number" 
@@ -909,6 +973,12 @@ export const AdminDashboard: React.FC = () => {
                                             onChange={(e) => handleStockChangeForSize(cId, tam.id, e.target.value)}
                                             style={{ padding: '4px 8px', fontSize: '0.85rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}
                                           />
+                                        </div>
+                                      )}
+
+                                      {isChecked && editingProductId && itemJaExistia && (
+                                        <div style={{ marginTop: '6px', fontSize: '0.7rem', color: '#059669', fontStyle: 'italic' }}>
+                                          ✓ Item existente (Estoque preservado)
                                         </div>
                                       )}
                                     </div>
@@ -1430,9 +1500,9 @@ export const AdminDashboard: React.FC = () => {
           <div className={styles.singleContainer}>
             <section className={styles.card}>
               <h3>Controle de Estoque</h3>
-              <p className={styles.infoText}>Pesquise pelo nome ou ID do produto para gerenciar o estoque. O tipo de movimentação agora é selecionado por rádio buttons para uma operação mais ágil e visual.</p>
+              <p className={styles.infoText}>Utilize os filtros rápidos abaixo para focar imediatamente nos itens que exigem atenção ou pesquise por nome/ID.</p>
               
-              <div className={styles.searchSection} style={{ marginBottom: '20px' }}>
+              <div className={styles.searchSection} style={{ marginBottom: '15px' }}>
                 <input 
                   type="text" 
                   className={styles.searchInput} 
@@ -1442,10 +1512,32 @@ export const AdminDashboard: React.FC = () => {
                 />
               </div>
 
-              {stockSearchQuery.trim() === '' ? (
-                <p className={styles.emptyNotice}>Digite algo na barra de pesquisa acima para localizar o produto.</p>
-              ) : filteredStockProducts.length === 0 ? (
-                <p className={styles.emptyNotice}>Nenhum produto encontrado com este nome ou ID.</p>
+              <div className={styles.stockFilterButtonsRow}>
+                <button 
+                  type="button" 
+                  className={`${styles.stockFilterBtn} ${stockFilter === 'todos' ? styles.stockFilterBtnActive : ''}`}
+                  onClick={() => setStockFilter('todos')}
+                >
+                  📋 Todos os Produtos
+                </button>
+                <button 
+                  type="button" 
+                  className={`${styles.stockFilterBtn} ${stockFilter === 'baixo' ? styles.stockFilterBtnActive : ''}`}
+                  onClick={() => setStockFilter('baixo')}
+                >
+                  ⚠️ Estoque Baixo (≤ 3)
+                </button>
+                <button 
+                  type="button" 
+                  className={`${styles.stockFilterBtn} ${stockFilter === 'esgotado' ? styles.stockFilterBtnActive : ''}`}
+                  onClick={() => setStockFilter('esgotado')}
+                >
+                  🔴 Esgotados (0)
+                </button>
+              </div>
+
+              {filteredStockProducts.length === 0 ? (
+                <p className={styles.emptyNotice}>Nenhum produto encontrado com os critérios selecionados.</p>
               ) : (
                 <div className={styles.stockVariationMatrix}>
                   {filteredStockProducts.map(prod => {
@@ -1479,7 +1571,16 @@ export const AdminDashboard: React.FC = () => {
                       });
                     }
 
-                    const colorStockData = Array.from(colorMap.values());
+                    const colorStockData = Array.from(colorMap.values()).map(colorItem => {
+                      const filteredSizes = colorItem.sizes.filter(sizeItem => {
+                        if (stockFilter === 'esgotado') return sizeItem.stock === 0;
+                        if (stockFilter === 'baixo') return sizeItem.stock > 0 && sizeItem.stock <= 3;
+                        return true;
+                      });
+                      return { ...colorItem, sizes: filteredSizes };
+                    }).filter(colorItem => colorItem.sizes.length > 0);
+
+                    if (colorStockData.length === 0) return null;
 
                     return (
                       <div key={prod.id} className={styles.stockProductBlockCard} style={{ marginTop: '20px', padding: '16px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#fafafa' }}>

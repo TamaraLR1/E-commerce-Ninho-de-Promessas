@@ -14,6 +14,9 @@ Produção Própria / Fabricação: Adição de produtos recém-confeccionados o
 
 
 📤 Motivos para Saída de Estoque
+
+O estoque real deve gerenciar o fluxo diário (vendas, perdas, reposições).
+
 Vendas Realizadas: Baixa automática gerada pela finalização de um pedido no e-commerce (geralmente integrada ao gateway de pagamento ou emissão de nota fiscal).
 
 Trocas e Garantias: Saída de um produto novo enviado para substituir outro com defeito ou trocado pelo cliente.
@@ -30,5 +33,8 @@ Uso Interno / Brindes / Marketing: Retirada de itens para envio de assessoria de
 Condições do estoque
 
 A lógica de cores do estoque aplicada corretamente é (0 un = vermelho, 1 a 3 un = amarelo, e 4 ou mais = verde).
+
+
+
 
 

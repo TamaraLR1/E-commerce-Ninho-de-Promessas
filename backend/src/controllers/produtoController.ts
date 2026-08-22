@@ -101,7 +101,7 @@ export const produtoController = {
     }
   },
 
-  async atualizar(req: Request, res: Response) {
+async atualizar(req: Request, res: Response) {
     try {
       const id = String(req.params.id);
       const { nome, preco, descricao, categoryId, tamanhos, imagensMantidas } = req.body;
@@ -223,6 +223,7 @@ export const produtoController = {
               });
             }
           } else {
+            // CORREÇÃO AQUI: Pega o item correspondente enviado na requisição para utilizar o novo estoque digitado
             const itemEncontrado = itensEnviados.find(
               (item) => item.tamanhoId === tAtualId && item.corId === cAtualId
             );
@@ -246,7 +247,7 @@ export const produtoController = {
           );
 
           if (estoqueInativoExistente) {
-            // Se já existia mas estava inativo, apenas reativa e atualiza o estoque
+            // Se já existia mas estava inativo, reativa e atualiza com o novo estoque informado
             await prisma.produtoEstoque.update({
               where: { id: estoqueInativoExistente.id },
               data: {

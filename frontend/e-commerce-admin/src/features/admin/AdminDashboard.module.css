@@ -1396,3 +1396,36 @@
   object-fit: contain; /* Garante que o body apareça inteiro no modal também */
   background-color: #f9f9f9;
 }
+
+.stockFilterButtonsRow {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.stockFilterBtn {
+  background-color: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.stockFilterBtn:hover {
+  background-color: #e2e8f0;
+}
+
+.stockFilterBtnActive {
+  background-color: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.stockFilterBtnActive:hover {
+  background-color: #1d4ed8;
+}
