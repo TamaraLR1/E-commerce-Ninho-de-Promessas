@@ -5,28 +5,36 @@ import path from 'path';
 
 export const produtoController = {
   async listar(req: Request, res: Response) {
-      try {
-        const produtos = await prisma.produto.findMany({
-          include: {
-            categoria: true,
-            imagens: true,
-            estoques: {
-              include: {
-                tamanho: true,
-                cor: true,
-              }
-            }
+    try {
+      const produtos = await prisma.produto.findMany({
+        where: {
+          estores: undefined, // Mantendo a clareza para aplicar o filtro de estoques ativos abaixo:
+          estoques: {
+            some: {
+              ativo: true, // Traz apenas produtos que possuem pelo menos uma variação ativa
+            },
           },
-          orderBy: {
-            createdAt: "desc"
-          }
-        });
+        },
+        include: {
+          categoria: true,
+          imagens: true,
+          estoques: {
+            include: {
+              tamanho: true,
+              cor: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
 
-        return res.status(200).json(produtos);
-      } catch (error) {
-        console.error('Erro ao listar produtos:', error);
-        return res.status(500).json({ message: 'Erro interno ao buscar produtos.' });
-      }
+      return res.status(200).json(produtos);
+    } catch (error) {
+      console.error('Erro ao listar produtos:', error);
+      return res.status(500).json({ message: 'Erro interno ao buscar produtos.' });
+    }
   },
 
   async criar(req: Request, res: Response) {
@@ -310,6 +318,24 @@ async atualizar(req: Request, res: Response) {
         return res.status(404).json({ message: 'Produto não encontrado.' });
       }
 
+      // 1. Verifica se o produto possui alguma movimentação de estoque registrada
+      const totalMovimentacoes = await prisma.movimentacaoEstoque.count({
+        where: { produtoId: id }
+      });
+
+      // 2. Se tiver histórico, faz a exclusão lógica (Inativação) e NÃO apaga as imagens físicas nem o registro
+      if (totalMovimentacoes > 0) {
+        await prisma.produtoEstoque.updateMany({
+          where: { produtoId: id },
+          data: { ativo: false }
+        });
+
+        return res.status(200).json({ 
+          message: 'Produto possui histórico de movimentações e foi inativado com sucesso.' 
+        });
+      }
+
+      // 3. Se NÃO tiver histórico, prossegue com a exclusão completa (código original preservado)
       // Remove os arquivos físicos da pasta uploads do disco local
       produto.imagens.forEach(img => {
         try {
@@ -325,11 +351,20 @@ async atualizar(req: Request, res: Response) {
         }
       });
 
+      // Remove as dependências antes de apagar o produto (evita erro de chave estrangeira caso não tenha cascade)
+      await prisma.produtoEstoque.deleteMany({
+        where: { produtoId: id }
+      });
+
+      await prisma.produtoImagem.deleteMany({
+        where: { produtoId: id }
+      });
+
       await prisma.produto.delete({
         where: { id },
       });
 
-      return res.status(200).json({ message: 'Produto excluído com sucesso.' });
+      return res.status(200).json({ message: 'Produto nunca foi movimentado e foi excluído completamente com sucesso.' });
     } catch (error) {
       console.error('Erro ao excluir produto:', error);
       return res.status(500).json({ message: 'Erro interno ao excluir produto.' });

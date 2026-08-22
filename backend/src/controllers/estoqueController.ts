@@ -2,16 +2,31 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 
 export const estoqueController = {
-  async listarMovimentacoes(req: Request, res: Response) {
+async listarMovimentacoes(req: Request, res: Response) {
     try {
       const movimentacoes = await prisma.movimentacaoEstoque.findMany({
         orderBy: { data: 'desc' },
         include: {
           motivo: true,   // Traz os dados da tabela relacionada de motivos
-          produto: true,  // Traz os dados do produto (opcional, caso precise exibir o nome do produto)
+          produto: true,  // Traz os dados do produto
         },
       });
-      return res.status(200).json(movimentacoes);
+
+      // Trata as movimentações para exibir "Produto Removido" caso o produto tenha sido deletado
+      const movimentacoesFormatadas = movimentacoes.map((m) => {
+        // Se o produto foi excluído do banco, criamos um objeto 'produto' básico com a mensagem
+        if (!m.produto) {
+          return {
+            ...m,
+            produto: {
+              nome: 'Produto Removido',
+            },
+          };
+        }
+        return m;
+      });
+
+      return res.status(200).json(movimentacoesFormatadas);
     } catch (error) {
       console.error('Erro ao listar movimentações:', error);
       return res.status(500).json({ message: 'Erro interno ao buscar movimentações.' });
@@ -68,5 +83,70 @@ export const estoqueController = {
     console.error('Erro ao criar movimentação:', error);
     return res.status(500).json({ message: 'Erro interno ao salvar movimentação.' });
   }
-  }
+  },
+
+  async obterDashboard(req: Request, res: Response) {
+    try {
+      // 1. Total de variações de produtos ativas no estoque
+      const totalProdutosEstoque = await prisma.produtoEstoque.count({
+        where: { ativo: true }
+      });
+
+      // 2. Quantidade física total (Soma direta do campo estoque das variações ativas)
+      const estoqueAgregado = await prisma.produtoEstoque.aggregate({
+        where: { ativo: true },
+        _sum: { estoque: true }
+      });
+
+      const quantidadeFisicaTotal = estoqueAgregado._sum.estoque || 0;
+
+      // 3. Contagem de movimentações do mês atual (Entradas vs Saídas)
+      const inicioDoMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+      
+      const movimentacoesMes = await prisma.movimentacaoEstoque.findMany({
+        where: {
+          data: {
+            gte: inicioDoMes,
+          },
+        },
+        include: {
+          motivo: true,
+        }
+      });
+
+      const totalEntradasMes = movimentacoesMes
+        .filter(m => m.tipo === 'ENTRADA')
+        .reduce((acc, m) => acc + m.quantidade, 0);
+
+      const totalSaidasMes = movimentacoesMes
+        .filter(m => m.tipo === 'SAIDA')
+        .reduce((acc, m) => acc + m.quantidade, 0);
+
+      // 4. Últimas 5 movimentações para tabela rápida de auditoria
+      const ultimasMovimentacoes = await prisma.movimentacaoEstoque.findMany({
+        orderBy: { data: 'desc' },
+        take: 5,
+        include: {
+          motivo: true,
+          produto: true,
+        }
+      });
+
+      // Retornando os dados consolidados para o Dashboard
+      return res.status(200).json({
+        cards: {
+          totalProdutosAtivos: totalProdutosEstoque,
+          quantidadeFisicaTotal,
+          entradasNoMes: totalEntradasMes,
+          saidasNoMes: totalSaidasMes,
+        },
+        ultimasMovimentacoes,
+      });
+
+    } catch (error) {
+      console.error('Erro ao carregar dados do dashboard:', error);
+      return res.status(500).json({ message: 'Erro interno ao carregar o dashboard.' });
+    }
+  },
 };
+

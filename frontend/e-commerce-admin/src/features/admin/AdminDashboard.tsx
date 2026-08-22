@@ -59,13 +59,35 @@ interface ColorSizeConfig {
   estoques?: { [tamanhoId: string]: string };
 }
 
+interface DashboardData {
+  cards: {
+    totalProdutosAtivos: number;
+    quantidadeFisicaTotal: number;
+    entradasNoMes: number;
+    saidasNoMes: number;
+  };
+  ultimasMovimentacoes: Array<{
+    id: string;
+    corNome: string;
+    tamanho: string;
+    tipo: 'ENTRADA' | 'SAIDA';
+    quantidade: number;
+    data: string;
+    produto?: { nome: string; name?: string };
+    motivo?: { nome: string };
+  }>;
+}
+
 export const AdminDashboard: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'cadastro' | 'lista' | 'oferta' | 'estoque' | 'historico-estoque' | 'categorias' | 'tamanhos' | 'cores' | 'motivos'>('cadastro');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'cadastro' | 'lista' | 'oferta' | 'estoque' | 'historico-estoque' | 'categorias' | 'tamanhos' | 'cores' | 'motivos'>('dashboard');
 
   const [products, setProducts] = useState<ProductMaster[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [motivosEstoqueList, setMotivosEstoqueList] = useState<MotivoEstoque[]>([]);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [stockSearchQuery, setStockSearchQuery] = useState('');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
@@ -131,7 +153,14 @@ export const AdminDashboard: React.FC = () => {
     carregarProdutos();
     carregarMovimentacoes();
     carregarMotivosEstoque();
+    carregarDashboard();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'dashboard') {
+      carregarDashboard();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     setColorSizeConfigs(prevConfigs => {
@@ -148,6 +177,21 @@ export const AdminDashboard: React.FC = () => {
       });
     });
   }, [selectedColors]);
+
+  const carregarDashboard = async () => {
+    setDashboardLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/estoque/dashboard`, { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setDashboardData(data);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar dados do dashboard', err);
+    } finally {
+      setDashboardLoading(false);
+    }
+  };
 
   const carregarCategorias = async () => {
     try {
@@ -440,7 +484,6 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Funções para gerenciar Motivos de Estoque
   const handleSaveMotivo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!novoMotivoNome) return;
@@ -874,6 +917,7 @@ export const AdminDashboard: React.FC = () => {
       <aside className={`${styles.sidebar} ${isMenuOpen ? styles.sidebarOpen : ''}`}>
         <h2>Painel Admin</h2>
         <nav>
+          <div className={`${styles.navItem} ${activeTab === 'dashboard' ? styles.active : ''}`} onClick={() => { setActiveTab('dashboard'); setIsMenuOpen(false); }}>📊 Dashboard</div>
           <div 
             className={`${styles.navItem} ${activeTab === 'cadastro' && !editingProductId ? styles.active : ''}`} 
             onClick={() => { 
@@ -904,6 +948,105 @@ export const AdminDashboard: React.FC = () => {
 
       <main className={styles.mainContent}>
         
+        {activeTab === 'dashboard' && (
+          <div className={styles.singleContainer}>
+            <section className={styles.card}>
+              <div className={styles.headerBetween}>
+                <h3>Dashboard de Estoque</h3>
+                <button type="button" onClick={carregarDashboard} className={styles.btnSecondary} disabled={dashboardLoading}>
+                  {dashboardLoading ? 'Atualizando...' : '🔄 Atualizar Dados'}
+                </button>
+              </div>
+              <p className={styles.infoText}>Visão geral dos indicadores e últimas movimentações do estoque.</p>
+
+              {dashboardLoading && !dashboardData ? (
+                <p className={styles.emptyNotice}>Carregando dados do dashboard...</p>
+              ) : dashboardData ? (
+                <>
+                  {/* CARDS DE INDICADORES */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', margin: '20px 0' }}>
+                    <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>Produtos Ativos</p>
+                      <p style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#1e293b', margin: '8px 0 0 0' }}>{dashboardData.cards.totalProdutosAtivos}</p>
+                    </div>
+
+                    <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>Volume Total em Estoque</p>
+                      <p style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#2563eb', margin: '8px 0 0 0' }}>{dashboardData.cards.quantidadeFisicaTotal}</p>
+                    </div>
+
+                    <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>Entradas (Este Mês)</p>
+                      <p style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#059669', margin: '8px 0 0 0' }}>+{dashboardData.cards.entradasNoMes}</p>
+                    </div>
+
+                    <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>Saídas (Este Mês)</p>
+                      <p style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#dc2626', margin: '8px 0 0 0' }}>-{dashboardData.cards.saidasNoMes}</p>
+                    </div>
+                  </div>
+
+                  {/* TABELA DE ÚLTIMAS MOVIMENTAÇÕES */}
+                  <div style={{ marginTop: '30px' }}>
+                    <h4 className={styles.listSubheading}>Últimas Movimentações</h4>
+                    {dashboardData.ultimasMovimentacoes.length === 0 ? (
+                      <p className={styles.emptyNotice}>Nenhuma movimentação registrada recentemente.</p>
+                    ) : (
+                      <div style={{ overflowX: 'auto', marginTop: '10px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '2px solid #cbd5e1', color: '#475569' }}>
+                              <th style={{ padding: '8px' }}>Data</th>
+                              <th style={{ padding: '8px' }}>Produto</th>
+                              <th style={{ padding: '8px' }}>Variação (Cor / Tam)</th>
+                              <th style={{ padding: '8px' }}>Tipo</th>
+                              <th style={{ padding: '8px' }}>Qtd</th>
+                              <th style={{ padding: '8px' }}>Motivo</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dashboardData.ultimasMovimentacoes.map((item) => (
+                              <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                <td style={{ padding: '8px', color: '#64748b' }}>
+                                  {new Date(item.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </td>
+                                <td style={{ padding: '8px', fontWeight: 600, color: '#1e293b' }}>
+                                  {item.produto?.nome || item.produto?.name || 'Produto'}
+                                </td>
+                                <td style={{ padding: '8px', color: '#334155' }}>
+                                  {item.corNome} / {item.tamanho}
+                                </td>
+                                <td style={{ padding: '8px' }}>
+                                  <span style={{
+                                    padding: '2px 8px',
+                                    borderRadius: '4px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 'bold',
+                                    background: item.tipo === 'ENTRADA' ? '#d1fae5' : '#fee2e2',
+                                    color: item.tipo === 'ENTRADA' ? '#065f46' : '#991b1b'
+                                  }}>
+                                    {item.tipo}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '8px', fontWeight: 'bold', color: item.tipo === 'ENTRADA' ? '#059669' : '#dc2626' }}>
+                                  {item.tipo === 'ENTRADA' ? `+${item.quantidade}` : `-${item.quantidade}`}
+                                </td>
+                                <td style={{ padding: '8px', color: '#475569' }}>{item.motivo?.nome || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className={styles.emptyNotice} style={{ color: '#dc2626' }}>Erro ao carregar dados do dashboard.</p>
+              )}
+            </section>
+          </div>
+        )}
+
         {activeTab === 'cadastro' && (
           <div className={styles.singleContainer}>
             <section className={styles.card}>
@@ -1975,7 +2118,8 @@ export const AdminDashboard: React.FC = () => {
 
                                             await Promise.all([
                                               carregarMovimentacoes(),
-                                              carregarProdutos()
+                                              carregarProdutos(),
+                                              carregarDashboard()
                                             ]);
                                             
                                             setStockInputValues(prev => ({
