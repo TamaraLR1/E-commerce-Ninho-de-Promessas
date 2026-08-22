@@ -103,6 +103,15 @@ model ProdutoImagem {
   @@map("produto_imagens")
 }
 
+model MotivoEstoque {
+  id            String                @id @default(uuid())
+  nome          String                @unique
+  tipo          String                // 'ENTRADA' ou 'SAIDA'
+  movimentacoes MovimentacaoEstoque[]
+
+  @@map("motivos_estoque")
+}
+
 model MovimentacaoEstoque {
   id          String   @id @default(uuid())
   produtoId   String
@@ -110,7 +119,10 @@ model MovimentacaoEstoque {
   tamanho     String
   tipo        String   // 'ENTRADA' ou 'SAIDA'
   quantidade  Int
-  motivo      String
+
+  motivoId    String         // Chave estrangeira para a tabela de motivos
+  motivo      MotivoEstoque  @relation(fields: [motivoId], references: [id], onDelete: Restrict)
+  
   data        DateTime @default(now())
   
   produto     Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)

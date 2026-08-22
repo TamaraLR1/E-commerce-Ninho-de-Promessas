@@ -10,6 +10,7 @@ import tamanhoRoutes from './routes/tamanhoRoutes';
 import corRoutes from './routes/corRoutes';
 import {produtoRoutes} from './routes/produtoRoutes';
 import estoqueRoutes from './routes/estoqueRoutes';
+import motivoRoutes from './routes/motivoRoutes';
 
 import path from 'path';
 
@@ -35,6 +36,7 @@ app.use('/api', tamanhoRoutes);
 app.use('/api', corRoutes);
 app.use('/api', produtoRoutes);
 app.use('/api', estoqueRoutes);
+app.use('/api', motivoRoutes);
 
 const PORT = process.env.PORT || 3333;
 

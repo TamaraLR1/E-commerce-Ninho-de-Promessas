@@ -1,8 +1,9 @@
 import 'dotenv/config';
-import { prisma } from '../src/lib/prisma'; // Ajuste o caminho relativo se necessário (ex: '../lib/prisma')
+import { prisma } from '../src/lib/prisma';
 import bcrypt from 'bcrypt';
 
 async function main() {
+  // 1. Criar Administradores
   const senhaHash1 = await bcrypt.hash('Snhteste123ALN@', 10);
   const senhaHash2 = await bcrypt.hash('SnhTeste123GTV@', 10);
 
@@ -28,8 +29,7 @@ async function main() {
 
   console.log('Administradores criados com sucesso!');
 
-
-// 2. Criar Cores (Ampla variedade)
+  // 2. Criar Cores (Ampla variedade)
   const coresData = [
     { nome: 'Branco', slug: 'branco', hex: '#FFFFFF' },
     { nome: 'Preto', slug: 'preto', hex: '#000000' },
@@ -64,14 +64,11 @@ async function main() {
 
   // 3. Criar Tamanhos até 5 anos de idade
   const tamanhosData = [
-    // Recém-nascido e primeiros meses
     { nome: 'RN (Recém-Nascido)', slug: 'rn' },
     { nome: 'P (0 a 3 Meses)', slug: 'p-0-3m' },
     { nome: 'M (3 a 6 Meses)', slug: 'm-3-6m' },
     { nome: 'G (6 a 9 Meses)', slug: 'g-6-9m' },
     { nome: 'GG (9 a 12 Meses)', slug: 'gg-9-12m' },
-    
-    // Anos (Infantil até 5 anos)
     { nome: '1 Ano', slug: '1-ano' },
     { nome: '2 Anos', slug: '2-anos' },
     { nome: '3 Anos', slug: '3-anos' },
@@ -88,6 +85,7 @@ async function main() {
   }
   console.log('👕 Tamanhos até 5 anos cadastrados com sucesso!');
 
+  // 4. Criar Categorias
   console.log('🌱 Iniciando seed de categorias...');
 
   const categorias = [
@@ -116,6 +114,37 @@ async function main() {
   }
 
   console.log('✨ Seed de categorias finalizado com sucesso!');
+
+  // 5. Criar Motivos de Estoque (Entradas e Saídas)
+  const motivos = [
+    // --- ENTRADAS ---
+    { nome: 'Compra de Fornecedores / Reposição', tipo: 'ENTRADA' },
+    { nome: 'Devolução de Clientes', tipo: 'ENTRADA' },
+    { nome: 'Estorno ou Cancelamento de Pedido', tipo: 'ENTRADA' },
+    { nome: 'Ajuste de Inventário (Sobra)', tipo: 'ENTRADA' },
+    { nome: 'Brindes ou Amostras Recebidas', tipo: 'ENTRADA' },
+    { nome: 'Produção Própria / Fabricação', tipo: 'ENTRADA' },
+
+    // --- SAÍDAS ---
+    { nome: 'Vendas Realizadas', tipo: 'SAIDA' },
+    { nome: 'Trocas e Garantias', tipo: 'SAIDA' },
+    { nome: 'Avarias e Danos', tipo: 'SAIDA' },
+    { nome: 'Perdas e Extravios', tipo: 'SAIDA' },
+    { nome: 'Ajuste de Inventário (Falta)', tipo: 'SAIDA' },
+    { nome: 'Uso Interno / Brindes / Marketing', tipo: 'SAIDA' },
+  ];
+
+  console.log('Iniciando o cadastro dos motivos de estoque...');
+
+  for (const motivo of motivos) {
+    await prisma.motivoEstoque.upsert({
+      where: { nome: motivo.nome },
+      update: { tipo: motivo.tipo },
+      create: motivo,
+    });
+  }
+
+  console.log('📦 Motivos de estoque cadastrados com sucesso!');
 }
 
 main()

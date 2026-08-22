@@ -47,6 +47,12 @@ interface Cor {
   hex?: string;
 }
 
+interface MotivoEstoque {
+  id: string;
+  nome: string;
+  tipo: 'ENTRADA' | 'SAIDA';
+}
+
 interface ColorSizeConfig {
   corId: string;
   tamanhosIds: string[];
@@ -55,13 +61,14 @@ interface ColorSizeConfig {
 
 export const AdminDashboard: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'cadastro' | 'lista' | 'oferta' | 'estoque' | 'historico-estoque' | 'categorias' | 'tamanhos' | 'cores'>('cadastro');
+  const [activeTab, setActiveTab] = useState<'cadastro' | 'lista' | 'oferta' | 'estoque' | 'historico-estoque' | 'categorias' | 'tamanhos' | 'cores' | 'motivos'>('cadastro');
 
   const [products, setProducts] = useState<ProductMaster[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
+  const [motivosEstoqueList, setMotivosEstoqueList] = useState<MotivoEstoque[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [stockSearchQuery, setStockSearchQuery] = useState('');
-  const [historySearchQuery, setHistorySearchQuery] = useState(''); // Novo estado para a pesquisa do histórico
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'todos' | 'esgotado' | 'baixo'>('todos');
 
   const [selectedProductDetails, setSelectedProductDetails] = useState<ProductMaster | null>(null);
@@ -102,6 +109,13 @@ export const AdminDashboard: React.FC = () => {
   const [corError, setCorError] = useState('');
   const [editingCorId, setEditingCorId] = useState<string | null>(null);
 
+  // Estados de Motivos de Estoque
+  const [novoMotivoNome, setNovoMotivoNome] = useState('');
+  const [novoMotivoTipo, setNovoMotivoTipo] = useState<'ENTRADA' | 'SAIDA'>('ENTRADA');
+  const [motivoLoading, setMotivoLoading] = useState(false);
+  const [motivoError, setMotivoError] = useState('');
+  const [editingMotivoId, setEditingMotivoId] = useState<string | null>(null);
+
   const [searchOfferId, setSearchOfferId] = useState('');
   const [promoPrice, setPromoPrice] = useState<string>('');
 
@@ -116,6 +130,7 @@ export const AdminDashboard: React.FC = () => {
     carregarCores();
     carregarProdutos();
     carregarMovimentacoes();
+    carregarMotivosEstoque();
   }, []);
 
   useEffect(() => {
@@ -170,6 +185,18 @@ export const AdminDashboard: React.FC = () => {
       }
     } catch (err) {
       console.error('Erro ao carregar cores', err);
+    }
+  };
+
+  const carregarMotivosEstoque = async () => {
+    try {
+      const response = await fetch(`${API_URL}/motivos-estoque`, { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setMotivosEstoqueList(data);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar motivos de estoque', err);
     }
   };
 
@@ -229,7 +256,7 @@ export const AdminDashboard: React.FC = () => {
           size: m.tamanho,
           type: m.tipo,
           quantity: m.quantidade,
-          reason: m.motivo,
+          reason: m.motivo?.nome || m.motivo || 'Manual',
           date: new Date(m.data).toLocaleDateString('pt-BR')
         }));
         setMovements(formattedMovements);
@@ -410,6 +437,61 @@ export const AdminDashboard: React.FC = () => {
       carregarCores();
     } catch (err: any) {
       alert(err.message || 'Erro ao excluir cor.');
+    }
+  };
+
+  // Funções para gerenciar Motivos de Estoque
+  const handleSaveMotivo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!novoMotivoNome) return;
+    setMotivoError('');
+    setMotivoLoading(true);
+
+    try {
+      const url = editingMotivoId ? `${API_URL}/motivos-estoque/${editingMotivoId}` : `${API_URL}/motivos-estoque`;
+      const method = editingMotivoId ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ nome: novoMotivoNome, tipo: novoMotivoTipo }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Erro ao salvar motivo de estoque.');
+
+      setNovoMotivoNome('');
+      setNovoMotivoTipo('ENTRADA');
+      setEditingMotivoId(null);
+      carregarMotivosEstoque();
+      alert(editingMotivoId ? 'Motivo atualizado com sucesso!' : 'Motivo cadastrado com sucesso!');
+    } catch (err: any) {
+      setMotivoError(err.message || 'Erro ao conectar com o servidor.');
+    } finally {
+      setMotivoLoading(false);
+    }
+  };
+
+  const handleStartEditMotivo = (motivo: MotivoEstoque) => {
+    setEditingMotivoId(motivo.id);
+    setNovoMotivoNome(motivo.nome);
+    setNovoMotivoTipo(motivo.tipo);
+  };
+
+  const handleDeleteMotivo = async (id: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este motivo de estoque?')) return;
+    try {
+      const response = await fetch(`${API_URL}/motivos-estoque/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Erro ao excluir motivo.');
+      alert('Motivo excluído com sucesso!');
+      carregarMotivosEstoque();
+    } catch (err: any) {
+      alert(err.message || 'Erro ao excluir motivo.');
     }
   };
 
@@ -742,7 +824,6 @@ export const AdminDashboard: React.FC = () => {
     return true;
   });
 
-  // Filtro de movimentações para a aba de histórico de estoque
   const filteredMovements = movements.filter(mov => {
     if (!historySearchQuery.trim()) return true;
     const query = historySearchQuery.toLowerCase();
@@ -813,6 +894,7 @@ export const AdminDashboard: React.FC = () => {
           <div className={`${styles.navItem} ${activeTab === 'categorias' ? styles.active : ''}`} onClick={() => { setActiveTab('categorias'); setIsMenuOpen(false); }}>📂 Gerenciar Categorias</div>
           <div className={`${styles.navItem} ${activeTab === 'tamanhos' ? styles.active : ''}`} onClick={() => { setActiveTab('tamanhos'); setIsMenuOpen(false); }}>📏 Gerenciar Tamanhos</div>
           <div className={`${styles.navItem} ${activeTab === 'cores' ? styles.active : ''}`} onClick={() => { setActiveTab('cores'); setIsMenuOpen(false); }}>🎨 Gerenciar Cores</div>
+          <div className={`${styles.navItem} ${activeTab === 'motivos' ? styles.active : ''}`} onClick={() => { setActiveTab('motivos'); setIsMenuOpen(false); }}>📝 Gerenciar Motivos</div>
           <div className={`${styles.navItem} ${activeTab === 'oferta' ? styles.active : ''}`} onClick={() => { setActiveTab('oferta'); setIsMenuOpen(false); }}>🏷️ Configurar Oferta</div>
           <div className={`${styles.navItem} ${activeTab === 'lista' ? styles.active : ''}`} onClick={() => { setActiveTab('lista'); setIsMenuOpen(false); }}>📋 Lista & Vitrine ({products.length})</div>
           <div className={`${styles.navItem} ${activeTab === 'estoque' ? styles.active : ''}`} onClick={() => { setActiveTab('estoque'); setIsMenuOpen(false); }}>📦 Controle de Estoque</div>
@@ -1248,6 +1330,127 @@ export const AdminDashboard: React.FC = () => {
           </div>
         )}
 
+        {activeTab === 'motivos' && (
+          <div className={styles.singleContainer}>
+            <section className={styles.card}>
+              <div className={styles.headerBetween}>
+                <h3>{editingMotivoId ? 'Editar Motivo de Estoque' : 'Gerenciar Motivos de Estoque'}</h3>
+                {editingMotivoId && (
+                  <button type="button" onClick={() => { setEditingMotivoId(null); setNovoMotivoNome(''); setNovoMotivoTipo('ENTRADA'); }} className={styles.btnSecondary}>
+                    Cancelar Edição
+                  </button>
+                )}
+              </div>
+              <p className={styles.infoText}>Cadastre os motivos exibidos no controle de estoque e consulte abaixo o guia de referência rápida.</p>
+              
+              {motivoError && <div className={styles.errorTextNotice}>{motivoError}</div>}
+
+              <form onSubmit={handleSaveMotivo} className={styles.form}>
+                <div className={styles.group}>
+                  <label>Nome do Motivo</label>
+                  <input 
+                    type="text" 
+                    value={novoMotivoNome} 
+                    onChange={e => setNovoMotivoNome(e.target.value)} 
+                    placeholder="Ex: Compra de Fornecedor ou Venda" 
+                    required 
+                  />
+                </div>
+
+                <div className={styles.group}>
+                  <label>Tipo de Movimentação</label>
+                  <select 
+                    value={novoMotivoTipo} 
+                    onChange={e => setNovoMotivoTipo(e.target.value as 'ENTRADA' | 'SAIDA')} 
+                    required
+                  >
+                    <option value="ENTRADA">Entrada</option>
+                    <option value="SAIDA">Saída</option>
+                  </select>
+                </div>
+
+                <button type="submit" className={styles.btnPrimary} disabled={motivoLoading}>
+                  {motivoLoading ? 'Salvando...' : editingMotivoId ? 'Atualizar Motivo' : 'Adicionar Motivo'}
+                </button>
+              </form>
+
+              {/* GUIA DE REFERÊNCIA DE MOTIVOS */}
+              <div style={{ marginTop: '30px', borderTop: '2px dashed #cbd5e1', paddingTop: '20px' }}>
+                <h4 style={{ fontSize: '1rem', color: '#1e293b', marginBottom: '14px' }}>📖 Guia de Referência dos Motivos de Estoque</h4>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+                  
+                  {/* Bloco Entradas */}
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <h5 style={{ color: '#059669', fontSize: '0.95rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      📥 Motivos para Entrada de Estoque
+                    </h5>
+                    <ul style={{ paddingLeft: '16px', fontSize: '0.8rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <li><strong>Compra de Fornecedores / Reposição:</strong> Recebimento de novos lotes de mercadorias adquiridas de fabricantes ou fornecedores para reabastecer a vitrine.</li>
+                      <li><strong>Devolução de Clientes:</strong> Retorno de um produto enviado ao cliente (por desistência, defeito ou troca de tamanho/cor) que retorna em condições de ser recomercializado.</li>
+                      <li><strong>Estorno ou Cancelamento de Pedido:</strong> Retorno físico de itens cujos pedidos foram cancelados antes da expedição definitiva ou que voltaram da transportadora.</li>
+                      <li><strong>Ajuste de Inventário (Sobra):</strong> Correção positiva após uma contagem física (inventário) que identificou produtos fisicamente disponíveis além do que constava no sistema.</li>
+                      <li><strong>Brindes ou Amostras Recebidas:</strong> Entrada de itens promocionais ou brindes enviados por fornecedores para acompanhamento de vendas.</li>
+                      <li><strong>Produção Própria / Fabricação:</strong> Adição de produtos recém-confeccionados ou manufaturados internamente (comum em marcas próprias ou artesanato).</li>
+                    </ul>
+                  </div>
+
+                  {/* Bloco Saídas */}
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <h5 style={{ color: '#dc2626', fontSize: '0.95rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      📤 Motivos para Saída de Estoque
+                    </h5>
+                    <ul style={{ paddingLeft: '16px', fontSize: '0.8rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <li><strong>Vendas Realizadas:</strong> Baixa automática gerada pela finalização de um pedido no e-commerce (geralmente integrada ao gateway de pagamento ou emissão de nota fiscal).</li>
+                      <li><strong>Trocas e Garantias:</strong> Saída de um produto novo enviado para substituir outro com defeito ou trocado pelo cliente.</li>
+                      <li><strong>Avarias e Danos:</strong> Produtos que sofreram danos no armazém (queda, vazamento, umidade, pragas) e tornaram-se imprestáveis para venda.</li>
+                      <li><strong>Perdas e Extravios:</strong> Mercadorias furtadas, extraviadas dentro do centro de distribuição ou perdidas por transportadoras.</li>
+                      <li><strong>Ajuste de Inventário (Falta):</strong> Baixa corretiva após uma auditoria física que detectou divergência (quebra de estoque ou furto interno/externo).</li>
+                      <li><strong>Uso Interno / Brindes / Marketing:</strong> Retirada de itens para envio de assessoria de imprensa, influenciadores, ações promocionais, brindes ou uso pela própria equipe.</li>
+                    </ul>
+                  </div>
+
+                </div>
+              </div>
+
+              <div className={styles.listSectionWrapper} style={{ marginTop: '30px' }}>
+                <h4 className={styles.listSubheading}>Motivos Cadastrados no Sistema</h4>
+                {motivosEstoqueList.length === 0 ? (
+                  <p className={styles.emptyNotice}>Nenhum motivo cadastrado ainda.</p>
+                ) : (
+                  <ul className={styles.simpleDataList}>
+                    {motivosEstoqueList.map(motivo => (
+                      <li key={motivo.id} className={styles.simpleDataListItem} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.7rem',
+                            fontWeight: 'bold',
+                            background: motivo.tipo === 'ENTRADA' ? '#d1fae5' : '#fee2e2',
+                            color: motivo.tipo === 'ENTRADA' ? '#065f46' : '#991b1b'
+                          }}>
+                            {motivo.tipo}
+                          </span>
+                          <span><strong>{motivo.nome}</strong></span>
+                        </div>
+                        <div className={styles.cardActions} style={{ display: 'flex', gap: '8px' }}>
+                          <button type="button" onClick={() => handleStartEditMotivo(motivo)} className={styles.btnEditTable}>
+                            ✏️ Editar
+                          </button>
+                          <button type="button" onClick={() => handleDeleteMotivo(motivo.id)} className={styles.btnDeleteTable}>
+                            🗑️ Excluir
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
+
         {activeTab === 'oferta' && (
           <div className={styles.singleContainer}>
             <section className={styles.card}>
@@ -1618,12 +1821,14 @@ export const AdminDashboard: React.FC = () => {
                                   const mapKey = `${prod.id}-${colorItem.colorName}-${sizeItem.size}`;
                                   const currentInputValue = stockInputValues[mapKey] || '';
                                   const currentTypeKey = `${mapKey}-type`;
-                                  const currentReasonKey = `${mapKey}-reason`;
+                                  const currentMotivoIdKey = `${mapKey}-motivoId`;
                                   
                                   const stockType = stockInputValues[currentTypeKey] || 'ENTRADA';
-                                  const stockReason = stockInputValues[currentReasonKey] || '';
+                                  const stockMotivoId = stockInputValues[currentMotivoIdKey] || '';
                                   
                                   const stockStatusClass = sizeItem.stock === 0 ? styles.redStock : sizeItem.stock <= 3 ? styles.yellowStock : styles.greenStock;
+
+                                  const motivosFiltrados = motivosEstoqueList.filter(m => m.tipo === stockType);
 
                                   return (
                                     <div key={sizeItem.size} className={styles.sizeConfigBox} style={{ background: '#fff', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1642,7 +1847,13 @@ export const AdminDashboard: React.FC = () => {
                                             name={currentTypeKey}
                                             value="ENTRADA"
                                             checked={stockType === 'ENTRADA'}
-                                            onChange={() => setStockInputValues(prev => ({ ...prev, [currentTypeKey]: 'ENTRADA' }))}
+                                            onChange={() => {
+                                              setStockInputValues(prev => ({
+                                                ...prev,
+                                                [currentTypeKey]: 'ENTRADA',
+                                                [currentMotivoIdKey]: ''
+                                              }));
+                                            }}
                                           />
                                           Entrada
                                         </label>
@@ -1652,7 +1863,13 @@ export const AdminDashboard: React.FC = () => {
                                             name={currentTypeKey}
                                             value="SAIDA"
                                             checked={stockType === 'SAIDA'}
-                                            onChange={() => setStockInputValues(prev => ({ ...prev, [currentTypeKey]: 'SAIDA' }))}
+                                            onChange={() => {
+                                              setStockInputValues(prev => ({
+                                                ...prev,
+                                                [currentTypeKey]: 'SAIDA',
+                                                [currentMotivoIdKey]: ''
+                                              }));
+                                            }}
                                           />
                                           Saída
                                         </label>
@@ -1697,13 +1914,19 @@ export const AdminDashboard: React.FC = () => {
                                         </button>
                                       </div>
 
-                                      <input
-                                        type="text"
-                                        placeholder="Motivo (ex: Reposição, Venda...)"
-                                        value={stockReason}
-                                        onChange={(e) => setStockInputValues(prev => ({ ...prev, [currentReasonKey]: e.target.value }))}
-                                        style={{ padding: '4px 6px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid #cbd5e1', width: '100%' }}
-                                      />
+                                      <select
+                                        value={stockMotivoId}
+                                        onChange={(e) => setStockInputValues(prev => ({ ...prev, [currentMotivoIdKey]: e.target.value }))}
+                                        style={{ padding: '6px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid #cbd5e1', width: '100%', background: '#fff' }}
+                                        required
+                                      >
+                                        <option value="">Selecione o motivo...</option>
+                                        {motivosFiltrados.map(motivo => (
+                                          <option key={motivo.id} value={motivo.id}>
+                                            {motivo.nome}
+                                          </option>
+                                        ))}
+                                      </select>
 
                                       <button
                                         type="button"
@@ -1723,6 +1946,10 @@ export const AdminDashboard: React.FC = () => {
                                             alert('Insira uma quantidade válida.');
                                             return;
                                           }
+                                          if (!stockMotivoId) {
+                                            alert('Selecione um motivo para a movimentação.');
+                                            return;
+                                          }
                                           if (stockType === 'SAIDA' && sizeItem.stock < qtyInput) {
                                             alert('Estoque insuficiente para esta saída!');
                                             return;
@@ -1739,7 +1966,7 @@ export const AdminDashboard: React.FC = () => {
                                                 tamanho: sizeItem.size,
                                                 tipo: stockType,
                                                 quantidade: qtyInput,
-                                                motivo: stockReason.trim() || (stockType === 'ENTRADA' ? 'Entrada manual' : 'Saída manual')
+                                                motivoId: stockMotivoId
                                               })
                                             });
 
@@ -1754,7 +1981,7 @@ export const AdminDashboard: React.FC = () => {
                                             setStockInputValues(prev => ({
                                               ...prev,
                                               [mapKey]: '',
-                                              [currentReasonKey]: ''
+                                              [currentMotivoIdKey]: ''
                                             }));
                                           } catch (err: any) {
                                             alert(err.message || 'Erro ao conectar com o servidor.');
@@ -1787,7 +2014,6 @@ export const AdminDashboard: React.FC = () => {
               <h3>📜 Histórico de Movimentações de Estoque</h3>
               <p className={styles.infoText}>Registro completo de todas as entradas e saídas realizadas no sistema.</p>
 
-              {/* Barra de pesquisa adicionada para o Histórico */}
               <div className={styles.searchSection} style={{ marginTop: '15px', marginBottom: '15px' }}>
                 <input 
                   type="text" 
