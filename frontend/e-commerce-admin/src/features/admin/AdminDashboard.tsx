@@ -55,12 +55,13 @@ interface ColorSizeConfig {
 
 export const AdminDashboard: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'cadastro' | 'lista' | 'oferta' | 'estoque' | 'categorias' | 'tamanhos' | 'cores'>('cadastro');
+  const [activeTab, setActiveTab] = useState<'cadastro' | 'lista' | 'oferta' | 'estoque' | 'historico-estoque' | 'categorias' | 'tamanhos' | 'cores'>('cadastro');
 
   const [products, setProducts] = useState<ProductMaster[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [stockSearchQuery, setStockSearchQuery] = useState('');
+  const [historySearchQuery, setHistorySearchQuery] = useState(''); // Novo estado para a pesquisa do histórico
   const [stockFilter, setStockFilter] = useState<'todos' | 'esgotado' | 'baixo'>('todos');
 
   const [selectedProductDetails, setSelectedProductDetails] = useState<ProductMaster | null>(null);
@@ -616,8 +617,6 @@ export const AdminDashboard: React.FC = () => {
             s => s.corId === config.corId && (!s.tamanhoId || s.tamanhoId === '')
           );
           
-          // REGRA APLICADA: Se o item já existiu (mesmo que excluído logicamente), 
-          // preservamos o estoque antigo e impedimos adicionar estoque inicial por aqui.
           if (itemExistente) {
             qtdEstoque = itemExistente.estoque ?? 0;
           }
@@ -639,8 +638,6 @@ export const AdminDashboard: React.FC = () => {
               s => s.corId === config.corId && s.tamanhoId === tamanhoId
             );
             
-            // REGRA APLICADA: Se o item já existia no histórico, mantemos o estoque 
-            // antigo dele e redirecionamos ajustes para o controle de estoque.
             if (itemExistente) {
               qtdEstoque = itemExistente.estoque ?? 0;
             }
@@ -745,6 +742,17 @@ export const AdminDashboard: React.FC = () => {
     return true;
   });
 
+  // Filtro de movimentações para a aba de histórico de estoque
+  const filteredMovements = movements.filter(mov => {
+    if (!historySearchQuery.trim()) return true;
+    const query = historySearchQuery.toLowerCase();
+    const produtoEncontrado = products.find(p => p.id === mov.productId);
+    const nomeProduto = produtoEncontrado ? produtoEncontrado.name.toLowerCase() : '';
+    const idProduto = mov.productId.toLowerCase();
+
+    return nomeProduto.includes(query) || idProduto.includes(query);
+  });
+
   const handleDeleteProductDirect = async (productId: string) => {
     const confirmacao = window.confirm('Tem certeza que deseja excluir este produto? Esta ação não pode ser desfeita.');
     if (!confirmacao) return;
@@ -808,6 +816,7 @@ export const AdminDashboard: React.FC = () => {
           <div className={`${styles.navItem} ${activeTab === 'oferta' ? styles.active : ''}`} onClick={() => { setActiveTab('oferta'); setIsMenuOpen(false); }}>🏷️ Configurar Oferta</div>
           <div className={`${styles.navItem} ${activeTab === 'lista' ? styles.active : ''}`} onClick={() => { setActiveTab('lista'); setIsMenuOpen(false); }}>📋 Lista & Vitrine ({products.length})</div>
           <div className={`${styles.navItem} ${activeTab === 'estoque' ? styles.active : ''}`} onClick={() => { setActiveTab('estoque'); setIsMenuOpen(false); }}>📦 Controle de Estoque</div>
+          <div className={`${styles.navItem} ${activeTab === 'historico-estoque' ? styles.active : ''}`} onClick={() => { setActiveTab('historico-estoque'); setIsMenuOpen(false); }}>📜 Histórico de Estoque</div>
         </nav>
       </aside>
 
@@ -1766,6 +1775,77 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+
+        {activeTab === 'historico-estoque' && (
+          <div className={styles.singleContainer}>
+            <section className={styles.card}>
+              <h3>📜 Histórico de Movimentações de Estoque</h3>
+              <p className={styles.infoText}>Registro completo de todas as entradas e saídas realizadas no sistema.</p>
+
+              {/* Barra de pesquisa adicionada para o Histórico */}
+              <div className={styles.searchSection} style={{ marginTop: '15px', marginBottom: '15px' }}>
+                <input 
+                  type="text" 
+                  className={styles.searchInput} 
+                  placeholder="🔍 Pesquisar pelo nome ou ID do produto..." 
+                  value={historySearchQuery} 
+                  onChange={e => setHistorySearchQuery(e.target.value)} 
+                />
+              </div>
+
+              {filteredMovements.length === 0 ? (
+                <p className={styles.emptyNotice}>Nenhuma movimentação encontrada com os critérios informados.</p>
+              ) : (
+                <div style={{ overflowX: 'auto', marginTop: '15px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #cbd5e1', color: '#475569' }}>
+                        <th style={{ padding: '8px' }}>Data</th>
+                        <th style={{ padding: '8px' }}>Produto</th>
+                        <th style={{ padding: '8px' }}>Cor / Tam</th>
+                        <th style={{ padding: '8px' }}>Tipo</th>
+                        <th style={{ padding: '8px' }}>Qtd</th>
+                        <th style={{ padding: '8px' }}>Motivo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredMovements.map((mov) => {
+                        const produtoEncontrado = products.find(p => p.id === mov.productId);
+                        return (
+                          <tr key={mov.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: '8px', color: '#64748b' }}>{mov.date}</td>
+                            <td style={{ padding: '8px', fontWeight: 600, color: '#1e293b' }}>
+                              {produtoEncontrado ? produtoEncontrado.name : `ID: ${mov.productId.slice(0, 6)}...`}
+                            </td>
+                            <td style={{ padding: '8px', color: '#334155' }}>
+                              {mov.colorName} / {mov.size || 'Único'}
+                            </td>
+                            <td style={{ padding: '8px' }}>
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                fontSize: '0.75rem',
+                                fontWeight: 'bold',
+                                background: mov.type === 'ENTRADA' ? '#d1fae5' : '#fee2e2',
+                                color: mov.type === 'ENTRADA' ? '#065f46' : '#991b1b'
+                              }}>
+                                {mov.type}
+                              </span>
+                            </td>
+                            <td style={{ padding: '8px', fontWeight: 'bold', color: mov.type === 'ENTRADA' ? '#059669' : '#dc2626' }}>
+                              {mov.type === 'ENTRADA' ? `+${mov.quantity}` : `-${mov.quantity}`}
+                            </td>
+                            <td style={{ padding: '8px', color: '#475569' }}>{mov.reason}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </section>

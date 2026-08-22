@@ -1,3 +1,5 @@
+O estoque real deve gerenciar o fluxo diário (vendas, perdas, reposições).
+
 📥 Motivos para Entrada de Estoque
 Compra de Fornecedores / Reposição: Recebimento de novos lotes de mercadorias adquiridas de fabricantes ou fornecedores para reabastecer a vitrine.
 
@@ -15,7 +17,6 @@ Produção Própria / Fabricação: Adição de produtos recém-confeccionados o
 
 📤 Motivos para Saída de Estoque
 
-O estoque real deve gerenciar o fluxo diário (vendas, perdas, reposições).
 
 Vendas Realizadas: Baixa automática gerada pela finalização de um pedido no e-commerce (geralmente integrada ao gateway de pagamento ou emissão de nota fiscal).
 
