@@ -1,6 +1,17 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 
+// Função auxiliar para gerar slug automaticamente caso não seja enviado
+function gerarSlug(texto: string): string {
+  return texto
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+    .replace(/[^\w\s-]/g, '') // Remove caracteres especiais
+    .trim()
+    .replace(/\s+/g, '-'); // Substitui espaços por hifens
+}
+
 export const categoriaController = {
   async listar(req: Request, res: Response) {
     try {
@@ -16,10 +27,18 @@ export const categoriaController = {
 
   async criar(req: Request, res: Response) {
     try {
-      const { nome, slug } = req.body;
+      const { nome } = req.body;
+      let { slug } = req.body;
 
-      if (!nome || !slug) {
-        return res.status(400).json({ message: 'Nome e slug são obrigatórios.' });
+      if (!nome) {
+        return res.status(400).json({ message: 'O nome da categoria é obrigatório.' });
+      }
+
+      // Se o slug não foi enviado, gera automaticamente pelo nome
+      if (!slug) {
+        slug = gerarSlug(nome);
+      } else {
+        slug = gerarSlug(slug);
       }
 
       const categoriaExiste = await prisma.categoria.findFirst({
@@ -44,10 +63,38 @@ export const categoriaController = {
   async atualizar(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const { nome, slug } = req.body;
+      const { nome } = req.body;
+      let { slug } = req.body;
 
-      if (!nome || !slug) {
-        return res.status(400).json({ message: 'Nome e slug são obrigatórios.' });
+      if (!nome) {
+        return res.status(400).json({ message: 'O nome da categoria é obrigatório.' });
+      }
+
+      // Se o slug não foi enviado na atualização, gera com base no novo nome
+      if (!slug) {
+        slug = gerarSlug(nome);
+      } else {
+        slug = gerarSlug(slug);
+      }
+
+      // Verifica se o ID existe
+      const categoriaAtual = await prisma.categoria.findUnique({ where: { id: String(id) } });
+      if (!categoriaAtual) {
+        return res.status(404).json({ message: 'Categoria não encontrada.' });
+      }
+
+      // Verifica se já existe outra categoria com o mesmo nome ou slug
+      const categoriaConflitante = await prisma.categoria.findFirst({
+        where: {
+          AND: [
+            { id: { not: String(id) } },
+            { OR: [{ nome }, { slug }] }
+          ]
+        },
+      });
+
+      if (categoriaConflitante) {
+        return res.status(400).json({ message: 'Já existe outra categoria com este nome ou slug.' });
       }
 
       const categoriaAtualizada = await prisma.categoria.update({
@@ -62,31 +109,75 @@ export const categoriaController = {
     }
   },
 
-  async excluir(req: Request, res: Response) {
+  async inativar(req: Request, res: Response) {
     try {
-      const { id } = req.params;
+      const id = String(req.params.id);
 
-      const categoria = await prisma.categoria.findUnique({ where: { id: String(id) } });
-      if (!categoria) {
-        return res.status(404).json({ message: 'Categoria não encontrada.' });
-      }
-
-      const produtosVinculados = await prisma.produto.count({
-        where: { categoryId: String(id) },
+      // 1. Inativa a categoria
+      const categoriaAtualizada = await prisma.categoria.update({
+        where: { id },
+        data: { ativo: false }
       });
 
-      if (produtosVinculados > 0) {
-        return res.status(400).json({
-          message: `Não é possível excluir esta categoria pois existem ${produtosVinculados} produto(s) vinculado(s) a ela.`
+      // 2. Busca todos os produtos vinculados a esta categoria
+      const produtosDaCategoria = await prisma.produto.findMany({
+        where: { categoryId: id },
+        select: { id: true }
+      });
+
+      const produtoIds = produtosDaCategoria.map(p => p.id);
+
+      // 3. Inativa os estoques/variações de todos os produtos dessa categoria
+      if (produtoIds.length > 0) {
+        await prisma.produtoEstoque.updateMany({
+          where: { produtoId: { in: produtoIds } },
+          data: { ativo: false }
         });
       }
 
-      await prisma.categoria.delete({ where: { id: String(id) } });
-
-      return res.status(200).json({ message: 'Categoria excluída com sucesso.' });
+      return res.status(200).json({ 
+        message: 'Categoria e seus produtos vinculados foram inativados com sucesso!',
+        categoria: categoriaAtualizada 
+      });
     } catch (error) {
-      console.error('Erro ao excluir categoria:', error);
-      return res.status(500).json({ message: 'Erro interno ao excluir categoria.' });
+      console.error('Erro ao inativar categoria:', error);
+      return res.status(500).json({ message: 'Erro interno ao inativar categoria.' });
+    }
+  },
+
+  async ativar(req: Request, res: Response) {
+    try {
+      const id = String(req.params.id);
+
+      // 1. Ativa a categoria
+      const categoriaAtualizada = await prisma.categoria.update({
+        where: { id },
+        data: { ativo: true }
+      });
+
+      // 2. Busca todos os produtos vinculados a esta categoria
+      const produtosDaCategoria = await prisma.produto.findMany({
+        where: { categoryId: id },
+        select: { id: true }
+      });
+
+      const produtoIds = produtosDaCategoria.map(p => p.id);
+
+      // 3. Reativa os estoques/variações de todos os produtos dessa categoria, liberando novamente o controle de estoque
+      if (produtoIds.length > 0) {
+        await prisma.produtoEstoque.updateMany({
+          where: { produtoId: { in: produtoIds } },
+          data: { ativo: true }
+        });
+      }
+
+      return res.status(200).json({ 
+        message: 'Categoria e seus produtos vinculados foram ativados com sucesso!',
+        categoria: categoriaAtualizada 
+      });
+    } catch (error) {
+      console.error('Erro ao ativar categoria:', error);
+      return res.status(500).json({ message: 'Erro interno ao ativar categoria.' });
     }
   },
 };

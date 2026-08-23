@@ -34,6 +34,9 @@ model Categoria {
   id        String    @id @default(uuid())
   nome      String    @unique
   slug      String    @unique
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt 
   produtos  Produto[]
 
   @@map("categorias")
@@ -63,6 +66,7 @@ model Produto {
   nome        String           @db.VarChar(100) // Máximo 100 caracteres
   preco       Decimal          @db.Decimal(10, 2) // Preço monetário
   descricao   String?          @db.Text
+  ativo       Boolean       @default(true) // <--- Adicione esta linha aqui
   categoryId  String
   categoria   Categoria        @relation(fields: [categoryId], references: [id])
   

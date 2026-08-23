@@ -7,14 +7,8 @@ export const produtoController = {
   async listar(req: Request, res: Response) {
     try {
       const produtos = await prisma.produto.findMany({
-        where: {
-          estores: undefined, // Mantendo a clareza para aplicar o filtro de estoques ativos abaixo:
-          estoques: {
-            some: {
-              ativo: true, // Traz apenas produtos que possuem pelo menos uma variação ativa
-            },
-          },
-        },
+        // Removido o filtro restritivo "estoques: { some: { ativo: true } }" 
+        // para permitir que produtos inativados/sazonais continuem aparecendo na vitrine.
         include: {
           categoria: true,
           imagens: true,

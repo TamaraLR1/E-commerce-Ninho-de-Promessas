@@ -6,6 +6,7 @@ const router = Router();
 router.get('/categorias', categoriaController.listar);
 router.post('/categorias', categoriaController.criar);
 router.put('/categorias/:id', categoriaController.atualizar);
-router.delete('/categorias/:id', categoriaController.excluir);
+router.patch('/categorias/:id/inativar', categoriaController.inativar);
+router.patch('/categorias/:id/ativar', categoriaController.ativar);
 
 export default router;

@@ -1429,3 +1429,27 @@
 .stockFilterBtnActive:hover {
   background-color: #1d4ed8;
 }
+
+/* Estilo para o card inativo */
+.card-produto.inativo {
+  opacity: 0.65;
+  filter: grayscale(80%);
+  position: relative;
+  border-color: #d1d5db;
+}
+
+/* Etiqueta indicativa de produto inativo */
+.card-produto.inativo::before {
+  content: "INATIVO";
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background-color: #ef4444;
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+  z-index: 2;
+}

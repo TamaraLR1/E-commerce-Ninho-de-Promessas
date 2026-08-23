@@ -15,6 +15,7 @@ interface ProductMaster {
   colors: any[];
   rawSizes?: { tamanhoId: string; corId?: string; estoque?: number; ativo?: boolean; tamanho?: { nome: string }; cor?: { nome: string } }[];
   rawColors?: { corId: string; id?: string; cor?: { nome: string }; nome?: string }[];
+  ativo?: boolean | number;
 }
 
 interface StockMovement {
@@ -32,12 +33,14 @@ interface Categoria {
   id: string;
   nome: string;
   slug: string;
+  ativo?: boolean;
 }
 
 interface Tamanho {
   id: string;
   nome: string;
   slug: string;
+  ativo?: boolean;
 }
 
 interface Cor {
@@ -45,13 +48,14 @@ interface Cor {
   nome: string;
   slug: string;
   hex?: string;
+  ativo?: boolean;
 }
 
 interface MotivoEstoque {
   id: string;
   nome: string;
   tipo: 'ENTRADA' | 'SAIDA';
-  ativo?: boolean; // Adicionado para suportar a exclusão lógica
+  ativo?: boolean;
 }
 
 interface ColorSizeConfig {
@@ -201,7 +205,8 @@ export const AdminDashboard: React.FC = () => {
         const data = await response.json();
         setCategoriasList(data);
         if (data.length > 0 && !newCategoryId) {
-          setNewCategoryId(data[0].id);
+          const primeiraAtiva = data.find((c: Categoria) => c.ativo !== false);
+          if (primeiraAtiva) setNewCategoryId(primeiraAtiva.id);
         }
       }
     } catch (err) {
@@ -279,7 +284,8 @@ export const AdminDashboard: React.FC = () => {
             sizes: estoqueList.map((t: any) => t.tamanho?.nome || t.tamanhoId),
             colors: coresFormatadas.length > 0 ? coresFormatadas : (p.cores ? p.cores.map((c: any) => ({ nome: c.cor?.nome || c.nome, hex: c.cor?.hex || '#000000' })) : []),
             rawSizes: estoqueList,
-            rawColors: p.cores || []
+            rawColors: p.cores || [],
+            ativo: p.ativo // Mapeia a flag ativo do produto (ex: 0 ou 1, true ou false)
           };
         });
         setProducts(formattedProducts);
@@ -321,6 +327,28 @@ export const AdminDashboard: React.FC = () => {
       .replace(/\s+/g, '-');
   };
 
+  const handleToggleAtivoProduto = async (productId: string, statusAtual: boolean | number) => {
+    const novoStatus = (statusAtual === 0 || statusAtual === false) ? 1 : 0;
+
+    try {
+      const response = await fetch(`${API_URL}/produtos/${productId}/inativar`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Erro ao alterar o status do produto.');
+
+      // Atualiza o estado local instantaneamente na tela
+      setProducts(prevProducts => 
+        prevProducts.map(p => p.id === productId ? { ...p, ativo: novoStatus } : p)
+      );
+    } catch (err: any) {
+      alert(err.message || 'Erro ao conectar com o servidor.');
+    }
+  };
+
   const handleSaveCategoria = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!novaCategoriaNome) return;
@@ -359,19 +387,25 @@ export const AdminDashboard: React.FC = () => {
     setNovaCategoriaNome(cat.nome);
   };
 
-  const handleDeleteCategoria = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir esta categoria?')) return;
+  const handleInativarCategoria = async (cat: Categoria) => {
+    const estaAtiva = cat.ativo !== false;
+    const acaoTexto = estaAtiva ? 'inativar' : 'ativar';
+    
+    if (!window.confirm(`Tem certeza que deseja ${acaoTexto} esta categoria?`)) return;
+
     try {
-      const response = await fetch(`${API_URL}/categorias/${id}`, {
-        method: 'DELETE',
+      const endpoint = estaAtiva ? 'inativar' : 'ativar';
+      const response = await fetch(`${API_URL}/categorias/${cat.id}/${endpoint}`, {
+        method: 'PATCH',
         credentials: 'include',
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Erro ao excluir categoria.');
-      alert('Categoria excluída com sucesso!');
+      if (!response.ok) throw new Error(data.message || `Erro ao ${acaoTexto} a categoria.`);
+      
+      alert(data.message || `Categoria ${acaoTexto === 'inativar' ? 'inativada' : 'ativada'} com sucesso!`);
       carregarCategorias();
     } catch (err: any) {
-      alert(err.message || 'Erro ao excluir categoria.');
+      alert(err.message || 'Erro ao conectar com o servidor.');
     }
   };
 
@@ -413,19 +447,20 @@ export const AdminDashboard: React.FC = () => {
     setNovoTamanhoNome(tam.nome);
   };
 
-  const handleDeleteTamanho = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir este tamanho?')) return;
+  const handleInativarTamanho = async (id: string) => {
+    if (!window.confirm('Tem certeza que deseja alterar o status (inativar/ativar) deste tamanho?')) return;
     try {
-      const response = await fetch(`${API_URL}/tamanhos/${id}`, {
-        method: 'DELETE',
+      const response = await fetch(`${API_URL}/tamanhos/${id}/inativar`, {
+        method: 'PATCH',
         credentials: 'include',
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Erro ao excluir tamanho.');
-      alert('Tamanho excluído com sucesso!');
+      if (!response.ok) throw new Error(data.message || 'Erro ao alterar o status do tamanho.');
+      
+      alert(data.message || 'Status do tamanho alterado com sucesso!');
       carregarTamanhos();
     } catch (err: any) {
-      alert(err.message || 'Erro ao excluir tamanho.');
+      alert(err.message || 'Erro ao conectar com o servidor.');
     }
   };
 
@@ -469,19 +504,20 @@ export const AdminDashboard: React.FC = () => {
     setNovaCorHex(cor.hex || '#000000');
   };
 
-  const handleDeleteCor = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir esta cor?')) return;
+  const handleInativarCor = async (id: string) => {
+    if (!window.confirm('Tem certeza que deseja alterar o status (inativar/ativar) desta cor?')) return;
     try {
-      const response = await fetch(`${API_URL}/cores/${id}`, {
-        method: 'DELETE',
+      const response = await fetch(`${API_URL}/cores/${id}/inativar`, {
+        method: 'PATCH',
         credentials: 'include',
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Erro ao excluir cor.');
-      alert('Cor excluída com sucesso!');
+      if (!response.ok) throw new Error(data.message || 'Erro ao alterar o status da cor.');
+      
+      alert(data.message || 'Status da cor alterado com sucesso!');
       carregarCores();
     } catch (err: any) {
-      alert(err.message || 'Erro ao excluir cor.');
+      alert(err.message || 'Erro ao conectar com o servidor.');
     }
   };
 
@@ -528,7 +564,6 @@ export const AdminDashboard: React.FC = () => {
     setNovoMotivoTipo(motivo.tipo);
   };
 
-  // Função atualizada para realizar a exclusão lógica (inativação) via PATCH
   const handleInativarMotivo = async (id: string) => {
     if (!window.confirm('Tem certeza que deseja alterar o status (inativar/ativar) deste motivo de estoque?')) return;
     try {
@@ -620,7 +655,7 @@ export const AdminDashboard: React.FC = () => {
   const handleSelectAllSizesForColor = (corId: string) => {
     setColorSizeConfigs(prev => prev.map(config => {
       if (config.corId === corId) {
-        const todosIds = tamanhosList.map(t => t.id);
+        const todosIds = tamanhosList.filter(t => t.ativo !== false).map(t => t.id);
         const novosEstoques = { ...(config.estoques || {}) };
         todosIds.forEach(id => {
           if (!novosEstoques[id]) novosEstoques[id] = '';
@@ -1082,17 +1117,17 @@ export const AdminDashboard: React.FC = () => {
                   <label>Categoria</label>
                   <select value={newCategoryId} onChange={e => setNewCategoryId(e.target.value)} required>
                     <option value="">Selecione uma categoria...</option>
-                    {categoriasList.map(cat => <option key={cat.id} value={cat.id}>{cat.nome}</option>)}
+                    {categoriasList.filter(cat => cat.ativo !== false).map(cat => <option key={cat.id} value={cat.id}>{cat.nome}</option>)}
                   </select>
                 </div>
 
                 <div className={styles.group}>
                   <label>1. Selecione as Cores / Estampas Disponíveis</label>
                   <div className={styles.sizesGrid}>
-                    {coresList.length === 0 ? (
-                      <p className={styles.emptyNotice}>Nenhuma cor cadastrada. Vá na aba "Gerenciar Cores" primeiro.</p>
+                    {coresList.filter(c => c.ativo !== false).length === 0 ? (
+                      <p className={styles.emptyNotice}>Nenhuma cor ativa cadastrada. Vá na aba "Gerenciar Cores" primeiro.</p>
                     ) : (
-                      coresList.map(cor => (
+                      coresList.filter(c => c.ativo !== false).map(cor => (
                         <label key={cor.id} className={styles.sizeCheckboxLabel}>
                           <input 
                             type="checkbox" 
@@ -1171,11 +1206,11 @@ export const AdminDashboard: React.FC = () => {
                               </div>
                             </div>
 
-                            {tamanhosList.length === 0 ? (
-                              <p className={styles.emptyNotice}>Nenhum tamanho cadastrado no sistema.</p>
+                            {tamanhosList.filter(t => t.ativo !== false).length === 0 ? (
+                              <p className={styles.emptyNotice}>Nenhum tamanho ativo cadastrado no sistema.</p>
                             ) : (
                               <div className={styles.sizeConfigGrid}>
-                                {tamanhosList.map(tam => {
+                                {tamanhosList.filter(t => t.ativo !== false).map(tam => {
                                   const isChecked = configCurrent.tamanhosIds.includes(tam.id);
                                   const estoqueValor = configCurrent.estoques?.[tam.id] || '';
 
@@ -1274,7 +1309,7 @@ export const AdminDashboard: React.FC = () => {
                   </button>
                 )}
               </div>
-              <p className={styles.infoText}>Cadastre novas categorias para organizar os produtos no backend ou edite/exclua as existentes.</p>
+              <p className={styles.infoText}>Cadastre novas categorias para organizar os produtos no backend ou altere o status de ativação das existentes.</p>
               
               {categoriaError && <div className={styles.errorTextNotice}>{categoriaError}</div>}
 
@@ -1304,22 +1339,43 @@ export const AdminDashboard: React.FC = () => {
                   <p className={styles.emptyNotice}>Nenhuma categoria cadastrada ainda.</p>
                 ) : (
                   <ul className={styles.simpleDataList}>
-                    {categoriasList.map(cat => (
-                      <li key={cat.id} className={styles.simpleDataListItem} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <span><strong>{cat.nome}</strong></span>
-                          <code className={styles.slugCodeBadge} style={{ marginLeft: '10px' }}>slug: {cat.slug}</code>
-                        </div>
-                        <div className={styles.cardActions} style={{ display: 'flex', gap: '8px' }}>
-                          <button type="button" onClick={() => handleStartEditCategoria(cat)} className={styles.btnEditTable}>
-                            ✏️ Editar
-                          </button>
-                          <button type="button" onClick={() => handleDeleteCategoria(cat.id)} className={styles.btnDeleteTable}>
-                            🗑️ Excluir
-                          </button>
-                        </div>
-                      </li>
-                    ))}
+                    {categoriasList.map(cat => {
+                      const estaAtivo = cat.ativo !== false;
+                      return (
+                        <li 
+                          key={cat.id} 
+                          className={styles.simpleDataListItem} 
+                          style={{ 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center',
+                            opacity: estaAtivo ? 1 : 0.6,
+                            backgroundColor: estaAtivo ? 'transparent' : '#f1f5f9'
+                          }}
+                        >
+                          <div>
+                            <span>
+                              <strong>{cat.nome}</strong>
+                              {!estaAtivo && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>(Inativo)</span>}
+                            </span>
+                            <code className={styles.slugCodeBadge} style={{ marginLeft: '10px' }}>slug: {cat.slug}</code>
+                          </div>
+                          <div className={styles.cardActions} style={{ display: 'flex', gap: '8px' }}>
+                            <button type="button" onClick={() => handleStartEditCategoria(cat)} className={styles.btnEditTable}>
+                              ✏️ Editar
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => handleInativarCategoria(cat)} 
+                              className={styles.btnDeleteTable}
+                              style={{ backgroundColor: estaAtivo ? '#ef4444' : '#10b981', color: '#fff' }}
+                            >
+                              {estaAtivo ? '🚫 Inativar' : '✅ Ativar'}
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
@@ -1338,7 +1394,7 @@ export const AdminDashboard: React.FC = () => {
                   </button>
                 )}
               </div>
-              <p className={styles.infoText}>Cadastre variações de tamanhos (ex: P, M, G, 1 ano, 2 anos) ou edite/exclua existentes.</p>
+              <p className={styles.infoText}>Cadastre variações de tamanhos (ex: P, M, G, 1 ano, 2 anos) ou altere o status de ativação.</p>
               
               {tamanhoError && <div className={styles.errorTextNotice}>{tamanhoError}</div>}
 
@@ -1368,22 +1424,43 @@ export const AdminDashboard: React.FC = () => {
                   <p className={styles.emptyNotice}>Nenhum tamanho cadastrado ainda.</p>
                 ) : (
                   <ul className={styles.simpleDataList}>
-                    {tamanhosList.map(tam => (
-                      <li key={tam.id} className={styles.simpleDataListItem} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <span><strong>{tam.nome}</strong></span>
-                          <code className={styles.slugCodeBadge} style={{ marginLeft: '10px' }}>slug: {tam.slug}</code>
-                        </div>
-                        <div className={styles.cardActions} style={{ display: 'flex', gap: '8px' }}>
-                          <button type="button" onClick={() => handleStartEditTamanho(tam)} className={styles.btnEditTable}>
-                            ✏️ Editar
-                          </button>
-                          <button type="button" onClick={() => handleDeleteTamanho(tam.id)} className={styles.btnDeleteTable}>
-                            🗑️ Excluir
-                          </button>
-                        </div>
-                      </li>
-                    ))}
+                    {tamanhosList.map(tam => {
+                      const estaAtivo = tam.ativo !== false;
+                      return (
+                        <li 
+                          key={tam.id} 
+                          className={styles.simpleDataListItem} 
+                          style={{ 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center',
+                            opacity: estaAtivo ? 1 : 0.6,
+                            backgroundColor: estaAtivo ? 'transparent' : '#f1f5f9'
+                          }}
+                        >
+                          <div>
+                            <span>
+                              <strong>{tam.nome}</strong>
+                              {!estaAtivo && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>(Inativo)</span>}
+                            </span>
+                            <code className={styles.slugCodeBadge} style={{ marginLeft: '10px' }}>slug: {tam.slug}</code>
+                          </div>
+                          <div className={styles.cardActions} style={{ display: 'flex', gap: '8px' }}>
+                            <button type="button" onClick={() => handleStartEditTamanho(tam)} className={styles.btnEditTable}>
+                              ✏️ Editar
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => handleInativarTamanho(tam.id)} 
+                              className={styles.btnDeleteTable}
+                              style={{ backgroundColor: estaAtivo ? '#ef4444' : '#10b981', color: '#fff' }}
+                            >
+                              {estaAtivo ? '🚫 Inativar' : '✅ Ativar'}
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
@@ -1402,7 +1479,7 @@ export const AdminDashboard: React.FC = () => {
                   </button>
                 )}
               </div>
-              <p className={styles.infoText}>Cadastre as opções de cores disponíveis para os produtos ou edite/exclua existentes.</p>
+              <p className={styles.infoText}>Cadastre as opções de cores disponíveis para os produtos ou altere o status de ativação.</p>
               
               {corError && <div className={styles.errorTextNotice}>{corError}</div>}
 
@@ -1450,28 +1527,49 @@ export const AdminDashboard: React.FC = () => {
                   <p className={styles.emptyNotice}>Nenhuma cor cadastrada ainda.</p>
                 ) : (
                   <ul className={styles.simpleDataList}>
-                    {coresList.map(cor => (
-                      <li key={cor.id} className={styles.simpleDataListItem} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div className={styles.colorItemLeft}>
-                          {cor.hex && (
-                            <span 
-                              className={styles.colorDotIndicator}
-                              style={{ backgroundColor: cor.hex }}
-                            ></span>
-                          )}
-                          <span><strong>{cor.nome}</strong></span>
-                          <code className={styles.slugCodeBadge} style={{ marginLeft: '10px' }}>slug: {cor.slug}</code>
-                        </div>
-                        <div className={styles.cardActions} style={{ display: 'flex', gap: '8px' }}>
-                          <button type="button" onClick={() => handleStartEditCor(cor)} className={styles.btnEditTable}>
-                            ✏️ Editar
-                          </button>
-                          <button type="button" onClick={() => handleDeleteCor(cor.id)} className={styles.btnDeleteTable}>
-                            🗑️ Excluir
-                          </button>
-                        </div>
-                      </li>
-                    ))}
+                    {coresList.map(cor => {
+                      const estaAtivo = cor.ativo !== false;
+                      return (
+                        <li 
+                          key={cor.id} 
+                          className={styles.simpleDataListItem} 
+                          style={{ 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center',
+                            opacity: estaAtivo ? 1 : 0.6,
+                            backgroundColor: estaAtivo ? 'transparent' : '#f1f5f9'
+                          }}
+                        >
+                          <div className={styles.colorItemLeft}>
+                            {cor.hex && (
+                              <span 
+                                className={styles.colorDotIndicator}
+                                style={{ backgroundColor: cor.hex }}
+                              ></span>
+                            )}
+                            <span>
+                              <strong>{cor.nome}</strong>
+                              {!estaAtivo && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>(Inativo)</span>}
+                            </span>
+                            <code className={styles.slugCodeBadge} style={{ marginLeft: '10px' }}>slug: {cor.slug}</code>
+                          </div>
+                          <div className={styles.cardActions} style={{ display: 'flex', gap: '8px' }}>
+                            <button type="button" onClick={() => handleStartEditCor(cor)} className={styles.btnEditTable}>
+                              ✏️ Editar
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => handleInativarCor(cor.id)} 
+                              className={styles.btnDeleteTable}
+                              style={{ backgroundColor: estaAtivo ? '#ef4444' : '#10b981', color: '#fff' }}
+                            >
+                              {estaAtivo ? '🚫 Inativar' : '✅ Ativar'}
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
@@ -1603,7 +1701,6 @@ export const AdminDashboard: React.FC = () => {
                             >
                               ✏️ Editar
                             </button>
-                            {/* Botão atualizado para acionar a Inativação Lógica */}
                             <button 
                               type="button" 
                               onClick={() => handleInativarMotivo(motivo.id)} 
@@ -1670,71 +1767,80 @@ export const AdminDashboard: React.FC = () => {
             <section className={styles.card}>
               <h3>Vitrine de Controle Comercial</h3>
               <div className={styles.catalogGrid}>
-                {filteredProducts.map(prod => (
-                  <div 
-                    key={prod.id} 
-                    className={`${styles.catalogCard} ${!prod.isVisible ? styles.cardHidden : ''}`}
-                    onClick={() => {
-                      setSelectedProductDetails(prod);
-                      setActiveImageIndex(0);
-                      const primeiraCorId = prod.colors?.[0]?.id || prod.rawSizes?.find(s => s.corId)?.corId || null;
-                      setSelectedColorForDetails(primeiraCorId);
-                    }}
-                  >
-                    <div className={styles.carouselContainer}>
-                      <img src={prod.images[0]} alt="" className={styles.catalogCardImage} />
-                    </div>
-                    <div className={styles.catalogCardInfo}>
-                      <span className={styles.badgeCategory}>{prod.category}</span>
-                      <h4>{prod.name}</h4>
-          
-                      <div className={styles.priceDisplayArea}>
-                        {prod.hasOffer ? (
-                          <div className={styles.priceContainer}>
-                            <span className={styles.oldPrice}>De: R$ {prod.originalPrice.toFixed(2)}</span>
-                            <span className={styles.newPrice}>Por: R$ {prod.offerPrice.toFixed(2)}</span>
-                          </div>
-                        ) : (
-                          <span className={styles.normalPrice}>R$ {prod.originalPrice.toFixed(2)}</span>
-                        )}
+                {filteredProducts.map(prod => {
+                  // 1. Localiza a categoria do produto na lista carregada da API
+                  const categoriaEncontrada = categoriasList.find(c => c.nome === prod.category);
+                  const categoriaInativa = categoriaEncontrada?.ativo === false;
+
+                  // 2. O card só fica inativo se a categoria estiver inativa OU se o produto estiver explicitamente desativado (0 ou false)
+                  const isDesativado = categoriaInativa || prod.ativo === 0 || prod.ativo === false;
+
+                  return (
+                    <div 
+                      key={prod.id} 
+                      className={`${styles.catalogCard} ${!prod.isVisible ? styles.cardHidden : ''} ${isDesativado ? styles['card-produto'] + ' ' + styles.inativo : ''}`}
+                      onClick={() => {
+                        setSelectedProductDetails(prod);
+                        setActiveImageIndex(0);
+                        const primeiraCorId = prod.colors?.[0]?.id || prod.rawSizes?.find(s => s.corId)?.corId || null;
+                        setSelectedColorForDetails(primeiraCorId);
+                      }}
+                    >
+                      <div className={styles.carouselContainer}>
+                        <img src={prod.images[0]} alt="" className={styles.catalogCardImage} />
                       </div>
-                      
-                      <div className={styles.controlsRow} onClick={(e) => e.stopPropagation()}>
-                        <label className={styles.toggleLabel}>
-                          <input type="checkbox" checked={prod.isVisible} onChange={() => setProducts(products.map(p => p.id === prod.id ? { ...p, isVisible: !p.isVisible } : p))} />
-                          {prod.isVisible ? '🟢 Visível' : '🔴 Oculto'}
-                        </label>
+                      <div className={styles.catalogCardInfo}>
+                        <span className={styles.badgeCategory}>{prod.category}</span>
+                        <h4>{prod.name}</h4>
 
-                        <button 
-                          type="button"
-                          onClick={() => handleCopyId(prod.id)}
-                          className={styles.idCopyButton}
-                          title={`Copiar ID completo: ${prod.id}`}
-                        >
-                          {copiedId === prod.id ? '✅ ID Copiado!' : `📋 ID: ${prod.id.slice(0, 6)}...`}
-                        </button>
-                      
-                        <div className={styles.cardActions}>
-                          <button 
-                            type="button" 
-                            onClick={() => handleStartEdit(prod)}
-                            className={styles.btnEditTable}
-                          >
-                            ✏️ Editar
-                          </button>
+                        <div className={styles.priceDisplayArea}>
+                          {prod.hasOffer ? (
+                            <div className={styles.priceContainer}>
+                              <span className={styles.oldPrice}>De: R$ {prod.originalPrice.toFixed(2)}</span>
+                              <span className={styles.newPrice}>Por: R$ {prod.offerPrice.toFixed(2)}</span>
+                            </div>
+                          ) : (
+                            <span className={styles.normalPrice}>R$ {prod.originalPrice.toFixed(2)}</span>
+                          )}
+                        </div>
+                        
+                        <div className={styles.controlsRow} onClick={(e) => e.stopPropagation()}>
+                          <label className={styles.toggleLabel}>
+                            <input type="checkbox" checked={prod.isVisible} onChange={() => setProducts(products.map(p => p.id === prod.id ? { ...p, isVisible: !p.isVisible } : p))} />
+                            {prod.isVisible ? '🟢 Visível' : '🔴 Oculto'}
+                          </label>
 
                           <button 
-                            type="button" 
-                            onClick={() => handleDeleteProductDirect(prod.id)}
-                            className={styles.btnDeleteTable}
+                            type="button"
+                            onClick={() => handleCopyId(prod.id)}
+                            className={styles.idCopyButton}
+                            title={`Copiar ID completo: ${prod.id}`}
                           >
-                            🗑️ Excluir
+                            {copiedId === prod.id ? '✅ ID Copiado!' : `📋 ID: ${prod.id.slice(0, 6)}...`}
                           </button>
+                        
+                          <div className={styles.cardActions}>
+                            <button 
+                              type="button" 
+                              onClick={() => handleStartEdit(prod)}
+                              className={styles.btnEditTable}
+                            >
+                              ✏️ Editar
+                            </button>
+
+                            <button 
+                              type="button" 
+                              onClick={() => handleDeleteProductDirect(prod.id)}
+                              className={styles.btnDeleteTable}
+                            >
+                              🗑️ Excluir
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
 
@@ -2000,7 +2106,6 @@ export const AdminDashboard: React.FC = () => {
                                   
                                   const stockStatusClass = sizeItem.stock === 0 ? styles.redStock : sizeItem.stock <= 3 ? styles.yellowStock : styles.greenStock;
 
-                                  // Filtra apenas os motivos que estão ativos e correspondem ao tipo selecionado
                                   const motivosFiltrados = motivosEstoqueList.filter(m => m.tipo === stockType && m.ativo !== false);
 
                                   return (
