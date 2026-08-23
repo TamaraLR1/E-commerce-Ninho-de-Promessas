@@ -51,6 +51,7 @@ interface MotivoEstoque {
   id: string;
   nome: string;
   tipo: 'ENTRADA' | 'SAIDA';
+  ativo?: boolean; // Adicionado para suportar a exclusão lógica
 }
 
 interface ColorSizeConfig {
@@ -490,7 +491,6 @@ export const AdminDashboard: React.FC = () => {
     setMotivoError('');
     setMotivoLoading(true);
 
-    // Guarda a informação se era edição antes de limpar o ID
     const isEditing = Boolean(editingMotivoId);
 
     try {
@@ -512,7 +512,6 @@ export const AdminDashboard: React.FC = () => {
       setEditingMotivoId(null);
       carregarMotivosEstoque();
       
-      // Usa a constante salva anteriormente
       alert(isEditing ? 'Motivo atualizado com sucesso!' : 'Motivo cadastrado com sucesso!');
     } catch (err: any) {
       setMotivoError(err.message || 'Erro ao conectar com o servidor.');
@@ -522,7 +521,6 @@ export const AdminDashboard: React.FC = () => {
   };  
 
   const handleStartEditMotivo = (motivo: any) => {
-    // Tenta pegar .id ou ._id caso o backend use o padrão do MongoDB
     const idToEdit = motivo.id || motivo._id;
   
     setEditingMotivoId(idToEdit);
@@ -530,19 +528,21 @@ export const AdminDashboard: React.FC = () => {
     setNovoMotivoTipo(motivo.tipo);
   };
 
-  const handleDeleteMotivo = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir este motivo de estoque?')) return;
+  // Função atualizada para realizar a exclusão lógica (inativação) via PATCH
+  const handleInativarMotivo = async (id: string) => {
+    if (!window.confirm('Tem certeza que deseja alterar o status (inativar/ativar) deste motivo de estoque?')) return;
     try {
-      const response = await fetch(`${API_URL}/motivos-estoque/${id}`, {
-        method: 'DELETE',
+      const response = await fetch(`${API_URL}/motivos-estoque/${id}/inativar`, {
+        method: 'PATCH',
         credentials: 'include',
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Erro ao excluir motivo.');
-      alert('Motivo excluído com sucesso!');
+      if (!response.ok) throw new Error(data.message || 'Erro ao alterar o status do motivo.');
+      
+      alert(data.message || 'Status do motivo alterado com sucesso!');
       carregarMotivosEstoque();
     } catch (err: any) {
-      alert(err.message || 'Erro ao excluir motivo.');
+      alert(err.message || 'Erro ao conectar com o servidor.');
     }
   };
 
@@ -971,7 +971,6 @@ export const AdminDashboard: React.FC = () => {
                 <p className={styles.emptyNotice}>Carregando dados do dashboard...</p>
               ) : dashboardData ? (
                 <>
-                  {/* CARDS DE INDICADORES */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', margin: '20px 0' }}>
                     <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                       <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>Produtos Ativos</p>
@@ -994,7 +993,6 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* TABELA DE ÚLTIMAS MOVIMENTAÇÕES */}
                   <div style={{ marginTop: '30px' }}>
                     <h4 className={styles.listSubheading}>Últimas Movimentações</h4>
                     {dashboardData.ultimasMovimentacoes.length === 0 ? (
@@ -1525,13 +1523,11 @@ export const AdminDashboard: React.FC = () => {
                 </button>
               </form>
 
-              {/* GUIA DE REFERÊNCIA DE MOTIVOS */}
               <div style={{ marginTop: '30px', borderTop: '2px dashed #cbd5e1', paddingTop: '20px' }}>
                 <h4 style={{ fontSize: '1rem', color: '#1e293b', marginBottom: '14px' }}>📖 Guia de Referência dos Motivos de Estoque</h4>
                 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
                   
-                  {/* Bloco Entradas */}
                   <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <h5 style={{ color: '#059669', fontSize: '0.95rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       📥 Motivos para Entrada de Estoque
@@ -1546,7 +1542,6 @@ export const AdminDashboard: React.FC = () => {
                     </ul>
                   </div>
 
-                  {/* Bloco Saídas */}
                   <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <h5 style={{ color: '#dc2626', fontSize: '0.95rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       📤 Motivos para Saída de Estoque
@@ -1570,35 +1565,57 @@ export const AdminDashboard: React.FC = () => {
                   <p className={styles.emptyNotice}>Nenhum motivo cadastrado ainda.</p>
                 ) : (
                   <ul className={styles.simpleDataList}>
-                    {motivosEstoqueList.map(motivo => (
-                      <li key={motivo.id} className={styles.simpleDataListItem} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span style={{
-                            padding: '2px 8px',
-                            borderRadius: '4px',
-                            fontSize: '0.7rem',
-                            fontWeight: 'bold',
-                            background: motivo.tipo === 'ENTRADA' ? '#d1fae5' : '#fee2e2',
-                            color: motivo.tipo === 'ENTRADA' ? '#065f46' : '#991b1b'
-                          }}>
-                            {motivo.tipo}
-                          </span>
-                          <span><strong>{motivo.nome}</strong></span>
-                        </div>
-                        <div className={styles.cardActions} style={{ display: 'flex', gap: '8px' }}>
-                          <button 
-                            type="button" 
-                            onClick={() => handleStartEditMotivo(motivo)} 
-                            className={styles.btnEditTable}
-                          >
-                            ✏️ Editar
-                          </button>
-                          <button type="button" onClick={() => handleDeleteMotivo(motivo.id)} className={styles.btnDeleteTable}>
-                            🗑️ Excluir
-                          </button>
-                        </div>
-                      </li>
-                    ))}
+                    {motivosEstoqueList.map(motivo => {
+                      const estaAtivo = motivo.ativo !== false;
+                      return (
+                        <li 
+                          key={motivo.id} 
+                          className={styles.simpleDataListItem} 
+                          style={{ 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center',
+                            opacity: estaAtivo ? 1 : 0.6,
+                            backgroundColor: estaAtivo ? 'transparent' : '#f1f5f9'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontSize: '0.7rem',
+                              fontWeight: 'bold',
+                              background: motivo.tipo === 'ENTRADA' ? '#d1fae5' : '#fee2e2',
+                              color: motivo.tipo === 'ENTRADA' ? '#065f46' : '#991b1b'
+                            }}>
+                              {motivo.tipo}
+                            </span>
+                            <span>
+                              <strong>{motivo.nome}</strong>
+                              {!estaAtivo && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>(Inativo)</span>}
+                            </span>
+                          </div>
+                          <div className={styles.cardActions} style={{ display: 'flex', gap: '8px' }}>
+                            <button 
+                              type="button" 
+                              onClick={() => handleStartEditMotivo(motivo)} 
+                              className={styles.btnEditTable}
+                            >
+                              ✏️ Editar
+                            </button>
+                            {/* Botão atualizado para acionar a Inativação Lógica */}
+                            <button 
+                              type="button" 
+                              onClick={() => handleInativarMotivo(motivo.id)} 
+                              className={styles.btnDeleteTable}
+                              style={{ backgroundColor: estaAtivo ? '#ef4444' : '#10b981', color: '#fff' }}
+                            >
+                              {estaAtivo ? '🚫 Inativar' : '✅ Ativar'}
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
@@ -1983,7 +2000,8 @@ export const AdminDashboard: React.FC = () => {
                                   
                                   const stockStatusClass = sizeItem.stock === 0 ? styles.redStock : sizeItem.stock <= 3 ? styles.yellowStock : styles.greenStock;
 
-                                  const motivosFiltrados = motivosEstoqueList.filter(m => m.tipo === stockType);
+                                  // Filtra apenas os motivos que estão ativos e correspondem ao tipo selecionado
+                                  const motivosFiltrados = motivosEstoqueList.filter(m => m.tipo === stockType && m.ativo !== false);
 
                                   return (
                                     <div key={sizeItem.size} className={styles.sizeConfigBox} style={{ background: '#fff', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>

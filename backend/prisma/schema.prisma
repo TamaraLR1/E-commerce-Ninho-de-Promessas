@@ -107,6 +107,11 @@ model MotivoEstoque {
   id            String                @id @default(uuid())
   nome          String                @unique
   tipo          String                // 'ENTRADA' ou 'SAIDA'
+  ativo     Boolean  @default(true) 
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt 
+  
   movimentacoes MovimentacaoEstoque[]
 
   @@map("motivos_estoque")

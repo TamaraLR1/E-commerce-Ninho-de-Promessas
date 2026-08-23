@@ -118,4 +118,40 @@ export const motivoController = {
       return res.status(500).json({ message: 'Erro interno ao atualizar motivo.' });
     }
   },
+  
+  async inativar(req: Request, res: Response) {
+    try {
+      const id  = String(req.params.id);
+
+      // Verifica se o motivo existe no banco
+      const motivoExistente = await prisma.motivoEstoque.findUnique({
+        where: { id },
+      });
+
+      if (!motivoExistente) {
+        return res.status(404).json({ message: 'Motivo de estoque não encontrado.' });
+      }
+
+      // Alterna o status de 'ativo' (exclusão lógica / inativação)
+      // Ou define explicitamente para 'false' caso queira apenas desativar:
+      const motivoAtualizado = await prisma.motivoEstoque.update({
+        where: { id },
+        data: {
+          ativo: !motivoExistente.ativo, // Se estiver ativo, inativa. Se estiver inativo, reativa.
+        },
+      });
+
+      const acao = motivoAtualizado.ativo ? 'reativado' : 'inativado';
+
+      return res.status(200).json({
+        message: `Motivo de estoque ${acao} com sucesso!`,
+        motivo: motivoAtualizado,
+      });
+
+    } catch (error) {
+      console.error('Erro ao inativar motivo de estoque:', error);
+      return res.status(500).json({ message: 'Erro interno ao alterar status do motivo.' });
+    }
+  },
 };
+
