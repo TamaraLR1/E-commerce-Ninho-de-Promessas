@@ -65,12 +65,22 @@ export const produtoController = {
         return res.status(400).json({ message: 'A categoria informada não existe.' });
       }
 
+      const tamanhosParsed = typeof tamanhos === 'string' ? JSON.parse(tamanhos) : tamanhos;
+
+      // Validação: Garante que o produto possui pelo menos uma variação válida de cor/tamanho
+      if (!tamanhosParsed || !Array.isArray(tamanhosParsed) || tamanhosParsed.length === 0) {
+        return res.status(400).json({ message: 'O produto deve conter pelo menos uma variação de cor e tamanho.' });
+      }
+
+      const possuiItemInvalido = tamanhosParsed.some((item: any) => !item.tamanhoId || String(item.tamanhoId).trim() === '');
+      if (possuiItemInvalido) {
+        return res.status(400).json({ message: 'Todas as variações cadastradas devem ter um tamanho válido.' });
+      }
+
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const imagensPayload = arquivos.map(file => ({
         url: `${baseUrl}/uploads/${file.filename}`
       }));
-
-      const tamanhosParsed = typeof tamanhos === 'string' ? JSON.parse(tamanhos) : tamanhos;
 
       const novoProduto = await prisma.produto.create({
         data: {
@@ -78,13 +88,13 @@ export const produtoController = {
           preco: precoNumerico,
           descricao: descricao || null,
           categoryId: String(categoryId),
-          estoques: tamanhosParsed && Array.isArray(tamanhosParsed) ? {
+          estoques: {
             create: tamanhosParsed.map((item: { tamanhoId: string; corId?: string; estoque?: number; quantidade?: number }) => ({
               tamanhoId: String(item.tamanhoId),
               corId: item.corId ? String(item.corId) : null,
               estoque: Number(item.estoque !== undefined ? item.estoque : (item.quantidade || 0)),
             })),
-          } : undefined,
+          },
           imagens: {
             create: imagensPayload,
           },
@@ -103,7 +113,7 @@ export const produtoController = {
     }
   },
 
-async atualizar(req: Request, res: Response) {
+  async atualizar(req: Request, res: Response) {
     try {
       const id = String(req.params.id);
       const { nome, preco, descricao, categoryId, tamanhos, imagensMantidas } = req.body;
@@ -116,6 +126,25 @@ async atualizar(req: Request, res: Response) {
 
       if (!produtoExistente) {
         return res.status(404).json({ message: 'Produto não encontrado.' });
+      }
+
+      const tamanhosParsed = typeof tamanhos === 'string' ? JSON.parse(tamanhos) : tamanhos;
+
+      // Validação: Garante que na edição não fiquem sem variações válidas
+      if (!tamanhosParsed || !Array.isArray(tamanhosParsed) || tamanhosParsed.length === 0) {
+        return res.status(400).json({ message: 'O produto deve conter pelo menos uma variação de cor e tamanho.' });
+      }
+
+      const itensEnviados = tamanhosParsed
+        .filter((item: any) => item && item.tamanhoId && String(item.tamanhoId).trim() !== '')
+        .map((item: any) => ({
+          tamanhoId: String(item.tamanhoId),
+          corId: item.corId && String(item.corId).trim() !== '' ? String(item.corId) : null,
+          estoque: Number(item.estoque || 0)
+        }));
+
+      if (itensEnviados.length === 0) {
+        return res.status(400).json({ message: 'É obrigatório selecionar ao menos um tamanho e cor válidos.' });
       }
 
       // Parse das imagens mantidas
@@ -162,7 +191,6 @@ async atualizar(req: Request, res: Response) {
         : [];
 
       const precoNumerico = preco !== undefined ? Number(preco) : produtoExistente.preco;
-      const tamanhosParsed = typeof tamanhos === 'string' ? JSON.parse(tamanhos) : tamanhos;
 
       // 2. Atualizar dados gerais do produto e novas imagens
       await prisma.produto.update({
@@ -179,107 +207,91 @@ async atualizar(req: Request, res: Response) {
       });
 
       // 3. Gerenciamento inteligente do Estoque / Vínculos
-      if (tamanhosParsed && Array.isArray(tamanhosParsed)) {
-        
-        // Filtra apenas itens que possuem um tamanhoId válido (ignora nulos, vazios ou indefinidos)
-        const itensEnviados = tamanhosParsed
-          .filter((item: any) => item && item.tamanhoId && String(item.tamanhoId).trim() !== '')
-          .map((item: any) => ({
-            tamanhoId: String(item.tamanhoId),
-            corId: item.corId && String(item.corId).trim() !== '' ? String(item.corId) : null,
-            estoque: Number(item.estoque || 0)
-          }));
+      for (const estoqueAtual of produtoExistente.estoques) {
+        const tAtualId = String(estoqueAtual.tamanhoId || '');
+        const cAtualId = estoqueAtual.corId ? String(estoqueAtual.corId) : null;
 
-        // Percorre o estoque que já está salvo no banco para este produto
-        for (const estoqueAtual of produtoExistente.estoques) {
-          const tAtualId = String(estoqueAtual.tamanhoId || '');
-          const cAtualId = estoqueAtual.corId ? String(estoqueAtual.corId) : null;
+        const aindaEnviado = itensEnviados.some(
+          (item) => item.tamanhoId === tAtualId && item.corId === cAtualId
+        );
 
-          const aindaEnviado = itensEnviados.some(
+        if (!aindaEnviado) {
+          const corObj = estoqueAtual.corId ? await prisma.cor.findUnique({ where: { id: estoqueAtual.corId } }) : null;
+          const corNomeBusca = corObj?.nome || 'Padrão';
+
+          const tamanhoObj = estoqueAtual.tamanhoId ? await prisma.tamanho.findUnique({ where: { id: estoqueAtual.tamanhoId } }) : null;
+          const tamanhoNomeBusca = tamanhoObj?.nome || '';
+
+          const movimentacoesCount = await prisma.movimentacaoEstoque.count({
+            where: {
+              produtoId: id,
+              corNome: corNomeBusca,
+              tamanho: tamanhoNomeBusca
+            }
+          });
+
+          if (movimentacoesCount === 0) {
+            await prisma.produtoEstoque.delete({
+              where: { id: estoqueAtual.id }
+            });
+          } else {
+            await prisma.produtoEstoque.update({
+              where: { id: estoqueAtual.id },
+              data: { ativo: false }
+            });
+          }
+        } else {
+          const itemEncontrado = itensEnviados.find(
             (item) => item.tamanhoId === tAtualId && item.corId === cAtualId
           );
 
-          if (!aindaEnviado) {
-            const corObj = estoqueAtual.corId ? await prisma.cor.findUnique({ where: { id: estoqueAtual.corId } }) : null;
-            const corNomeBusca = corObj?.nome || 'Padrão';
-
-            const tamanhoObj = estoqueAtual.tamanhoId ? await prisma.tamanho.findUnique({ where: { id: estoqueAtual.tamanhoId } }) : null;
-            const tamanhoNomeBusca = tamanhoObj?.nome || '';
-
-            const movimentacoesCount = await prisma.movimentacaoEstoque.count({
-              where: {
-                produtoId: id,
-                corNome: corNomeBusca,
-                tamanho: tamanhoNomeBusca
-              }
-            });
-
-            if (movimentacoesCount === 0) {
-              await prisma.produtoEstoque.delete({
-                where: { id: estoqueAtual.id }
-              });
-            } else {
-              await prisma.produtoEstoque.update({
-                where: { id: estoqueAtual.id },
-                data: { ativo: false }
-              });
+          await prisma.produtoEstoque.update({
+            where: { id: estoqueAtual.id },
+            data: { 
+              ativo: true,
+              estoque: itemEncontrado ? itemEncontrado.estoque : estoqueAtual.estoque
             }
-          } else {
-            // CORREÇÃO AQUI: Pega o item correspondente enviado na requisição para utilizar o novo estoque digitado
-            const itemEncontrado = itensEnviados.find(
-              (item) => item.tamanhoId === tAtualId && item.corId === cAtualId
-            );
-
-            await prisma.produtoEstoque.update({
-              where: { id: estoqueAtual.id },
-              data: { 
-                ativo: true,
-                estoque: itemEncontrado ? itemEncontrado.estoque : estoqueAtual.estoque
-              }
-            });
-          }
+          });
         }
+      }
 
-        // Adicionar novos itens ou reativar os que estavam com soft delete (ativo: false)
-        for (const itemNovo of itensEnviados) {
-          const estoqueInativoExistente = produtoExistente.estoques.find(
+      // Adicionar novos itens ou reativar os que estavam com soft delete (ativo: false)
+      for (const itemNovo of itensEnviados) {
+        const estoqueInativoExistente = produtoExistente.estoques.find(
+          e => String(e.tamanhoId) === itemNovo.tamanhoId && 
+               (e.corId ? String(e.corId) : null) === itemNovo.corId && 
+               e.ativo === false
+        );
+
+        if (estoqueInativoExistente) {
+          await prisma.produtoEstoque.update({
+            where: { id: estoqueInativoExistente.id },
+            data: {
+              ativo: true,
+              estoque: itemNovo.estoque
+            }
+          });
+        } else {
+          const jaExisteAtivo = produtoExistente.estoques.some(
             e => String(e.tamanhoId) === itemNovo.tamanhoId && 
                  (e.corId ? String(e.corId) : null) === itemNovo.corId && 
-                 e.ativo === false
+                 e.ativo === true
           );
 
-          if (estoqueInativoExistente) {
-            // Se já existia mas estava inativo, reativa e atualiza com o novo estoque informado
-            await prisma.produtoEstoque.update({
-              where: { id: estoqueInativoExistente.id },
+          if (!jaExisteAtivo) {
+            await prisma.produtoEstoque.create({
               data: {
-                ativo: true,
-                estoque: itemNovo.estoque
+                produtoId: id,
+                tamanhoId: itemNovo.tamanhoId,
+                corId: itemNovo.corId,
+                estoque: itemNovo.estoque,
+                ativo: true
               }
             });
-          } else {
-            const jaExisteAtivo = produtoExistente.estoques.some(
-              e => String(e.tamanhoId) === itemNovo.tamanhoId && 
-                   (e.corId ? String(e.corId) : null) === itemNovo.corId && 
-                   e.ativo === true
-            );
-
-            if (!jaExisteAtivo) {
-              await prisma.produtoEstoque.create({
-                data: {
-                  produtoId: id,
-                  tamanhoId: itemNovo.tamanhoId,
-                  corId: itemNovo.corId,
-                  estoque: itemNovo.estoque,
-                  ativo: true
-                }
-              });
-            }
           }
         }
       }
 
-      // IMPORTANTE: Filtrar apenas os estoques ativos para não retornar itens inativados na resposta de edição
       const produtoFinal = await prisma.produto.findUnique({
         where: { id },
         include: {

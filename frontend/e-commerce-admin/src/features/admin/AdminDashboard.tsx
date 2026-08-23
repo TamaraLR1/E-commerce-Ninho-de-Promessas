@@ -747,6 +747,18 @@ export const AdminDashboard: React.FC = () => {
       return;
     }
     
+    if (selectedColors.length === 0) {
+      alert('Selecione pelo menos uma cor/estampa para o produto.');
+      return;
+    }
+
+    // Validação: Garante que nenhuma cor selecionada fique sem nenhum tamanho marcado
+    const corSemTamanho = colorSizeConfigs.some(config => !config.tamanhosIds || config.tamanhosIds.length === 0);
+    if (corSemTamanho) {
+      alert('Todas as cores selecionadas devem ter pelo menos um tamanho marcado.');
+      return;
+    }
+
     const imagensAntigasMantidas = tempImages.filter(img => img.startsWith('http') || img.startsWith('/uploads/'));
     const totalImagensFinais = imagensAntigasMantidas.length + imageFiles.length;
     
@@ -757,11 +769,6 @@ export const AdminDashboard: React.FC = () => {
 
     if (totalImagensFinais > 10) {
       alert('Um produto pode ter no máximo 10 imagens.');
-      return;
-    }
-
-    if (selectedColors.length === 0) {
-      alert('Selecione pelo menos uma cor/estampa para o produto.');
       return;
     }
 
