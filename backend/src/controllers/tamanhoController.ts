@@ -85,4 +85,56 @@ export const tamanhoController = {
       return res.status(500).json({ message: 'Erro interno ao excluir tamanho.' });
     }
   },
+  
+  async inativar(req: Request, res: Response) {
+    try {
+      const id = String(req.params.id);
+
+      // 1. Inativa o tamanho globalmente
+      const tamanhoAtualizado = await prisma.tamanho.update({
+        where: { id },
+        data: { ativo: false }
+      });
+
+      // 2. Inativa em cascata todos os estoques vinculados a este tamanho
+      await prisma.produtoEstoque.updateMany({
+        where: { tamanhoId: id },
+        data: { ativo: false }
+      });
+
+      return res.status(200).json({ 
+        message: 'Tamanho e seus estoques vinculados foram inativados com sucesso!',
+        tamanho: tamanhoAtualizado 
+      });
+    } catch (error) {
+      console.error('Erro ao inativar tamanho:', error);
+      return res.status(500).json({ message: 'Erro interno ao inativar tamanho.' });
+    }
+  },
+
+  async ativar(req: Request, res: Response) {
+    try {
+      const id = String(req.params.id);
+
+      // 1. Ativa o tamanho globalmente
+      const tamanhoAtualizado = await prisma.tamanho.update({
+        where: { id },
+        data: { ativo: true }
+      });
+
+      // 2. Reativa os estoques vinculados a este tamanho
+      await prisma.produtoEstoque.updateMany({
+        where: { tamanhoId: id },
+        data: { ativo: true }
+      });
+
+      return res.status(200).json({ 
+        message: 'Tamanho e seus estoques vinculados foram ativados com sucesso!',
+        tamanho: tamanhoAtualizado 
+      });
+    } catch (error) {
+      console.error('Erro ao ativar tamanho:', error);
+      return res.status(500).json({ message: 'Erro interno ao ativar tamanho.' });
+    }
+  },
 };

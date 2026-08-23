@@ -285,7 +285,7 @@ export const AdminDashboard: React.FC = () => {
             colors: coresFormatadas.length > 0 ? coresFormatadas : (p.cores ? p.cores.map((c: any) => ({ nome: c.cor?.nome || c.nome, hex: c.cor?.hex || '#000000' })) : []),
             rawSizes: estoqueList,
             rawColors: p.cores || [],
-            ativo: p.ativo // Mapeia a flag ativo do produto (ex: 0 ou 1, true ou false)
+            ativo: p.ativo
           };
         });
         setProducts(formattedProducts);
@@ -325,28 +325,6 @@ export const AdminDashboard: React.FC = () => {
       .replace(/[^\w\s-]/g, '')
       .trim()
       .replace(/\s+/g, '-');
-  };
-
-  const handleToggleAtivoProduto = async (productId: string, statusAtual: boolean | number) => {
-    const novoStatus = (statusAtual === 0 || statusAtual === false) ? 1 : 0;
-
-    try {
-      const response = await fetch(`${API_URL}/produtos/${productId}/inativar`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include'
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Erro ao alterar o status do produto.');
-
-      // Atualiza o estado local instantaneamente na tela
-      setProducts(prevProducts => 
-        prevProducts.map(p => p.id === productId ? { ...p, ativo: novoStatus } : p)
-      );
-    } catch (err: any) {
-      alert(err.message || 'Erro ao conectar com o servidor.');
-    }
   };
 
   const handleSaveCategoria = async (e: React.FormEvent) => {
@@ -447,18 +425,30 @@ export const AdminDashboard: React.FC = () => {
     setNovoTamanhoNome(tam.nome);
   };
 
-  const handleInativarTamanho = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja alterar o status (inativar/ativar) deste tamanho?')) return;
+  const handleInativarTamanho = async (parametro: Tamanho | string) => {
+    const id = typeof parametro === 'string' ? parametro : parametro.id;
+    const tamanhoObj = typeof parametro === 'object' ? parametro : tamanhosList.find(t => t.id === id);
+    
+    const estaAtivo = tamanhoObj ? tamanhoObj.ativo !== false : true;
+    const acaoTexto = estaAtivo ? 'inativar' : 'ativar';
+
+    if (!window.confirm(`Tem certeza que deseja ${acaoTexto} este tamanho?`)) return;
+    
     try {
-      const response = await fetch(`${API_URL}/tamanhos/${id}/inativar`, {
+      const endpoint = estaAtivo ? 'inativar' : 'ativar';
+      const response = await fetch(`${API_URL}/tamanhos/${id}/${endpoint}`, {
         method: 'PATCH',
         credentials: 'include',
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Erro ao alterar o status do tamanho.');
+      if (!response.ok) throw new Error(data.message || `Erro ao ${acaoTexto} o tamanho.`);
       
-      alert(data.message || 'Status do tamanho alterado com sucesso!');
-      carregarTamanhos();
+      alert(data.message || `Status do tamanho alterado com sucesso!`);
+      
+      await Promise.all([
+        carregarTamanhos(),
+        carregarProdutos()
+      ]);
     } catch (err: any) {
       alert(err.message || 'Erro ao conectar com o servidor.');
     }
@@ -504,18 +494,30 @@ export const AdminDashboard: React.FC = () => {
     setNovaCorHex(cor.hex || '#000000');
   };
 
-  const handleInativarCor = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja alterar o status (inativar/ativar) desta cor?')) return;
+  const handleInativarCor = async (parametro: Cor | string) => {
+    const id = typeof parametro === 'string' ? parametro : parametro.id;
+    const corObj = typeof parametro === 'object' ? parametro : coresList.find(c => c.id === id);
+    
+    const estaAtivo = corObj ? corObj.ativo !== false : true;
+    const acaoTexto = estaAtivo ? 'inativar' : 'ativar';
+
+    if (!window.confirm(`Tem certeza que deseja ${acaoTexto} esta cor?`)) return;
+    
     try {
-      const response = await fetch(`${API_URL}/cores/${id}/inativar`, {
+      const endpoint = estaAtivo ? 'inativar' : 'ativar';
+      const response = await fetch(`${API_URL}/cores/${id}/${endpoint}`, {
         method: 'PATCH',
         credentials: 'include',
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Erro ao alterar o status da cor.');
+      if (!response.ok) throw new Error(data.message || `Erro ao ${acaoTexto} a cor.`);
       
-      alert(data.message || 'Status da cor alterado com sucesso!');
-      carregarCores();
+      alert(data.message || `Status da cor alterado com sucesso!`);
+      
+      await Promise.all([
+        carregarCores(),
+        carregarProdutos()
+      ]);
     } catch (err: any) {
       alert(err.message || 'Erro ao conectar com o servidor.');
     }
@@ -752,7 +754,6 @@ export const AdminDashboard: React.FC = () => {
       return;
     }
 
-    // Validação: Garante que nenhuma cor selecionada fique sem nenhum tamanho marcado
     const corSemTamanho = colorSizeConfigs.some(config => !config.tamanhosIds || config.tamanhosIds.length === 0);
     if (corSemTamanho) {
       alert('Todas as cores selecionadas devem ter pelo menos um tamanho marcado.');
@@ -1775,12 +1776,13 @@ export const AdminDashboard: React.FC = () => {
               <h3>Vitrine de Controle Comercial</h3>
               <div className={styles.catalogGrid}>
                 {filteredProducts.map(prod => {
-                  // 1. Localiza a categoria do produto na lista carregada da API
                   const categoriaEncontrada = categoriasList.find(c => c.nome === prod.category);
                   const categoriaInativa = categoriaEncontrada?.ativo === false;
 
-                  // 2. O card só fica inativo se a categoria estiver inativa OU se o produto estiver explicitamente desativado (0 ou false)
-                  const isDesativado = categoriaInativa || prod.ativo === 0 || prod.ativo === false;
+                  const rawSizes = prod.rawSizes || [];
+                  const temEstoqueAtivoLocal = rawSizes.length > 0 ? rawSizes.some((item: any) => item.ativo !== false) : true;
+
+                  const isDesativado = categoriaInativa || prod.ativo === 0 || prod.ativo === false || (prod as any).ativoGeral === false || !temEstoqueAtivoLocal;
 
                   return (
                     <div 
@@ -1793,8 +1795,25 @@ export const AdminDashboard: React.FC = () => {
                         setSelectedColorForDetails(primeiraCorId);
                       }}
                     >
-                      <div className={styles.carouselContainer}>
+                      <div className={styles.carouselContainer} style={{ position: 'relative' }}>
                         <img src={prod.images[0]} alt="" className={styles.catalogCardImage} />
+                        {isDesativado && (
+                          <span style={{
+                            position: 'absolute',
+                            top: '10px',
+                            left: '10px',
+                            background: '#ef4444',
+                            color: '#fff',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: 'bold',
+                            zIndex: 2,
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                          }}>
+                            INATIVO
+                          </span>
+                        )}
                       </div>
                       <div className={styles.catalogCardInfo}>
                         <span className={styles.badgeCategory}>{prod.category}</span>
@@ -1917,12 +1936,17 @@ export const AdminDashboard: React.FC = () => {
                             selectedProductDetails.colors.map((c: any) => {
                               const cId = c.id || c.corId;
                               const isSelected = selectedColorForDetails === cId;
+                              
+                              const corGlobal = coresList.find(corItem => corItem.id === cId);
+                              const isCorInativa = corGlobal?.ativo === false;
+
                               return (
                                 <button
                                   key={cId}
                                   type="button"
                                   onClick={() => setSelectedColorForDetails(cId)}
-                                  className={`${styles.modalColorButton} ${isSelected ? styles.modalColorButtonSelected : styles.modalColorButtonUnselected}`}
+                                  className={`${styles.modalColorButton} ${isSelected ? styles.modalColorButtonSelected : styles.modalColorButtonUnselected} ${isCorInativa ? styles.corInativada : ''}`}
+                                  title={isCorInativa ? 'Cor Inativada' : c.nome}
                                 >
                                   {c.hex && (
                                     <span 
@@ -1930,7 +1954,7 @@ export const AdminDashboard: React.FC = () => {
                                       style={{ backgroundColor: c.hex }}
                                     ></span>
                                   )}
-                                  {c.nome}
+                                  {c.nome} {isCorInativa && '(Inativa)'}
                                 </button>
                               );
                             })
@@ -1939,7 +1963,6 @@ export const AdminDashboard: React.FC = () => {
                           )}
                         </div>
                       </div>
-
                       <div>
                         <label className={styles.modalSectionLabel}>
                           📏 Tamanhos Disponíveis para a Cor Selecionada:
@@ -1961,6 +1984,10 @@ export const AdminDashboard: React.FC = () => {
 
                             return tamanhosDaCor.map((item: any, idx: number) => {
                               const nomeTamanho = item.tamanho?.nome || item.tamanhoId || `Tam ${idx+1}`;
+                              
+                              const tamanhoGlobal = tamanhosList.find(t => t.id === item.tamanhoId);
+                              const isTamanhoInativo = tamanhoGlobal?.ativo === false || item.ativo === false;
+
                               const estoqueDisp = getAvailableStockByColorAndSize(
                                 selectedProductDetails.id, 
                                 item.cor?.nome || 'Padrão', 
@@ -1971,11 +1998,14 @@ export const AdminDashboard: React.FC = () => {
                               return (
                                 <div 
                                   key={idx}
-                                  className={`${styles.modalSizeItemBox} ${estoqueDisp > 0 ? styles.sizeBoxAvailable : styles.sizeBoxSoldOut}`}
+                                  className={`${styles.modalSizeItemBox} ${isTamanhoInativo ? styles.sizeBoxSoldOut : (estoqueDisp > 0 ? styles.sizeBoxAvailable : styles.sizeBoxSoldOut)}`}
                                 >
-                                  <div className={styles.modalSizeName}>{nomeTamanho}</div>
-                                  <div className={`${styles.modalSizeStockQty} ${estoqueDisp > 0 ? styles.textGreen : styles.textRed}`}>
-                                    {estoqueDisp > 0 ? `${estoqueDisp} un` : 'Esgotado'}
+                                  <div className={styles.modalSizeName}>
+                                    {nomeTamanho}
+                                    {isTamanhoInativo && <div className={styles.badgeInativoTamanho}>INATIVO</div>}
+                                  </div>
+                                  <div className={`${styles.modalSizeStockQty} ${isTamanhoInativo ? styles.textRed : (estoqueDisp > 0 ? styles.textGreen : styles.textRed)}`}>
+                                    {isTamanhoInativo ? '' : (estoqueDisp > 0 ? `${estoqueDisp} un` : 'Esgotado')}
                                   </div>
                                 </div>
                               );
@@ -2039,6 +2069,12 @@ export const AdminDashboard: React.FC = () => {
                 <div className={styles.stockVariationMatrix}>
                   {filteredStockProducts.map(prod => {
                     const rawList = prod.rawSizes || [];
+                    
+                    // Verifica se o produto inteiro está inativo (se todas as variações estão com ativo === false)
+                    const temAlgumEstoqueAtivo = rawList.length > 0 ? rawList.some((item: any) => item.ativo !== false) : true;
+                    const categoriaEncontrada = categoriasList.find(c => c.nome === prod.category);
+                    const isCardInativo = prod.ativo === 0 || prod.ativo === false || (prod as any).ativoGeral === false || !temAlgumEstoqueAtivo || categoriaEncontrada?.ativo === false;
+
                     const colorMap = new Map<string, { colorName: string; colorHex: string; sizes: { size: string; stock: number }[] }>();
 
                     if (rawList.length > 0) {
@@ -2080,7 +2116,37 @@ export const AdminDashboard: React.FC = () => {
                     if (colorStockData.length === 0) return null;
 
                     return (
-                      <div key={prod.id} className={styles.stockProductBlockCard} style={{ marginTop: '20px', padding: '16px', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#fafafa' }}>
+                      <div 
+                        key={prod.id} 
+                        className={`${styles.stockProductBlockCard} ${isCardInativo ? styles.inativo : ''}`} 
+                        style={{ 
+                          marginTop: '20px', 
+                          padding: '16px', 
+                          border: '1px solid #e2e8f0', 
+                          borderRadius: '8px', 
+                          background: isCardInativo ? '#f8fafc' : '#fafafa',
+                          opacity: isCardInativo ? 0.6 : 1,
+                          position: 'relative'
+                        }}
+                      >
+                        {isCardInativo && (
+                          <span style={{
+                            position: 'absolute',
+                            top: '16px',
+                            right: '16px',
+                            background: '#ef4444',
+                            color: '#fff',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: 'bold',
+                            zIndex: 2,
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                          }}>
+                            INATIVO
+                          </span>
+                        )}
+
                         <div className={styles.headerBetween} style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                           <img src={prod.images[0]} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />
                           <div>

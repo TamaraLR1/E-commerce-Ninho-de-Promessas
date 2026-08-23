@@ -4,11 +4,10 @@ import fs from 'fs';
 import path from 'path';
 
 export const produtoController = {
+
   async listar(req: Request, res: Response) {
     try {
       const produtos = await prisma.produto.findMany({
-        // Removido o filtro restritivo "estoques: { some: { ativo: true } }" 
-        // para permitir que produtos inativados/sazonais continuem aparecendo na vitrine.
         include: {
           categoria: true,
           imagens: true,
@@ -24,7 +23,21 @@ export const produtoController = {
         },
       });
 
-      return res.status(200).json(produtos);
+      // Calcula o status real do produto baseado exclusivamente nas suas variações de estoque
+      const produtosComStatus = produtos.map((produto: any) => {
+        const estoques = produto.estoques || [];
+        
+        // Verifica se existe pelo menos uma variação de estoque ativa
+        const temEstoqueAtivo = estoques.length > 0 ? estoques.some((est: any) => est.ativo === true) : true;
+
+        return {
+          ...produto,
+          // Se não houver nenhum estoque ativo (todas as cores/tamanhos inativos), define ativoGeral como falso
+          ativoGeral: temEstoqueAtivo,
+        };
+      });
+
+      return res.status(200).json(produtosComStatus);
     } catch (error) {
       console.error('Erro ao listar produtos:', error);
       return res.status(500).json({ message: 'Erro interno ao buscar produtos.' });
@@ -329,10 +342,17 @@ export const produtoController = {
         where: { produtoId: id }
       });
 
-      // 2. Se tiver histórico, faz a exclusão lógica (Inativação) e NÃO apaga as imagens físicas nem o registro
+      // 2. Se tiver histórico, faz a exclusão lógica (Inativação) do produto e de seus estoques
       if (totalMovimentacoes > 0) {
+        // Inativa os estoques vinculados
         await prisma.produtoEstoque.updateMany({
           where: { produtoId: id },
+          data: { ativo: false }
+        });
+
+        // Inativa o produto principal na tabela produtos
+        await prisma.produto.update({
+          where: { id },
           data: { ativo: false }
         });
 
@@ -341,8 +361,7 @@ export const produtoController = {
         });
       }
 
-      // 3. Se NÃO tiver histórico, prossegue com a exclusão completa (código original preservado)
-      // Remove os arquivos físicos da pasta uploads do disco local
+      // 3. Se NÃO tiver histórico, prossegue com a exclusão completa
       produto.imagens.forEach(img => {
         try {
           const filename = img.url.split('/uploads/')[1];
@@ -357,7 +376,6 @@ export const produtoController = {
         }
       });
 
-      // Remove as dependências antes de apagar o produto (evita erro de chave estrangeira caso não tenha cascade)
       await prisma.produtoEstoque.deleteMany({
         where: { produtoId: id }
       });

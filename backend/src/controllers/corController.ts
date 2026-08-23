@@ -110,4 +110,56 @@ export const corController = {
       return res.status(500).json({ message: 'Erro interno ao excluir cor.' });
     }
   },
+
+  async inativar(req: Request, res: Response) {
+    try {
+      const id = String(req.params.id);
+
+      // 1. Inativa a cor globalmente
+      const corAtualizada = await prisma.cor.update({
+        where: { id },
+        data: { ativo: false }
+      });
+
+      // 2. Inativa em cascata todos os estoques vinculados a esta cor
+      await prisma.produtoEstoque.updateMany({
+        where: { corId: id },
+        data: { ativo: false }
+      });
+
+      return res.status(200).json({ 
+        message: 'Cor e seus estoques vinculados foram inativados com sucesso!',
+        cor: corAtualizada 
+      });
+    } catch (error) {
+      console.error('Erro ao inativar cor:', error);
+      return res.status(500).json({ message: 'Erro interno ao inativar cor.' });
+    }
+  },
+
+  async ativar(req: Request, res: Response) {
+    try {
+      const id = String(req.params.id);
+
+      // 1. Ativa a cor globalmente
+      const corAtualizada = await prisma.cor.update({
+        where: { id },
+        data: { ativo: true }
+      });
+
+      // 2. Reativa os estoques vinculados a esta cor
+      await prisma.produtoEstoque.updateMany({
+        where: { corId: id },
+        data: { ativo: true }
+      });
+
+      return res.status(200).json({ 
+        message: 'Cor e seus estoques vinculados foram ativados com sucesso!',
+        cor: corAtualizada 
+      });
+    } catch (error) {
+      console.error('Erro ao ativar cor:', error);
+      return res.status(500).json({ message: 'Erro interno ao ativar cor.' });
+    }
+  },
 };

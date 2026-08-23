@@ -46,8 +46,10 @@ model Tamanho {
   id        String           @id @default(uuid())
   nome      String           @unique
   slug      String           @unique
+  ativo Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt 
   estoques ProdutoEstoque[]
-
   @@map("tamanhos")
 }
 
@@ -56,6 +58,10 @@ model Cor {
   nome      String   @unique
   slug      String   @unique
   hex       String?  // Código da cor (ex: #ff69b4 para rosa)
+  ativo Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt 
+
   estoques  ProdutoEstoque[] // Relação com o estoque
 
   @@map("cores")
