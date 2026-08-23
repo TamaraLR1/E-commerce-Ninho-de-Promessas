@@ -490,6 +490,9 @@ export const AdminDashboard: React.FC = () => {
     setMotivoError('');
     setMotivoLoading(true);
 
+    // Guarda a informação se era edição antes de limpar o ID
+    const isEditing = Boolean(editingMotivoId);
+
     try {
       const url = editingMotivoId ? `${API_URL}/motivos-estoque/${editingMotivoId}` : `${API_URL}/motivos-estoque`;
       const method = editingMotivoId ? 'PUT' : 'POST';
@@ -508,16 +511,21 @@ export const AdminDashboard: React.FC = () => {
       setNovoMotivoTipo('ENTRADA');
       setEditingMotivoId(null);
       carregarMotivosEstoque();
-      alert(editingMotivoId ? 'Motivo atualizado com sucesso!' : 'Motivo cadastrado com sucesso!');
+      
+      // Usa a constante salva anteriormente
+      alert(isEditing ? 'Motivo atualizado com sucesso!' : 'Motivo cadastrado com sucesso!');
     } catch (err: any) {
       setMotivoError(err.message || 'Erro ao conectar com o servidor.');
     } finally {
       setMotivoLoading(false);
     }
-  };
+  };  
 
-  const handleStartEditMotivo = (motivo: MotivoEstoque) => {
-    setEditingMotivoId(motivo.id);
+  const handleStartEditMotivo = (motivo: any) => {
+    // Tenta pegar .id ou ._id caso o backend use o padrão do MongoDB
+    const idToEdit = motivo.id || motivo._id;
+  
+    setEditingMotivoId(idToEdit);
     setNovoMotivoNome(motivo.nome);
     setNovoMotivoTipo(motivo.tipo);
   };
@@ -1578,7 +1586,11 @@ export const AdminDashboard: React.FC = () => {
                           <span><strong>{motivo.nome}</strong></span>
                         </div>
                         <div className={styles.cardActions} style={{ display: 'flex', gap: '8px' }}>
-                          <button type="button" onClick={() => handleStartEditMotivo(motivo)} className={styles.btnEditTable}>
+                          <button 
+                            type="button" 
+                            onClick={() => handleStartEditMotivo(motivo)} 
+                            className={styles.btnEditTable}
+                          >
                             ✏️ Editar
                           </button>
                           <button type="button" onClick={() => handleDeleteMotivo(motivo.id)} className={styles.btnDeleteTable}>
