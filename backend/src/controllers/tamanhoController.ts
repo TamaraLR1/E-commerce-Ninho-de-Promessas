@@ -90,25 +90,42 @@ export const tamanhoController = {
     try {
       const id = String(req.params.id);
 
-      // 1. Inativa o tamanho globalmente
+      // 1. Verifica se existem estoques vinculados a este tamanho
+      const estoquesVinculados = await prisma.produtoEstoque.findMany({
+        where: { tamanhoId: id },
+        select: { id: true }
+      });
+
+      // 2. Se não houver vínculos, exclui permanentemente do banco de dados
+      if (estoquesVinculados.length === 0) {
+        await prisma.tamanho.delete({
+          where: { id }
+        });
+
+        return res.status(200).json({ 
+          message: 'Tamanho sem vínculos foi excluído permanentemente com sucesso!' 
+        });
+      }
+
+      // 3. Se houver vínculos, desativa o tamanho globalmente
       const tamanhoAtualizado = await prisma.tamanho.update({
         where: { id },
         data: { ativo: false }
       });
 
-      // 2. Inativa em cascata todos os estoques vinculados a este tamanho
+      // 4. Desativa em cascata todos os estoques vinculados a este tamanho
       await prisma.produtoEstoque.updateMany({
         where: { tamanhoId: id },
         data: { ativo: false }
       });
 
       return res.status(200).json({ 
-        message: 'Tamanho e seus estoques vinculados foram inativados com sucesso!',
+        message: 'Tamanho e seus estoques vinculados foram desativados com sucesso!',
         tamanho: tamanhoAtualizado 
       });
     } catch (error) {
-      console.error('Erro ao inativar tamanho:', error);
-      return res.status(500).json({ message: 'Erro interno ao inativar tamanho.' });
+      console.error('Erro ao processar tamanho:', error);
+      return res.status(500).json({ message: 'Erro interno ao processar tamanho.' });
     }
   },
 

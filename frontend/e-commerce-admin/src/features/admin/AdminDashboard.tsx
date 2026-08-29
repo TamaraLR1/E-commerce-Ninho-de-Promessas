@@ -455,6 +455,37 @@ export const AdminDashboard: React.FC = () => {
     const tamanhoObj = typeof parametro === 'object' ? parametro : tamanhosList.find(t => t.id === id);
     
     const estaAtivo = tamanhoObj ? tamanhoObj.ativo !== false : true;
+
+    if (estaAtivo && tamanhoObj) {
+      // Verifica se existe algum produto cujo rawSizes possua este tamanhoId
+      const temVinculo = products.some(p => 
+        p.rawSizes?.some(s => s.tamanhoId === tamanhoObj.id)
+      );
+
+      if (!temVinculo) {
+        if (!window.confirm(`Este tamanho não possui vínculos com produtos. Deseja excluí-lo permanentemente do banco de dados?`)) return;
+
+        try {
+          const response = await fetch(`${API_URL}/tamanhos/${id}/inativar`, {
+            method: 'PATCH',
+            credentials: 'include',
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.message || 'Erro ao excluir o tamanho.');
+          
+          alert('Tamanho excluído permanentemente com sucesso!');
+          await Promise.all([
+            carregarTamanhos(),
+            carregarProdutos()
+          ]);
+          return;
+        } catch (err: any) {
+          alert(err.message || 'Erro ao conectar com o servidor.');
+          return;
+        }
+      }
+    }
+
     const acaoTexto = estaAtivo ? 'desativar' : 'ativar';
 
     if (!window.confirm(`Tem certeza que deseja ${acaoTexto} este tamanho?`)) return;
