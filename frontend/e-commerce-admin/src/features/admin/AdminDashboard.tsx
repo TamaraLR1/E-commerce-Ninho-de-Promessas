@@ -365,9 +365,9 @@ export const AdminDashboard: React.FC = () => {
     setNovaCategoriaNome(cat.nome);
   };
 
-  const handleInativarCategoria = async (cat: Categoria) => {
+  const handleDesativarCategoria = async (cat: Categoria) => {
     const estaAtiva = cat.ativo !== false;
-    const acaoTexto = estaAtiva ? 'inativar' : 'ativar';
+    const acaoTexto = estaAtiva ? 'desativar' : 'ativar';
     
     if (!window.confirm(`Tem certeza que deseja ${acaoTexto} esta categoria?`)) return;
 
@@ -380,7 +380,7 @@ export const AdminDashboard: React.FC = () => {
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || `Erro ao ${acaoTexto} a categoria.`);
       
-      alert(data.message || `Categoria ${acaoTexto === 'inativar' ? 'inativada' : 'ativada'} com sucesso!`);
+      alert(data.message || `Categoria ${acaoTexto === 'desativar' ? 'desativada' : 'ativada'} com sucesso!`);
       carregarCategorias();
     } catch (err: any) {
       alert(err.message || 'Erro ao conectar com o servidor.');
@@ -425,17 +425,17 @@ export const AdminDashboard: React.FC = () => {
     setNovoTamanhoNome(tam.nome);
   };
 
-  const handleInativarTamanho = async (parametro: Tamanho | string) => {
+  const handleDesativarTamanho = async (parametro: Tamanho | string) => {
     const id = typeof parametro === 'string' ? parametro : parametro.id;
     const tamanhoObj = typeof parametro === 'object' ? parametro : tamanhosList.find(t => t.id === id);
     
     const estaAtivo = tamanhoObj ? tamanhoObj.ativo !== false : true;
-    const acaoTexto = estaAtivo ? 'inativar' : 'ativar';
+    const acaoTexto = estaAtiva ? 'desativar' : 'ativar';
 
     if (!window.confirm(`Tem certeza que deseja ${acaoTexto} este tamanho?`)) return;
     
     try {
-      const endpoint = estaAtivo ? 'inativar' : 'ativar';
+      const endpoint = estaAtiva ? 'inativar' : 'ativar';
       const response = await fetch(`${API_URL}/tamanhos/${id}/${endpoint}`, {
         method: 'PATCH',
         credentials: 'include',
@@ -494,17 +494,17 @@ export const AdminDashboard: React.FC = () => {
     setNovaCorHex(cor.hex || '#000000');
   };
 
-  const handleInativarCor = async (parametro: Cor | string) => {
+  const handleDesativarCor = async (parametro: Cor | string) => {
     const id = typeof parametro === 'string' ? parametro : parametro.id;
     const corObj = typeof parametro === 'object' ? parametro : coresList.find(c => c.id === id);
     
     const estaAtivo = corObj ? corObj.ativo !== false : true;
-    const acaoTexto = estaAtivo ? 'inativar' : 'ativar';
+    const acaoTexto = estaAtiva ? 'desativar' : 'ativar';
 
     if (!window.confirm(`Tem certeza que deseja ${acaoTexto} esta cor?`)) return;
     
     try {
-      const endpoint = estaAtivo ? 'inativar' : 'ativar';
+      const endpoint = estaAtiva ? 'inativar' : 'ativar';
       const response = await fetch(`${API_URL}/cores/${id}/${endpoint}`, {
         method: 'PATCH',
         credentials: 'include',
@@ -566,8 +566,8 @@ export const AdminDashboard: React.FC = () => {
     setNovoMotivoTipo(motivo.tipo);
   };
 
-  const handleInativarMotivo = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja alterar o status (inativar/ativar) deste motivo de estoque?')) return;
+  const handleDesativarMotivo = async (id: string) => {
+    if (!window.confirm('Tem certeza que deseja alterar o status (desativar/ativar) deste motivo de estoque?')) return;
     try {
       const response = await fetch(`${API_URL}/motivos-estoque/${id}/inativar`, {
         method: 'PATCH',
@@ -1364,7 +1364,7 @@ export const AdminDashboard: React.FC = () => {
                           <div>
                             <span>
                               <strong>{cat.nome}</strong>
-                              {!estaAtivo && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>(Inativo)</span>}
+                              {!estaAtivo && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>(Desativado)</span>}
                             </span>
                             <code className={styles.slugCodeBadge} style={{ marginLeft: '10px' }}>slug: {cat.slug}</code>
                           </div>
@@ -1374,11 +1374,11 @@ export const AdminDashboard: React.FC = () => {
                             </button>
                             <button 
                               type="button" 
-                              onClick={() => handleInativarCategoria(cat)} 
+                              onClick={() => handleDesativarCategoria(cat)} 
                               className={styles.btnDeleteTable}
                               style={{ backgroundColor: estaAtivo ? '#ef4444' : '#10b981', color: '#fff' }}
                             >
-                              {estaAtivo ? '🚫 Inativar' : '✅ Ativar'}
+                              {estaAtivo ? '🚫 Desativar' : '✅ Ativar'}
                             </button>
                           </div>
                         </li>
@@ -1449,7 +1449,7 @@ export const AdminDashboard: React.FC = () => {
                           <div>
                             <span>
                               <strong>{tam.nome}</strong>
-                              {!estaAtivo && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>(Inativo)</span>}
+                              {!estaAtivo && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>(Desativado)</span>}
                             </span>
                             <code className={styles.slugCodeBadge} style={{ marginLeft: '10px' }}>slug: {tam.slug}</code>
                           </div>
@@ -1459,11 +1459,11 @@ export const AdminDashboard: React.FC = () => {
                             </button>
                             <button 
                               type="button" 
-                              onClick={() => handleInativarTamanho(tam.id)} 
+                              onClick={() => handleDesativarTamanho(tam.id)} 
                               className={styles.btnDeleteTable}
                               style={{ backgroundColor: estaAtivo ? '#ef4444' : '#10b981', color: '#fff' }}
                             >
-                              {estaAtivo ? '🚫 Inativar' : '✅ Ativar'}
+                              {estaAtivo ? '🚫 Desativar' : '✅ Ativar'}
                             </button>
                           </div>
                         </li>
@@ -1558,7 +1558,7 @@ export const AdminDashboard: React.FC = () => {
                             )}
                             <span>
                               <strong>{cor.nome}</strong>
-                              {!estaAtivo && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>(Inativo)</span>}
+                              {!estaAtivo && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>(Desativado)</span>}
                             </span>
                             <code className={styles.slugCodeBadge} style={{ marginLeft: '10px' }}>slug: {cor.slug}</code>
                           </div>
@@ -1568,11 +1568,11 @@ export const AdminDashboard: React.FC = () => {
                             </button>
                             <button 
                               type="button" 
-                              onClick={() => handleInativarCor(cor.id)} 
+                              onClick={() => handleDesativarCor(cor.id)} 
                               className={styles.btnDeleteTable}
                               style={{ backgroundColor: estaAtivo ? '#ef4444' : '#10b981', color: '#fff' }}
                             >
-                              {estaAtivo ? '🚫 Inativar' : '✅ Ativar'}
+                              {estaAtivo ? '🚫 Desativar' : '✅ Ativar'}
                             </button>
                           </div>
                         </li>
@@ -1698,7 +1698,7 @@ export const AdminDashboard: React.FC = () => {
                             </span>
                             <span>
                               <strong>{motivo.nome}</strong>
-                              {!estaAtivo && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>(Inativo)</span>}
+                              {!estaAtivo && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>(Desativado)</span>}
                             </span>
                           </div>
                           <div className={styles.cardActions} style={{ display: 'flex', gap: '8px' }}>
@@ -1711,11 +1711,11 @@ export const AdminDashboard: React.FC = () => {
                             </button>
                             <button 
                               type="button" 
-                              onClick={() => handleInativarMotivo(motivo.id)} 
+                              onClick={() => handleDesativarMotivo(motivo.id)} 
                               className={styles.btnDeleteTable}
                               style={{ backgroundColor: estaAtivo ? '#ef4444' : '#10b981', color: '#fff' }}
                             >
-                              {estaAtivo ? '🚫 Inativar' : '✅ Ativar'}
+                              {estaAtivo ? '🚫 Desativar' : '✅ Ativar'}
                             </button>
                           </div>
                         </li>
@@ -1811,7 +1811,7 @@ export const AdminDashboard: React.FC = () => {
                             zIndex: 2,
                             boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
                           }}>
-                            INATIVO
+                            DESATIVADO
                           </span>
                         )}
                       </div>
@@ -1946,7 +1946,7 @@ export const AdminDashboard: React.FC = () => {
                                   type="button"
                                   onClick={() => setSelectedColorForDetails(cId)}
                                   className={`${styles.modalColorButton} ${isSelected ? styles.modalColorButtonSelected : styles.modalColorButtonUnselected} ${isCorInativa ? styles.corInativada : ''}`}
-                                  title={isCorInativa ? 'Cor Inativada' : c.nome}
+                                  title={isCorInativa ? 'Cor Desativada' : c.nome}
                                 >
                                   {c.hex && (
                                     <span 
@@ -1954,7 +1954,7 @@ export const AdminDashboard: React.FC = () => {
                                       style={{ backgroundColor: c.hex }}
                                     ></span>
                                   )}
-                                  {c.nome} {isCorInativa && '(Inativa)'}
+                                  {c.nome} {isCorInativa && '(Desativada)'}
                                 </button>
                               );
                             })
@@ -2002,7 +2002,7 @@ export const AdminDashboard: React.FC = () => {
                                 >
                                   <div className={styles.modalSizeName}>
                                     {nomeTamanho}
-                                    {isTamanhoInativo && <div className={styles.badgeInativoTamanho}>INATIVO</div>}
+                                    {isTamanhoInativo && <div className={styles.badgeInativoTamanho}>DESATIVADO</div>}
                                   </div>
                                   <div className={`${styles.modalSizeStockQty} ${isTamanhoInativo ? styles.textRed : (estoqueDisp > 0 ? styles.textGreen : styles.textRed)}`}>
                                     {isTamanhoInativo ? '' : (estoqueDisp > 0 ? `${estoqueDisp} un` : 'Esgotado')}
@@ -2143,7 +2143,7 @@ export const AdminDashboard: React.FC = () => {
                             zIndex: 2,
                             boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
                           }}>
-                            INATIVO
+                            DESATIVADO
                           </span>
                         )}
 
