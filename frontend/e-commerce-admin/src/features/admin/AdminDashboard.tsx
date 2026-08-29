@@ -367,6 +367,31 @@ export const AdminDashboard: React.FC = () => {
 
   const handleDesativarCategoria = async (cat: Categoria) => {
     const estaAtiva = cat.ativo !== false;
+
+    if (estaAtiva) {
+      const temVinculo = products.some(p => p.category === cat.nome);
+      
+      if (!temVinculo) {
+        if (!window.confirm(`Esta categoria não possui vínculos com produtos. Deseja excluí-la permanentemente do banco de dados?`)) return;
+
+        try {
+            const response = await fetch(`${API_URL}/categorias/${cat.id}/inativar`, {            
+            method: 'PATCH',
+            credentials: 'include',
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.message || 'Erro ao excluir a categoria.');
+          
+          alert('Categoria excluída permanentemente com sucesso!');
+          carregarCategorias();
+          return;
+        } catch (err: any) {
+          alert(err.message || 'Erro ao conectar com o servidor.');
+          return;
+        }
+      }
+    }
+
     const acaoTexto = estaAtiva ? 'desativar' : 'ativar';
     
     if (!window.confirm(`Tem certeza que deseja ${acaoTexto} esta categoria?`)) return;
@@ -430,12 +455,12 @@ export const AdminDashboard: React.FC = () => {
     const tamanhoObj = typeof parametro === 'object' ? parametro : tamanhosList.find(t => t.id === id);
     
     const estaAtivo = tamanhoObj ? tamanhoObj.ativo !== false : true;
-    const acaoTexto = estaAtiva ? 'desativar' : 'ativar';
+    const acaoTexto = estaAtivo ? 'desativar' : 'ativar';
 
     if (!window.confirm(`Tem certeza que deseja ${acaoTexto} este tamanho?`)) return;
     
     try {
-      const endpoint = estaAtiva ? 'inativar' : 'ativar';
+      const endpoint = estaAtivo ? 'inativar' : 'ativar';
       const response = await fetch(`${API_URL}/tamanhos/${id}/${endpoint}`, {
         method: 'PATCH',
         credentials: 'include',
@@ -499,12 +524,12 @@ export const AdminDashboard: React.FC = () => {
     const corObj = typeof parametro === 'object' ? parametro : coresList.find(c => c.id === id);
     
     const estaAtivo = corObj ? corObj.ativo !== false : true;
-    const acaoTexto = estaAtiva ? 'desativar' : 'ativar';
+    const acaoTexto = estaAtivo ? 'desativar' : 'ativar';
 
     if (!window.confirm(`Tem certeza que deseja ${acaoTexto} esta cor?`)) return;
     
     try {
-      const endpoint = estaAtiva ? 'inativar' : 'ativar';
+      const endpoint = estaAtivo ? 'inativar' : 'ativar';
       const response = await fetch(`${API_URL}/cores/${id}/${endpoint}`, {
         method: 'PATCH',
         credentials: 'include',

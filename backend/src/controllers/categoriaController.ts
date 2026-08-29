@@ -113,21 +113,32 @@ export const categoriaController = {
     try {
       const id = String(req.params.id);
 
-      // 1. Inativa a categoria
-      const categoriaAtualizada = await prisma.categoria.update({
-        where: { id },
-        data: { ativo: false }
-      });
-
-      // 2. Busca todos os produtos vinculados a esta categoria
+      // 1. Busca produtos vinculados a esta categoria para verificar se há vínculos
       const produtosDaCategoria = await prisma.produto.findMany({
         where: { categoryId: id },
         select: { id: true }
       });
 
+      // 2. Se não houver vínculos, exclui permanentemente do banco de dados
+      if (produtosDaCategoria.length === 0) {
+        await prisma.categoria.delete({
+          where: { id }
+        });
+
+        return res.status(200).json({ 
+          message: 'Categoria sem vínculos foi excluída permanentemente com sucesso!' 
+        });
+      }
+
+      // 3. Se houver vínculos, desativa a categoria normalmente
+      const categoriaAtualizada = await prisma.categoria.update({
+        where: { id },
+        data: { ativo: false }
+      });
+
       const produtoIds = produtosDaCategoria.map(p => p.id);
 
-      // 3. Inativa os estoques/variações de todos os produtos dessa categoria
+      // 4. Desativa os estoques/variações de todos os produtos dessa categoria
       if (produtoIds.length > 0) {
         await prisma.produtoEstoque.updateMany({
           where: { produtoId: { in: produtoIds } },
@@ -136,12 +147,12 @@ export const categoriaController = {
       }
 
       return res.status(200).json({ 
-        message: 'Categoria e seus produtos vinculados foram inativados com sucesso!',
+        message: 'Categoria e seus produtos vinculados foram desativados com sucesso!',
         categoria: categoriaAtualizada 
       });
     } catch (error) {
-      console.error('Erro ao inativar categoria:', error);
-      return res.status(500).json({ message: 'Erro interno ao inativar categoria.' });
+      console.error('Erro ao processar categoria:', error);
+      return res.status(500).json({ message: 'Erro interno ao processar categoria.' });
     }
   },
 
