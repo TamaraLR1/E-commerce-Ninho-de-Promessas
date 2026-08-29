@@ -97,6 +97,7 @@ export const AdminDashboard: React.FC = () => {
   const [stockSearchQuery, setStockSearchQuery] = useState('');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'todos' | 'esgotado' | 'baixo'>('todos');
+  const [statusFilter, setStatusFilter] = useState<'todos' | 'ativos' | 'desativados'>('todos');
   const [sortBy, setSortBy] = useState<'nome-asc' | 'nome-desc' | 'preco-asc' | 'preco-desc' | 'estoque-desc' | 'estoque-asc'>('nome-asc');
 
   const [selectedProductDetails, setSelectedProductDetails] = useState<ProductMaster | null>(null);
@@ -995,12 +996,26 @@ export const AdminDashboard: React.FC = () => {
 
   const matchedProductForOffer = products.find(p => p.id === searchOfferId);
 
-  const filteredProducts = products.filter(prod => 
-    prod.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    prod.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    prod.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    prod.id.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProducts = products.filter(prod => {
+    const matchesSearch = 
+      prod.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      prod.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      prod.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      prod.id.toLowerCase().includes(searchTerm.toLowerCase());
+
+    if (!matchesSearch) return false;
+
+    const categoriaEncontrada = categoriasList.find(c => c.nome === prod.category);
+    const categoriaInativa = categoriaEncontrada?.ativo === false;
+    const rawSizes = prod.rawSizes || [];
+    const temEstoqueAtivoLocal = rawSizes.length > 0 ? rawSizes.some((item: any) => item.ativo !== false) : true;
+    const isDesativado = categoriaInativa || prod.ativo === 0 || prod.ativo === false || (prod as any).ativoGeral === false || !temEstoqueAtivoLocal;
+
+    if (statusFilter === 'ativos' && isDesativado) return false;
+    if (statusFilter === 'desativados' && !isDesativado) return false;
+
+    return true;
+  });
 
   const sortedProducts = [...filteredProducts].sort((a, b) => {
     if (sortBy === 'nome-asc') {
@@ -1991,6 +2006,16 @@ export const AdminDashboard: React.FC = () => {
             <div className={styles.searchSection} style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
               <input type="text" className={styles.searchInput} style={{ flex: 1, minWidth: '240px' }} placeholder="🔍 Buscar por nome, categoria, descrição ou ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
               
+              <select 
+                value={statusFilter} 
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.9rem', cursor: 'pointer' }}
+              >
+                <option value="todos">👁️ Todos os Status</option>
+                <option value="ativos">🟢 Apenas Ativos</option>
+                <option value="desativados">🔴 Apenas Desativados</option>
+              </select>
+
               <select 
                 value={sortBy} 
                 onChange={(e) => setSortBy(e.target.value as any)}
