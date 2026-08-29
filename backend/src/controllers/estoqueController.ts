@@ -34,55 +34,70 @@ async listarMovimentacoes(req: Request, res: Response) {
   },
 
   async criarMovimentacao(req: Request, res: Response) {
-  try {
-    // 1. Extraia o motivoId (e mantenha o motivo caso algum outro lugar ainda envie texto)
-    const { produtoId, corNome, tamanho, tipo, quantidade, motivoId, motivo } = req.body;
+    try {
+      // 1. Extraia o motivoId (e mantenha o motivo caso algum outro lugar ainda envie texto)
+      const { produtoId, corNome, tamanho, tipo, quantidade, motivoId, motivo } = req.body;
 
-    if (!produtoId || !tipo || !quantidade) {
-      return res.status(400).json({ message: 'Campos obrigatórios ausentes.' });
-    }
+      if (!produtoId || !tipo || !quantidade) {
+        return res.status(400).json({ message: 'Campos obrigatórios ausentes.' });
+      }
 
-    const corNomeFinal = corNome || 'Padrão';
-    const tamanhoFinal = tamanho || 'Único';
+      const corNomeFinal = corNome || 'Padrão';
+      const tamanhoFinal = tamanho || 'Único';
+      const qtdNumerica = Number(quantidade);
 
-    const produtoEstoque = await prisma.produtoEstoque.findFirst({
-      where: {
-        produtoId,
-        cor: { nome: corNomeFinal },
-        tamanho: { nome: tamanhoFinal }
-      },
-    });
-
-    if (!produtoEstoque) {
-      return res.status(404).json({ message: 'Variação de estoque não encontrada para este produto.' });
-    }
-
-    if (produtoEstoque.ativo === false) {
-      return res.status(400).json({ 
-        message: 'Não é permitido realizar movimentações para variações inativas.' 
+      const produtoEstoque = await prisma.produtoEstoque.findFirst({
+        where: {
+          produtoId,
+          cor: { nome: corNomeFinal },
+          tamanho: { nome: tamanhoFinal }
+        },
       });
+
+      if (!produtoEstoque) {
+        return res.status(404).json({ message: 'Variação de estoque não encontrada para este produto.' });
+      }
+
+      if (produtoEstoque.ativo === false) {
+        return res.status(400).json({ 
+          message: 'Não é permitido realizar movimentações para variações inativas.' 
+        });
+      }
+
+      // Validação opcional para evitar estoque negativo em caso de saída
+      if (tipo === 'SAIDA' && produtoEstoque.estoque < qtdNumerica) {
+        return res.status(400).json({ message: 'Estoque insuficiente para esta saída.' });
+      }
+
+      // 2. Executa a criação da movimentação e a atualização do estoque físico em transação
+      const [novaMovimentacao] = await prisma.$transaction([
+        // Cria o registro no histórico
+        prisma.movimentacaoEstoque.create({
+          data: {
+            produtoId,
+            corNome: corNomeFinal,
+            tamanho: tamanhoFinal,
+            tipo,
+            quantidade: qtdNumerica,
+            motivoId: motivoId || null,
+          },
+        }),
+        // Atualiza o saldo real na tabela de estoque do produto
+        prisma.produtoEstoque.update({
+          where: { id: produtoEstoque.id },
+          data: {
+            estoque: {
+              [tipo === 'ENTRADA' ? 'increment' : 'decrement']: qtdNumerica
+            }
+          }
+        })
+      ]);
+
+      return res.status(201).json(novaMovimentacao);
+    } catch (error) {
+      console.error('Erro ao criar movimentação:', error);
+      return res.status(500).json({ message: 'Erro interno ao salvar movimentação.' });
     }
-
-    // 2. Salve o motivoId ou o texto correto no banco
-    const novaMovimentacao = await prisma.movimentacaoEstoque.create({
-      data: {
-        produtoId,
-        corNome: corNomeFinal,
-        tamanho: tamanhoFinal,
-        tipo,
-        quantidade: Number(quantidade),
-        // Se a sua coluna no banco for motivoId (UUID):
-        motivoId: motivoId || null,
-        // OU se o seu banco espera o texto direto do motivo enviado:
-        // motivo: motivo || 'Movimentação manual',
-      },
-    });
-
-    return res.status(201).json(novaMovimentacao);
-  } catch (error) {
-    console.error('Erro ao criar movimentação:', error);
-    return res.status(500).json({ message: 'Erro interno ao salvar movimentação.' });
-  }
   },
 
   async obterDashboard(req: Request, res: Response) {
@@ -92,7 +107,7 @@ async listarMovimentacoes(req: Request, res: Response) {
         where: { ativo: true }
       });
 
-      // 2. Quantidade física total (Soma direta do campo estoque das variações ativas)
+      // 2. Quantidade física total real (Soma de todo o estoque de todas as variações ativas)
       const estoqueAgregado = await prisma.produtoEstoque.aggregate({
         where: { ativo: true },
         _sum: { estoque: true }
@@ -100,7 +115,7 @@ async listarMovimentacoes(req: Request, res: Response) {
 
       const quantidadeFisicaTotal = estoqueAgregado._sum.estoque || 0;
 
-      // 3. Contagem de movimentações do mês atual (Entradas vs Saídas)
+      // 3. Contagem de movimentações do mês atual (Apenas o fluxo real de entradas e saídas manuais/automáticas do mês)
       const inicioDoMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
       
       const movimentacoesMes = await prisma.movimentacaoEstoque.findMany({

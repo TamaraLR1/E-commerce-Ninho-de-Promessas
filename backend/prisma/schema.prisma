@@ -18,6 +18,7 @@ model User {
   sexo             String?
   receberNovidades Boolean  @default(false)
   createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model Admin {
@@ -26,7 +27,7 @@ model Admin {
   email     String   @unique
   senha     String
   createdAt DateTime @default(now())
-
+  updatedAt        DateTime @updatedAt
   @@map("admins")
 }
 
@@ -37,6 +38,7 @@ model Categoria {
   ativo     Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt 
+
   produtos  Produto[]
 
   @@map("categorias")
@@ -50,6 +52,7 @@ model Tamanho {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt 
   estoques ProdutoEstoque[]
+
   @@map("tamanhos")
 }
 
@@ -98,6 +101,9 @@ model ProdutoEstoque {
   tamanho   Tamanho? @relation(fields: [tamanhoId], references: [id], onDelete: Restrict)
   cor       Cor?     @relation(fields: [corId], references: [id], onDelete: Restrict)
 
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
   @@unique([produtoId, tamanhoId, corId])
   @@map("produto_estoques")
 }
@@ -109,6 +115,9 @@ model ProdutoImagem {
   produtoId String
 
   produto   Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 
   @@map("produto_imagens")
 }

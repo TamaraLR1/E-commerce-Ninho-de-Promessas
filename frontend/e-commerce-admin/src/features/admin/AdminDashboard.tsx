@@ -147,6 +147,7 @@ export const AdminDashboard: React.FC = () => {
   const [promoPrice, setPromoPrice] = useState<string>('');
 
   const [stockInputValues, setStockInputValues] = useState<{ [key: string]: string }>({});
+  const [loadingMovimentacao, setLoadingMovimentacao] = useState<{ [key: string]: boolean }>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   
   const API_URL = 'http://localhost:3333/api';
@@ -556,7 +557,6 @@ export const AdminDashboard: React.FC = () => {
     const estaAtivo = corObj ? corObj.ativo !== false : true;
 
     if (estaAtivo && corObj) {
-      // Verifica se existe algum produto cujo rawSizes possua este corId
       const temVinculo = products.some(p => 
         p.rawSizes?.some(s => s.corId === corObj.id)
       );
@@ -657,7 +657,6 @@ export const AdminDashboard: React.FC = () => {
     const estaAtivo = motivoObj ? motivoObj.ativo !== false : true;
 
     if (estaAtivo && motivoObj) {
-      // Verifica se existe alguma movimentação vinculada a este motivo
       const temVinculo = movements.some(m => m.reason === motivoObj.nome);
 
       if (!temVinculo) {
@@ -700,11 +699,10 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  const getAvailableStockByColorAndSize = (productId: string, colorName: string, size: string, initialStock: number = 0) => {
-    const prodMovements = movements.filter(m => m.productId === productId && m.colorName === colorName && m.size === size);
-    const totalEntradas = prodMovements.filter(m => m.type === 'ENTRADA').reduce((sum, m) => sum + m.quantity, 0);
-    const totalSaidas = prodMovements.filter(m => m.type === 'SAIDA').reduce((sum, m) => sum + m.quantity, 0);
-    return initialStock + totalEntradas - totalSaidas;
+  // Correção: Como o banco já incrementa/decrementa o saldo atual na tabela produto_estoques,
+  // retornamos diretamente o estoque atualizado fornecido (initialStock).
+  const getAvailableStockByColorAndSize = (_productId: string, _colorName: string, _size: string, initialStock: number = 0) => {
+    return initialStock;
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2187,7 +2185,6 @@ export const AdminDashboard: React.FC = () => {
                   {filteredStockProducts.map(prod => {
                     const rawList = prod.rawSizes || [];
                     
-                    // Verifica se o produto inteiro está inativo (se todas as variações estão com ativo === false)
                     const temAlgumEstoqueAtivo = rawList.length > 0 ? rawList.some((item: any) => item.ativo !== false) : true;
                     const categoriaEncontrada = categoriasList.find(c => c.nome === prod.category);
                     const isCardInativo = prod.ativo === 0 || prod.ativo === false || (prod as any).ativoGeral === false || !temAlgumEstoqueAtivo || categoriaEncontrada?.ativo === false;
@@ -2297,6 +2294,7 @@ export const AdminDashboard: React.FC = () => {
                                   const stockStatusClass = sizeItem.stock === 0 ? styles.redStock : sizeItem.stock <= 3 ? styles.yellowStock : styles.greenStock;
 
                                   const motivosFiltrados = motivosEstoqueList.filter(m => m.tipo === stockType && m.ativo !== false);
+                                  const isLoadingThis = loadingMovimentacao[mapKey] || false;
 
                                   return (
                                     <div key={sizeItem.size} className={styles.sizeConfigBox} style={{ background: '#fff', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -2398,6 +2396,7 @@ export const AdminDashboard: React.FC = () => {
 
                                       <button
                                         type="button"
+                                        disabled={isLoadingThis}
                                         style={{
                                           background: stockType === 'ENTRADA' ? '#10b981' : '#ef4444',
                                           color: '#fff',
@@ -2405,8 +2404,9 @@ export const AdminDashboard: React.FC = () => {
                                           padding: '6px',
                                           borderRadius: '4px',
                                           fontWeight: 'bold',
-                                          cursor: 'pointer',
-                                          fontSize: '0.8rem'
+                                          cursor: isLoadingThis ? 'not-allowed' : 'pointer',
+                                          fontSize: '0.8rem',
+                                          opacity: isLoadingThis ? 0.7 : 1
                                         }}
                                         onClick={async () => {
                                           const qtyInput = parseInt(currentInputValue, 10);
@@ -2424,6 +2424,8 @@ export const AdminDashboard: React.FC = () => {
                                           }
 
                                           try {
+                                            setLoadingMovimentacao(prev => ({ ...prev, [mapKey]: true }));
+
                                             const response = await fetch(`${API_URL}/movimentacoes`, {
                                               method: 'POST',
                                               headers: { 'Content-Type': 'application/json' },
@@ -2454,10 +2456,12 @@ export const AdminDashboard: React.FC = () => {
                                             }));
                                           } catch (err: any) {
                                             alert(err.message || 'Erro ao conectar com o servidor.');
+                                          } finally {
+                                            setLoadingMovimentacao(prev => ({ ...prev, [mapKey]: false }));
                                           }
                                         }}
                                       >
-                                        Registrar {stockType === 'ENTRADA' ? 'Entrada' : 'Saída'}
+                                        {isLoadingThis ? 'Salvando...' : `Registrar ${stockType === 'ENTRADA' ? 'Entrada' : 'Saída'}`}
                                       </button>
 
                                     </div>
