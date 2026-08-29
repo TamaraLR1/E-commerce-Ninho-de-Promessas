@@ -75,10 +75,15 @@ model Produto {
   nome        String           @db.VarChar(100) // Máximo 100 caracteres
   preco       Decimal          @db.Decimal(10, 2) // Preço monetário
   descricao   String?          @db.Text
-  ativo       Boolean       @default(true) // <--- Adicione esta linha aqui
+  ativo       Boolean          @default(true) // <--- Adicione esta linha aqui
   categoryId  String
   categoria   Categoria        @relation(fields: [categoryId], references: [id])
   
+  temOferta        Boolean         @default(false)
+  precoPromocional Decimal         @default(0) @db.Decimal(10, 2)
+
+  isVisible    Boolean         @default(true)
+
   estoques    ProdutoEstoque[]
   imagens     ProdutoImagem[]  // Até 10 imagens do produto
   movimentacoes       MovimentacaoEstoque[]

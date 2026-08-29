@@ -144,7 +144,8 @@ export const AdminDashboard: React.FC = () => {
   const [editingMotivoId, setEditingMotivoId] = useState<string | null>(null);
 
   const [searchOfferId, setSearchOfferId] = useState('');
-  const [promoPrice, setPromoPrice] = useState<string>('');
+  const [promoValue, setPromoValue] = useState<string>('');
+  const [discountType, setDiscountType] = useState<'percentual' | 'fixo'>('percentual');
 
   const [stockInputValues, setStockInputValues] = useState<{ [key: string]: string }>({});
   const [loadingMovimentacao, setLoadingMovimentacao] = useState<{ [key: string]: boolean }>({});
@@ -279,9 +280,9 @@ export const AdminDashboard: React.FC = () => {
             description: p.descricao || '',
             images: p.imagens && p.imagens.length > 0 ? p.imagens.map((img: any) => img.url) : ['https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?q=80&w=200'],
             originalPrice: Number(p.preco),
-            isVisible: true,
-            hasOffer: false,
-            offerPrice: 0,
+            isVisible: p.isVisible !== undefined ? Boolean(p.isVisible) : true,
+            hasOffer: Boolean(p.temOferta),
+            offerPrice: Number(p.precoPromocional || 0),
             sizes: estoqueList.map((t: any) => t.tamanho?.nome || t.tamanhoId),
             colors: coresFormatadas.length > 0 ? coresFormatadas : (p.cores ? p.cores.map((c: any) => ({ nome: c.cor?.nome || c.nome, hex: c.cor?.hex || '#000000' })) : []),
             rawSizes: estoqueList,
@@ -699,8 +700,6 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Correção: Como o banco já incrementa/decrementa o saldo atual na tabela produto_estoques,
-  // retornamos diretamente o estoque atualizado fornecido (initialStock).
   const getAvailableStockByColorAndSize = (_productId: string, _colorName: string, _size: string, initialStock: number = 0) => {
     return initialStock;
   };
@@ -1847,16 +1846,43 @@ export const AdminDashboard: React.FC = () => {
           <div className={styles.singleContainer}>
             <section className={styles.card}>
               <h3>Configurar Oferta Comercial</h3>
-              <form onSubmit={(e) => {
+              <p className={styles.infoText}>Informe o ID do produto e escolha se deseja aplicar um desconto percentual (% OFF) ou definir um valor promocional fixo.</p>
+              
+              <form onSubmit={async (e) => {
                 e.preventDefault();
-                if (!matchedProductForOffer || !promoPrice) return;
-                setProducts(products.map(p => p.id === matchedProductForOffer.id ? { ...p, offerPrice: Number(promoPrice), hasOffer: true } : p));
-                setSearchOfferId(''); setPromoPrice(''); alert('Oferta salva!'); setActiveTab('lista');
+                if (!matchedProductForOffer || !promoValue) return;
+
+                try {
+                  const response = await fetch(`${API_URL}/produtos/${matchedProductForOffer.id}/oferta`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                      discountType,
+                      promoValue: Number(promoValue)
+                    })
+                  });
+
+                  const data = await response.json();
+                  if (!response.ok) throw new Error(data.message || 'Erro ao configurar oferta.');
+
+                  alert('Oferta salva com sucesso!');
+                  setSearchOfferId(''); 
+                  setPromoValue(''); 
+                  setDiscountType('percentual');
+                  
+                  carregarProdutos();
+                  setActiveTab('lista');
+                } catch (err: any) {
+                  alert(err.message || 'Erro ao conectar com o servidor.');
+                }
               }} className={styles.form}>
+                
                 <div className={styles.group}>
                   <label>Digite o ID do Produto (UUID)</label>
                   <input type="text" value={searchOfferId} onChange={e => setSearchOfferId(e.target.value)} placeholder="Cole o ID do produto aqui..." required />
                 </div>
+
                 {searchOfferId.length > 5 && (
                   <div className={styles.searchFeedbackBox}>
                     {matchedProductForOffer ? (
@@ -1864,7 +1890,7 @@ export const AdminDashboard: React.FC = () => {
                         <img src={matchedProductForOffer.images[0]} alt="" className={styles.matchThumb} />
                         <div>
                           <p className={styles.matchName}><strong>{matchedProductForOffer.name}</strong></p>
-                          <p className={styles.matchPrice}>Tabela: R$ {matchedProductForOffer.originalPrice.toFixed(2)}</p>
+                          <p className={styles.matchPrice}>Preço Tabela: R$ {matchedProductForOffer.originalPrice.toFixed(2)}</p>
                         </div>
                       </div>
                     ) : (
@@ -1872,10 +1898,53 @@ export const AdminDashboard: React.FC = () => {
                     )}
                   </div>
                 )}
+
                 <div className={styles.group}>
-                  <label>Preço Promocional (R$)</label>
-                  <input type="number" value={promoPrice} onChange={e => setPromoPrice(e.target.value)} placeholder="0.00" step="0.01" disabled={!matchedProductForOffer} required />
+                  <label>Tipo de Desconto</label>
+                  <div style={{ display: 'flex', gap: '20px', marginTop: '6px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                      <input 
+                        type="radio" 
+                        name="discountType" 
+                        value="percentual" 
+                        checked={discountType === 'percentual'} 
+                        onChange={() => { setDiscountType('percentual'); setPromoValue(''); }} 
+                      />
+                      Porcentagem (% OFF)
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                      <input 
+                        type="radio" 
+                        name="discountType" 
+                        value="fixo" 
+                        checked={discountType === 'fixo'} 
+                        onChange={() => { setDiscountType('fixo'); setPromoValue(''); }} 
+                      />
+                      Valor Fixo em R$
+                    </label>
+                  </div>
                 </div>
+
+                <div className={styles.group}>
+                  <label>{discountType === 'percentual' ? 'Desconto (% OFF)' : 'Preço Promocional (R$)'}</label>
+                  <input 
+                    type="number" 
+                    value={promoValue} 
+                    onChange={e => setPromoValue(e.target.value)} 
+                    placeholder={discountType === 'percentual' ? 'Ex: 15 (para 15% off)' : '0.00'} 
+                    step={discountType === 'percentual' ? '1' : '0.01'} 
+                    min="0"
+                    max={discountType === 'percentual' ? '100' : undefined}
+                    disabled={!matchedProductForOffer} 
+                    required 
+                  />
+                  {matchedProductForOffer && discountType === 'percentual' && promoValue && !isNaN(Number(promoValue)) && (
+                    <small style={{ display: 'block', marginTop: '6px', color: '#059669', fontWeight: 'bold' }}>
+                      ✨ Preço final com {promoValue}% de desconto: R$ {(matchedProductForOffer.originalPrice * (1 - Number(promoValue) / 100)).toFixed(2)}
+                    </small>
+                  )}
+                </div>
+
                 <button type="submit" className={styles.btnSuccess} disabled={!matchedProductForOffer}>Ativar Preço Promocional</button>
               </form>
             </section>
@@ -1912,6 +1981,28 @@ export const AdminDashboard: React.FC = () => {
                     >
                       <div className={styles.carouselContainer} style={{ position: 'relative' }}>
                         <img src={prod.images[0]} alt="" className={styles.catalogCardImage} />
+
+                        {/* Selo grande de % OFF no canto superior direito da imagem em cor preta */}
+                        {prod.hasOffer && (
+                          <div style={{
+                            position: 'absolute',
+                            top: '12px',
+                            right: '12px',
+                            backgroundColor: '#000000',
+                            color: '#ffffff',
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            fontSize: '1rem',
+                            fontWeight: '800',
+                            letterSpacing: '0.5px',
+                            zIndex: 3,
+                            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+                            textTransform: 'uppercase'
+                          }}>
+                            {Math.round((1 - (prod.offerPrice / prod.originalPrice)) * 100)}% OFF
+                          </div>
+                        )}
+
                         {isDesativado && (
                           <span style={{
                             position: 'absolute',
@@ -1937,8 +2028,10 @@ export const AdminDashboard: React.FC = () => {
                         <div className={styles.priceDisplayArea}>
                           {prod.hasOffer ? (
                             <div className={styles.priceContainer}>
-                              <span className={styles.oldPrice}>De: R$ {prod.originalPrice.toFixed(2)}</span>
-                              <span className={styles.newPrice}>Por: R$ {prod.offerPrice.toFixed(2)}</span>
+                              <div>
+                                <span className={styles.oldPrice}>De: R$ {prod.originalPrice.toFixed(2)}</span>
+                                <span className={styles.newPrice}>Por: R$ {prod.offerPrice.toFixed(2)}</span>
+                              </div>
                             </div>
                           ) : (
                             <span className={styles.normalPrice}>R$ {prod.originalPrice.toFixed(2)}</span>
@@ -1947,7 +2040,35 @@ export const AdminDashboard: React.FC = () => {
                         
                         <div className={styles.controlsRow} onClick={(e) => e.stopPropagation()}>
                           <label className={styles.toggleLabel}>
-                            <input type="checkbox" checked={prod.isVisible} onChange={() => setProducts(products.map(p => p.id === prod.id ? { ...p, isVisible: !p.isVisible } : p))} />
+                            <input 
+                              type="checkbox" 
+                              checked={prod.isVisible} 
+                              onChange={async (e) => {
+                                const novoStatus = e.target.checked;
+
+                                // Atualiza o estado local imediatamente para fluidez visual
+                                setProducts(products.map(p => p.id === prod.id ? { ...p, isVisible: novoStatus } : p));
+
+                                try {
+                                  // Dispara a chamada PATCH para a nova rota do backend
+                                  const response = await fetch(`${API_URL}/produtos/${prod.id}/visibilidade`, {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    credentials: 'include',
+                                    body: JSON.stringify({ isVisible: novoStatus })
+                                  });
+
+                                  const data = await response.json();
+
+                                  if (!response.ok) {
+                                    throw new Error(data.message || 'Erro ao atualizar a visibilidade.');
+                                  }
+                                } catch (err: any) {
+                                  alert(err.message || 'Erro ao conectar com o servidor.');
+                                  carregarProdutos(); // Reverte em caso de erro
+                                }
+                              }} 
+                            />
                             {prod.isVisible ? '🟢 Visível' : '🔴 Oculto'}
                           </label>
 

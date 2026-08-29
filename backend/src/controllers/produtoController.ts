@@ -101,6 +101,7 @@ export const produtoController = {
           preco: precoNumerico,
           descricao: descricao || null,
           categoryId: String(categoryId),
+          isVisible: false, // Define explicitamente como false ao criar
           estoques: {
             create: tamanhosParsed.map((item: { tamanhoId: string; corId?: string; estoque?: number; quantidade?: number }) => ({
               tamanhoId: String(item.tamanhoId),
@@ -392,6 +393,123 @@ export const produtoController = {
     } catch (error) {
       console.error('Erro ao excluir produto:', error);
       return res.status(500).json({ message: 'Erro interno ao excluir produto.' });
+    }
+  },
+
+  async configurarOferta(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { discountType, promoValue } = req.body;
+
+      if (!id) {
+        return res.status(400).json({ message: 'O ID do produto é obrigatório.' });
+      }
+
+      // Busca o produto atual para verificar se ele existe e pegar o preço original (tabela)
+      const produtoExistente = await prisma.produto.findUnique({
+        where: { id: String(id) },
+      });
+
+      if (!produtoExistente) {
+        return res.status(404).json({ message: 'Produto não encontrado.' });
+      }
+
+      const precoOriginal = Number(produtoExistente.preco);
+      let calculatedPromoPrice = 0;
+
+      // Se promoValue vier vazio ou nulo, removemos a oferta
+      if (promoValue === null || promoValue === undefined || promoValue === '') {
+        const produtoAtualizado = await prisma.produto.update({
+          where: { id: String(id) },
+          data: {
+            temOferta: false,
+            precoPromocional: 0,
+          },
+          include: {
+            categoria: true,
+            estoques: { include: { tamanho: true, cor: true } },
+            imagens: true,
+          },
+        });
+        return res.status(200).json({ message: 'Oferta removida com sucesso.', produto: produtoAtualizado });
+      }
+
+      const valorNumerico = Number(promoValue);
+      if (isNaN(valorNumerico) || valorNumerico <= 0) {
+        return res.status(400).json({ message: 'O valor promocional ou desconto deve ser maior que zero.' });
+      }
+
+      if (discountType === 'percentual') {
+        if (valorNumerico > 100) {
+          return res.status(400).json({ message: 'A porcentagem de desconto não pode ser superior a 100%.' });
+        }
+        calculatedPromoPrice = precoOriginal * (1 - valorNumerico / 100);
+      } else if (discountType === 'fixo') {
+        if (valorNumerico >= precoOriginal) {
+          return res.status(400).json({ message: 'O preço promocional fixo deve ser menor que o preço original do produto.' });
+        }
+        calculatedPromoPrice = valorNumerico;
+      } else {
+        return res.status(400).json({ message: 'Tipo de desconto inválido. Use "percentual" ou "fixo".' });
+      }
+
+      // Atualiza o produto no banco com os campos em português
+      const produtoAtualizado = await prisma.produto.update({
+        where: { id: String(id) },
+        data: {
+          temOferta: true,
+          precoPromocional: Number(calculatedPromoPrice.toFixed(2)),
+        },
+        include: {
+          categoria: true,
+          estoques: { include: { tamanho: true, cor: true } },
+          imagens: true,
+        },
+      });
+
+      return res.status(200).json({
+        message: 'Oferta configurada com sucesso!',
+        produto: produtoAtualizado,
+      });
+
+    } catch (error) {
+      console.error('Erro ao configurar oferta:', error);
+      return res.status(500).json({ message: 'Erro interno ao salvar oferta do produto.' });
+    }
+  },
+
+  async atualizarVisibilidade(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { isVisible } = req.body;
+
+      if (typeof isVisible !== 'boolean') {
+        return res.status(400).json({ message: 'O campo isVisible deve ser um booleano (true ou false).' });
+      }
+
+      const produtoExistente = await prisma.produto.findUnique({
+        where: { id: String(id) },
+      });
+
+      if (!produtoExistente) {
+        return res.status(404).json({ message: 'Produto não encontrado.' });
+      }
+
+      const produtoAtualizado = await prisma.produto.update({
+        where: { id: String(id) },
+        data: { 
+          // Ajuste o nome da coluna conforme o seu schema do Prisma (ex: isVisible ou ativo)
+          isVisible: isVisible 
+        },
+      });
+
+      return res.status(200).json({ 
+        message: 'Visibilidade atualizada com sucesso!', 
+        produto: produtoAtualizado 
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar visibilidade do produto:', error);
+      return res.status(500).json({ message: 'Erro interno ao atualizar a visibilidade.' });
     }
   },
 };
