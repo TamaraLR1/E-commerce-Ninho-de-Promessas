@@ -10,5 +10,6 @@ router.post('/produtos', parseUpload('imagens', 10), produtoController.criar);
 router.put('/produtos/:id', parseUpload('imagens', 10), produtoController.atualizar);
 router.patch('/produtos/:id/oferta', produtoController.configurarOferta);
 router.patch('/produtos/:id/visibilidade', produtoController.atualizarVisibilidade);
+router.patch('/produtos/:id/reativar', produtoController.reativar);
 
 export { router as produtoRoutes };

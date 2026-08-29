@@ -512,4 +512,62 @@ export const produtoController = {
       return res.status(500).json({ message: 'Erro interno ao atualizar a visibilidade.' });
     }
   },
+
+  async reativar(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+
+      const produto = await prisma.produto.findUnique({
+        where: { id: String(id) },
+        include: {
+          estoques: {
+            include: {
+              tamanho: true,
+              cor: true,
+            }
+          }
+        }
+      });
+
+      if (!produto) {
+        return res.status(404).json({ message: 'Produto não encontrado.' });
+      }
+
+      // Validação flexível: Verifica se existe pelo menos um registro de estoque 
+      // onde a Cor e o Tamanho globais estejam ativos.
+      const temItemValidoParaAtivar = produto.estoques.some((item: any) => {
+        const tamanhoAtivo = item.tamanho?.ativo !== false;
+        const corAtiva = !item.cor || item.cor.ativo !== false;
+        return tamanhoAtivo && corAtiva;
+      });
+
+      if (!temItemValidoParaAtivar) {
+        return res.status(400).json({ 
+          message: 'Não é possível reativar o produto pois ele não possui nenhuma cor ou tamanho ativo vinculado.' 
+        });
+      }
+
+      // Reativa o produto e também garante que os estoques vinculados fiquem ativos novamente
+      const produtoReativado = await prisma.produto.update({
+        where: { id: String(id) },
+        data: { 
+          ativo: true,
+          estoques: {
+            updateMany: {
+              where: { produtoId: String(id) },
+              data: { ativo: true }
+            }
+          }
+        },
+        include: {
+          estoques: { include: { tamanho: true, cor: true } }
+        }
+      });
+
+      return res.status(200).json({ message: 'Produto reativado com sucesso!', produtoReativado });
+    } catch (error) {
+      console.error('Erro ao reativar produto:', error);
+      return res.status(500).json({ message: 'Erro interno ao reativar produto.' });
+    }
+  },
 };

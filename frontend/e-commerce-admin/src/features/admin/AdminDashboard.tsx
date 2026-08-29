@@ -1043,7 +1043,7 @@ export const AdminDashboard: React.FC = () => {
   });
 
   const handleDeleteProductDirect = async (productId: string) => {
-    const confirmacao = window.confirm('Tem certeza que deseja excluir este produto? Esta ação não pode ser desfeita.');
+    const confirmacao = window.confirm('Tem certeza que deseja desativar ou excluir este produto?');
     if (!confirmacao) return;
 
     try {
@@ -1053,12 +1053,12 @@ export const AdminDashboard: React.FC = () => {
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Erro ao excluir o produto.');
+      if (!response.ok) throw new Error(data.message || 'Erro ao processar a requisição do produto.');
 
-      alert('Produto excluído com sucesso!');
+      alert('Operação realizada com sucesso!');
       carregarProdutos();
     } catch (err: any) {
-      alert(err.message || 'Erro ao conectar com o servidor para exclusão.');
+      alert(err.message || 'Erro ao conectar com o servidor.');
     }
   };
 
@@ -2092,10 +2092,31 @@ export const AdminDashboard: React.FC = () => {
 
                             <button 
                               type="button" 
-                              onClick={() => handleDeleteProductDirect(prod.id)}
-                              className={styles.btnDeleteTable}
+                              onClick={async () => {
+                                const estaInativo = prod.ativo === false || prod.ativo === 0;
+
+                                if (estaInativo) {
+                                  try {
+                                    const response = await fetch(`${API_URL}/produtos/${prod.id}/reativar`, {
+                                      method: 'PATCH',
+                                      credentials: 'include',
+                                    });
+                                    const data = await response.json();
+                                    if (!response.ok) throw new Error(data.message || 'Erro ao reativar o produto.');
+                                    
+                                    alert('Produto reativado com sucesso!');
+                                    carregarProdutos();
+                                  } catch (err: any) {
+                                    alert(err.message || 'Erro ao conectar com o servidor.');
+                                  }
+                                } else {
+                                  handleDeleteProductDirect(prod.id);
+                                }
+                              }}
+                              className={prod.ativo === false || prod.ativo === 0 ? styles.btnSuccess : styles.btnDeleteTable}
+                              style={prod.ativo === false || prod.ativo === 0 ? { backgroundColor: '#10b981', color: '#fff' } : undefined}
                             >
-                              🗑️ Excluir
+                              {prod.ativo === false || prod.ativo === 0 ? '♻️ Reativar' : '🗑️ Excluir'}
                             </button>
                           </div>
                         </div>
