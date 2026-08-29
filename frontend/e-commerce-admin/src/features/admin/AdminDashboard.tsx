@@ -97,6 +97,7 @@ export const AdminDashboard: React.FC = () => {
   const [stockSearchQuery, setStockSearchQuery] = useState('');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'todos' | 'esgotado' | 'baixo'>('todos');
+  const [sortBy, setSortBy] = useState<'nome-asc' | 'nome-desc' | 'preco-asc' | 'preco-desc' | 'estoque-desc' | 'estoque-asc'>('nome-asc');
 
   const [selectedProductDetails, setSelectedProductDetails] = useState<ProductMaster | null>(null);
   const [selectedColorForDetails, setSelectedColorForDetails] = useState<string | null>(null);
@@ -704,6 +705,11 @@ export const AdminDashboard: React.FC = () => {
     return initialStock;
   };
 
+  const calcularEstoqueTotal = (prod: ProductMaster) => {
+    if (!prod.rawSizes || prod.rawSizes.length === 0) return 0;
+    return prod.rawSizes.reduce((total, item) => total + (item.estoque ?? 0), 0);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const filesArray = Array.from(e.target.files);
@@ -995,6 +1001,35 @@ export const AdminDashboard: React.FC = () => {
     prod.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
     prod.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const sortedProducts = [...filteredProducts].sort((a, b) => {
+    if (sortBy === 'nome-asc') {
+      return a.name.localeCompare(b.name);
+    }
+    if (sortBy === 'nome-desc') {
+      return b.name.localeCompare(a.name);
+    }
+
+    const precoA = a.hasOffer ? a.offerPrice : a.originalPrice;
+    const precoB = b.hasOffer ? b.offerPrice : b.originalPrice;
+    if (sortBy === 'preco-asc') {
+      return precoA - precoB;
+    }
+    if (sortBy === 'preco-desc') {
+      return precoB - precoA;
+    }
+
+    const estoqueA = calcularEstoqueTotal(a);
+    const estoqueB = calcularEstoqueTotal(b);
+    if (sortBy === 'estoque-desc') {
+      return estoqueB - estoqueA;
+    }
+    if (sortBy === 'estoque-asc') {
+      return estoqueA - estoqueB;
+    }
+
+    return 0;
+  });
 
   const filteredStockProducts = products.filter(prod => {
     const matchesSearch = stockSearchQuery.trim() === '' || 
@@ -1953,13 +1988,26 @@ export const AdminDashboard: React.FC = () => {
 
         {activeTab === 'lista' && (
           <div className={styles.singleContainer}>
-            <div className={styles.searchSection}>
-              <input type="text" className={styles.searchInput} placeholder="🔍 Buscar por nome, categoria, descrição ou ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            <div className={styles.searchSection} style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <input type="text" className={styles.searchInput} style={{ flex: 1, minWidth: '240px' }} placeholder="🔍 Buscar por nome, categoria, descrição ou ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              
+              <select 
+                value={sortBy} 
+                onChange={(e) => setSortBy(e.target.value as any)}
+                style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.9rem', cursor: 'pointer' }}
+              >
+                <option value="nome-asc">🔤 Nome (A - Z)</option>
+                <option value="nome-desc">🔤 Nome (Z - A)</option>
+                <option value="preco-asc">💲 Menor Preço</option>
+                <option value="preco-desc">💲 Maior Preço</option>
+                <option value="estoque-desc">📦 Maior Estoque</option>
+                <option value="estoque-asc">📦 Menor Estoque</option>
+              </select>
             </div>
             <section className={styles.card}>
               <h3>Vitrine de Controle Comercial</h3>
               <div className={styles.catalogGrid}>
-                {filteredProducts.map(prod => {
+                {sortedProducts.map(prod => {
                   const categoriaEncontrada = categoriasList.find(c => c.nome === prod.category);
                   const categoriaInativa = categoriaEncontrada?.ativo === false;
 
