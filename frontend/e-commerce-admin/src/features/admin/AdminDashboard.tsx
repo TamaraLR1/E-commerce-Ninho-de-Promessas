@@ -457,7 +457,6 @@ export const AdminDashboard: React.FC = () => {
     const estaAtivo = tamanhoObj ? tamanhoObj.ativo !== false : true;
 
     if (estaAtivo && tamanhoObj) {
-      // Verifica se existe algum produto cujo rawSizes possua este tamanhoId
       const temVinculo = products.some(p => 
         p.rawSizes?.some(s => s.tamanhoId === tamanhoObj.id)
       );
@@ -555,6 +554,37 @@ export const AdminDashboard: React.FC = () => {
     const corObj = typeof parametro === 'object' ? parametro : coresList.find(c => c.id === id);
     
     const estaAtivo = corObj ? corObj.ativo !== false : true;
+
+    if (estaAtivo && corObj) {
+      // Verifica se existe algum produto cujo rawSizes possua este corId
+      const temVinculo = products.some(p => 
+        p.rawSizes?.some(s => s.corId === corObj.id)
+      );
+
+      if (!temVinculo) {
+        if (!window.confirm(`Esta cor não possui vínculos com produtos. Deseja excluí-la permanentemente do banco de dados?`)) return;
+
+        try {
+          const response = await fetch(`${API_URL}/cores/${id}/inativar`, {
+            method: 'PATCH',
+            credentials: 'include',
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.message || 'Erro ao excluir a cor.');
+          
+          alert('Cor excluída permanentemente com sucesso!');
+          await Promise.all([
+            carregarCores(),
+            carregarProdutos()
+          ]);
+          return;
+        } catch (err: any) {
+          alert(err.message || 'Erro ao conectar com o servidor.');
+          return;
+        }
+      }
+    }
+
     const acaoTexto = estaAtivo ? 'desativar' : 'ativar';
 
     if (!window.confirm(`Tem certeza que deseja ${acaoTexto} esta cor?`)) return;

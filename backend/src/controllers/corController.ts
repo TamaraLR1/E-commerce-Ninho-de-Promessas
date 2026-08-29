@@ -115,13 +115,30 @@ export const corController = {
     try {
       const id = String(req.params.id);
 
-      // 1. Inativa a cor globalmente
+      // 1. Verifica se existem estoques vinculados a esta cor
+      const estoquesVinculados = await prisma.produtoEstoque.findMany({
+        where: { corId: id },
+        select: { id: true }
+      });
+
+      // 2. Se não houver vínculos, exclui permanentemente do banco de dados
+      if (estoquesVinculados.length === 0) {
+        await prisma.cor.delete({
+          where: { id }
+        });
+
+        return res.status(200).json({ 
+          message: 'Cor sem vínculos foi excluída permanentemente com sucesso!' 
+        });
+      }
+
+      // 3. Se houver vínculos, inativa a cor globalmente
       const corAtualizada = await prisma.cor.update({
         where: { id },
         data: { ativo: false }
       });
 
-      // 2. Inativa em cascata todos os estoques vinculados a esta cor
+      // 4. Inativa em cascata todos os estoques vinculados a esta cor
       await prisma.produtoEstoque.updateMany({
         where: { corId: id },
         data: { ativo: false }
@@ -132,8 +149,8 @@ export const corController = {
         cor: corAtualizada 
       });
     } catch (error) {
-      console.error('Erro ao inativar cor:', error);
-      return res.status(500).json({ message: 'Erro interno ao inativar cor.' });
+      console.error('Erro ao processar cor:', error);
+      return res.status(500).json({ message: 'Erro interno ao processar cor.' });
     }
   },
 
