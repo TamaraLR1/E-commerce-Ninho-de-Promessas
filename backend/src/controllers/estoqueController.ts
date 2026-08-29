@@ -2,13 +2,14 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 
 export const estoqueController = {
-async listarMovimentacoes(req: Request, res: Response) {
+  async listarMovimentacoes(req: Request, res: Response) {
     try {
       const movimentacoes = await prisma.movimentacaoEstoque.findMany({
         orderBy: { data: 'desc' },
         include: {
           motivo: true,   // Traz os dados da tabela relacionada de motivos
           produto: true,  // Traz os dados do produto
+          admin: true,    // 👤 Traz os dados do administrador responsável
         },
       });
 
@@ -35,11 +36,17 @@ async listarMovimentacoes(req: Request, res: Response) {
 
   async criarMovimentacao(req: Request, res: Response) {
     try {
-      // 1. Extraia o motivoId (e mantenha o motivo caso algum outro lugar ainda envie texto)
+      // 1. Extraia o motivoId e o adminId logado contemplando todas as variações do token
       const { produtoId, corNome, tamanho, tipo, quantidade, motivoId, motivo } = req.body;
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
 
       if (!produtoId || !tipo || !quantidade) {
         return res.status(400).json({ message: 'Campos obrigatórios ausentes.' });
+      }
+
+      if (!adminId) {
+        return res.status(401).json({ message: 'Administrador não autenticado.' });
       }
 
       const corNomeFinal = corNome || 'Padrão';
@@ -69,9 +76,9 @@ async listarMovimentacoes(req: Request, res: Response) {
         return res.status(400).json({ message: 'Estoque insuficiente para esta saída.' });
       }
 
-      // 2. Executa a criação da movimentação e a atualização do estoque físico em transação
+      // 2. Executa a criação da movimentação (com o adminId corrigido) e a atualização do estoque físico em transação
       const [novaMovimentacao] = await prisma.$transaction([
-        // Cria o registro no histórico
+        // Cria o registro no histórico salvando o responsável
         prisma.movimentacaoEstoque.create({
           data: {
             produtoId,
@@ -80,7 +87,12 @@ async listarMovimentacoes(req: Request, res: Response) {
             tipo,
             quantidade: qtdNumerica,
             motivoId: motivoId || null,
+            adminId: Number(adminId), // Salvando o ID correto do administrador responsável
           },
+          include: {
+            admin: true, // Já retorna os dados do admin na resposta
+            motivo: true,
+          }
         }),
         // Atualiza o saldo real na tabela de estoque do produto
         prisma.produtoEstoque.update({
@@ -144,6 +156,7 @@ async listarMovimentacoes(req: Request, res: Response) {
         include: {
           motivo: true,
           produto: true,
+          admin: true, // 👤 Traz o responsável nas últimas movimentações do dashboard
         }
       });
 

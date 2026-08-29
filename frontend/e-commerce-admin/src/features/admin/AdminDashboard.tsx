@@ -16,6 +16,8 @@ interface ProductMaster {
   rawSizes?: { tamanhoId: string; corId?: string; estoque?: number; ativo?: boolean; tamanho?: { nome: string }; cor?: { nome: string } }[];
   rawColors?: { corId: string; id?: string; cor?: { nome: string }; nome?: string }[];
   ativo?: boolean | number;
+  criadoPor?: { nome: string };     
+  atualizadoPor?: { nome: string }; 
 }
 
 interface StockMovement {
@@ -27,6 +29,7 @@ interface StockMovement {
   quantity: number;
   reason: string;
   date: string;
+  admin?: { nome: string };
 }
 
 interface Categoria {
@@ -80,6 +83,7 @@ interface DashboardData {
     data: string;
     produto?: { nome: string; name?: string };
     motivo?: { nome: string };
+    admin?: { nome: string };
   }>;
 }
 
@@ -92,6 +96,9 @@ export const AdminDashboard: React.FC = () => {
   const [motivosEstoqueList, setMotivosEstoqueList] = useState<MotivoEstoque[]>([]);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
+
+  // 👤 Estado para armazenar os dados do administrador logado
+  const [adminUser, setAdminUser] = useState<{ nome: string; email: string } | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [stockSearchQuery, setStockSearchQuery] = useState('');
@@ -163,6 +170,7 @@ export const AdminDashboard: React.FC = () => {
     carregarMovimentacoes();
     carregarMotivosEstoque();
     carregarDashboard();
+    carregarPerfilAdmin(); // 👤 Busca o nome do usuário logado ao carregar o componente
   }, []);
 
   useEffect(() => {
@@ -186,6 +194,41 @@ export const AdminDashboard: React.FC = () => {
       });
     });
   }, [selectedColors]);
+
+  // 👤 Função para buscar os dados do perfil do administrador logado
+  const carregarPerfilAdmin = async () => {
+    try {
+      const response = await fetch(`${API_URL}/admin/me`, { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setAdminUser(data);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar perfil do admin', err);
+    }
+  };
+
+  // 🚪 Função para realizar o logout e redirecionar para a tela de login
+  const handleLogout = async () => {
+    try {
+      const response = await fetch(`${API_URL}/admin/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        // 🧹 Limpa a chave de autenticação do localStorage
+        localStorage.removeItem('@EcommerceAdmin:logged');
+
+        // Redireciona para a raiz ou tela de login
+        window.location.href = '/'; 
+      } else {
+        alert('Erro ao realizar logout.');
+      }
+    } catch (err) {
+      console.error('Erro ao conectar com o servidor para logout', err);
+    }
+  };
 
   const carregarDashboard = async () => {
     setDashboardLoading(true);
@@ -289,7 +332,9 @@ export const AdminDashboard: React.FC = () => {
             colors: coresFormatadas.length > 0 ? coresFormatadas : (p.cores ? p.cores.map((c: any) => ({ nome: c.cor?.nome || c.nome, hex: c.cor?.hex || '#000000' })) : []),
             rawSizes: estoqueList,
             rawColors: p.cores || [],
-            ativo: p.ativo
+            ativo: p.ativo,
+            criadoPor: p.criadoPor,         
+            atualizadoPor: p.atualizadoPor   
           };
         });
         setProducts(formattedProducts);
@@ -312,7 +357,8 @@ export const AdminDashboard: React.FC = () => {
           type: m.tipo,
           quantity: m.quantidade,
           reason: m.motivo?.nome || m.motivo || 'Manual',
-          date: new Date(m.data).toLocaleDateString('pt-BR')
+          date: new Date(m.data).toLocaleDateString('pt-BR'),
+          admin: m.admin 
         }));
         setMovements(formattedMovements);
       }
@@ -1130,35 +1176,77 @@ export const AdminDashboard: React.FC = () => {
       {isMenuOpen && <div className={styles.sidebarOverlay} onClick={() => setIsMenuOpen(false)} />}
 
       <aside className={`${styles.sidebar} ${isMenuOpen ? styles.sidebarOpen : ''}`}>
-        <h2>Painel Admin</h2>
-        <nav>
-          <div className={`${styles.navItem} ${activeTab === 'dashboard' ? styles.active : ''}`} onClick={() => { setActiveTab('dashboard'); setIsMenuOpen(false); }}>📊 Dashboard</div>
-          <div 
-            className={`${styles.navItem} ${activeTab === 'cadastro' && !editingProductId ? styles.active : ''}`} 
-            onClick={() => { 
-              setEditingProductId(null);
-              setSelectedColors([]);
-              setColorSizeConfigs([]);
-              setTempImages([]);
-              setImageFiles([]);
-              setNewName('');
-              setNewDesc('');
-              setNewPrice('');
-              setActiveTab('cadastro'); 
-              setIsMenuOpen(false); 
+        <div>
+          <h2>Painel Admin</h2>
+          
+          {/* 👤 Exibição do Nome do Usuário Logado na Sidebar */}
+          <div style={{ padding: '0 16px 16px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '16px' }}>
+            <p style={{ fontSize: '0.8rem', color: '#141516', margin: 0 }}>Logado como:</p>
+            <p style={{ 
+              fontSize: '1rem', 
+              fontWeight: '700', 
+              color: '#12738b', // 🎨 Alterado para um azul claro de alto contraste (ou use '#fbbf24' para amarelo)
+              margin: '4px 0 0 0', 
+              wordBreak: 'break-word'
+            }}>
+              {adminUser?.nome || 'Carregando...'}
+            </p>
+          </div>
+
+          <nav>
+            <div className={`${styles.navItem} ${activeTab === 'dashboard' ? styles.active : ''}`} onClick={() => { setActiveTab('dashboard'); setIsMenuOpen(false); }}>📊 Dashboard</div>
+            <div 
+              className={`${styles.navItem} ${activeTab === 'cadastro' && !editingProductId ? styles.active : ''}`} 
+              onClick={() => { 
+                setEditingProductId(null);
+                setSelectedColors([]);
+                setColorSizeConfigs([]);
+                setTempImages([]);
+                setImageFiles([]);
+                setNewName('');
+                setNewDesc('');
+                setNewPrice('');
+                setActiveTab('cadastro'); 
+                setIsMenuOpen(false); 
+              }}
+            >
+              ➕ Cadastrar Produto
+            </div>
+            <div className={`${styles.navItem} ${activeTab === 'categorias' ? styles.active : ''}`} onClick={() => { setActiveTab('categorias'); setIsMenuOpen(false); }}>📂 Gerenciar Categorias</div>
+            <div className={`${styles.navItem} ${activeTab === 'tamanhos' ? styles.active : ''}`} onClick={() => { setActiveTab('tamanhos'); setIsMenuOpen(false); }}>📏 Gerenciar Tamanhos</div>
+            <div className={`${styles.navItem} ${activeTab === 'cores' ? styles.active : ''}`} onClick={() => { setActiveTab('cores'); setIsMenuOpen(false); }}>🎨 Gerenciar Cores</div>
+            <div className={`${styles.navItem} ${activeTab === 'motivos' ? styles.active : ''}`} onClick={() => { setActiveTab('motivos'); setIsMenuOpen(false); }}>📝 Gerenciar Motivos</div>
+            <div className={`${styles.navItem} ${activeTab === 'oferta' ? styles.active : ''}`} onClick={() => { setActiveTab('oferta'); setIsMenuOpen(false); }}>🏷️ Configurar Oferta</div>
+            <div className={`${styles.navItem} ${activeTab === 'lista' ? styles.active : ''}`} onClick={() => { setActiveTab('lista'); setIsMenuOpen(false); }}>📋 Lista & Vitrine ({products.length})</div>
+            <div className={`${styles.navItem} ${activeTab === 'estoque' ? styles.active : ''}`} onClick={() => { setActiveTab('estoque'); setIsMenuOpen(false); }}>📦 Controle de Estoque</div>
+            <div className={`${styles.navItem} ${activeTab === 'historico-estoque' ? styles.active : ''}`} onClick={() => { setActiveTab('historico-estoque'); setIsMenuOpen(false); }}>📜 Histórico de Estoque</div>
+          </nav>
+        </div>
+
+        {/* 🚪 Botão de Sair / Logout na parte inferior da Sidebar */}
+        <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <button 
+            type="button" 
+            onClick={handleLogout}
+            style={{
+              width: '100%',
+              padding: '10px',
+              backgroundColor: '#ef4444',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '6px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              fontSize: '0.9rem'
             }}
           >
-            ➕ Cadastrar Produto
-          </div>
-          <div className={`${styles.navItem} ${activeTab === 'categorias' ? styles.active : ''}`} onClick={() => { setActiveTab('categorias'); setIsMenuOpen(false); }}>📂 Gerenciar Categorias</div>
-          <div className={`${styles.navItem} ${activeTab === 'tamanhos' ? styles.active : ''}`} onClick={() => { setActiveTab('tamanhos'); setIsMenuOpen(false); }}>📏 Gerenciar Tamanhos</div>
-          <div className={`${styles.navItem} ${activeTab === 'cores' ? styles.active : ''}`} onClick={() => { setActiveTab('cores'); setIsMenuOpen(false); }}>🎨 Gerenciar Cores</div>
-          <div className={`${styles.navItem} ${activeTab === 'motivos' ? styles.active : ''}`} onClick={() => { setActiveTab('motivos'); setIsMenuOpen(false); }}>📝 Gerenciar Motivos</div>
-          <div className={`${styles.navItem} ${activeTab === 'oferta' ? styles.active : ''}`} onClick={() => { setActiveTab('oferta'); setIsMenuOpen(false); }}>🏷️ Configurar Oferta</div>
-          <div className={`${styles.navItem} ${activeTab === 'lista' ? styles.active : ''}`} onClick={() => { setActiveTab('lista'); setIsMenuOpen(false); }}>📋 Lista & Vitrine ({products.length})</div>
-          <div className={`${styles.navItem} ${activeTab === 'estoque' ? styles.active : ''}`} onClick={() => { setActiveTab('estoque'); setIsMenuOpen(false); }}>📦 Controle de Estoque</div>
-          <div className={`${styles.navItem} ${activeTab === 'historico-estoque' ? styles.active : ''}`} onClick={() => { setActiveTab('historico-estoque'); setIsMenuOpen(false); }}>📜 Histórico de Estoque</div>
-        </nav>
+            🚪 Sair (Logout)
+          </button>
+        </div>
       </aside>
 
       <main className={styles.mainContent}>
@@ -1215,6 +1303,7 @@ export const AdminDashboard: React.FC = () => {
                               <th style={{ padding: '8px' }}>Tipo</th>
                               <th style={{ padding: '8px' }}>Qtd</th>
                               <th style={{ padding: '8px' }}>Motivo</th>
+                              <th style={{ padding: '8px' }}>Responsável</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1245,6 +1334,9 @@ export const AdminDashboard: React.FC = () => {
                                   {item.tipo === 'ENTRADA' ? `+${item.quantidade}` : `-${item.quantidade}`}
                                 </td>
                                 <td style={{ padding: '8px', color: '#475569' }}>{item.motivo?.nome || '—'}</td>
+                                <td style={{ padding: '8px', color: '#475569', fontWeight: 500 }}>
+                                  {item.admin?.nome || 'Administrador'}
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -2110,6 +2202,14 @@ export const AdminDashboard: React.FC = () => {
                             <span className={styles.normalPrice}>R$ {prod.originalPrice.toFixed(2)}</span>
                           )}
                         </div>
+
+                        {/* 👤 Exibição da Autoria nos Cards de Produtos */}
+                        {(prod.criadoPor || prod.atualizadoPor) && (
+                          <div style={{ fontSize: '0.73rem', color: '#64748b', marginTop: '6px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
+                            {prod.criadoPor && <span>👤 Criado por: <strong>{prod.criadoPor.nome}</strong></span>}
+                            {prod.atualizadoPor && <span style={{ display: 'block' }}>🔄 Última alt: <strong>{prod.atualizadoPor.nome}</strong></span>}
+                          </div>
+                        )}
                         
                         <div className={styles.controlsRow} onClick={(e) => e.stopPropagation()}>
                           <label className={styles.toggleLabel}>
@@ -2725,6 +2825,7 @@ export const AdminDashboard: React.FC = () => {
                         <th style={{ padding: '8px' }}>Tipo</th>
                         <th style={{ padding: '8px' }}>Qtd</th>
                         <th style={{ padding: '8px' }}>Motivo</th>
+                        <th style={{ padding: '8px' }}>Responsável</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2755,6 +2856,9 @@ export const AdminDashboard: React.FC = () => {
                               {mov.type === 'ENTRADA' ? `+${mov.quantity}` : `-${mov.quantity}`}
                             </td>
                             <td style={{ padding: '8px', color: '#475569' }}>{mov.reason}</td>
+                            <td style={{ padding: '8px', color: '#475569', fontWeight: 500 }}>
+                              {mov.admin?.nome || 'Administrador'}
+                            </td>
                           </tr>
                         );
                       })}

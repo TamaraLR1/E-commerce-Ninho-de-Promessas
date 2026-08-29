@@ -28,6 +28,11 @@ model Admin {
   senha     String
   createdAt DateTime @default(now())
   updatedAt        DateTime @updatedAt
+
+  produtosCriados     Produto[]             @relation("ProdutoCriado")
+  produtosAtualizados Produto[]             @relation("ProdutoAtualizado")
+  movimentacoes       MovimentacaoEstoque[]
+
   @@map("admins")
 }
 
@@ -91,6 +96,12 @@ model Produto {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
+  criadoPorId     Int?
+  criadoPor       Admin?   @relation("ProdutoCriado", fields: [criadoPorId], references: [id])
+  
+  atualizadoPorId Int?
+  atualizadoPor   Admin?   @relation("ProdutoAtualizado", fields: [atualizadoPorId], references: [id])
+
   @@map("produtos")
 }
 
@@ -152,9 +163,14 @@ model MovimentacaoEstoque {
   motivoId    String         // Chave estrangeira para a tabela de motivos
   motivo      MotivoEstoque  @relation(fields: [motivoId], references: [id], onDelete: Restrict)
   
+  adminId    Int            
+  admin      Admin          @relation(fields: [adminId], references: [id], onDelete: Restrict)
+
   data        DateTime @default(now())
   
   produto     Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+
+
 
   @@map("movimentacoes_estoque")
 }

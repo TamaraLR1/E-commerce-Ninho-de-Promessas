@@ -17,6 +17,8 @@ export const produtoController = {
               cor: true,
             },
           },
+          criadoPor: true,    // <--- Adicionado aqui
+          atualizadoPor: true,// <--- Adicionado aqui
         },
         orderBy: {
           createdAt: "desc",
@@ -48,6 +50,10 @@ export const produtoController = {
     try {
       const { nome, preco, descricao, categoryId, tamanhos } = req.body;
       const arquivos = req.files as Express.Multer.File[];
+
+      // Captura o ID do admin considerando 'id', 'adminId' ou o objeto do usuário, aceitando formato numérico
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
 
       if (!nome || preco === undefined || !categoryId) {
         return res.status(400).json({ message: 'Nome, preço e categoria são obrigatórios.' });
@@ -102,6 +108,11 @@ export const produtoController = {
           descricao: descricao || null,
           categoryId: String(categoryId),
           isVisible: false, // Define explicitamente como false ao criar
+          
+          // Salvando a autoria do administrador com o ID numérico correto
+          criadoPorId: adminId,
+          atualizadoPorId: adminId,
+
           estoques: {
             create: tamanhosParsed.map((item: { tamanhoId: string; corId?: string; estoque?: number; quantidade?: number }) => ({
               tamanhoId: String(item.tamanhoId),
@@ -117,6 +128,8 @@ export const produtoController = {
           categoria: true,
           estoques: { include: { tamanho: true, cor: true } },
           imagens: true,
+          criadoPor: true,    
+          atualizadoPor: true,
         },
       });
 
