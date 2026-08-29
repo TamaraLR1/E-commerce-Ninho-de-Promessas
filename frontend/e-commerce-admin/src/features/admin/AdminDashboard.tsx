@@ -653,7 +653,38 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const handleDesativarMotivo = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja alterar o status (desativar/ativar) deste motivo de estoque?')) return;
+    const motivoObj = motivosEstoqueList.find(m => m.id === id);
+    const estaAtivo = motivoObj ? motivoObj.ativo !== false : true;
+
+    if (estaAtivo && motivoObj) {
+      // Verifica se existe alguma movimentação vinculada a este motivo
+      const temVinculo = movements.some(m => m.reason === motivoObj.nome);
+
+      if (!temVinculo) {
+        if (!window.confirm(`Este motivo de estoque não possui vínculos. Deseja excluí-lo permanentemente do banco de dados?`)) return;
+
+        try {
+          const response = await fetch(`${API_URL}/motivos-estoque/${id}/inativar`, {
+            method: 'PATCH',
+            credentials: 'include',
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.message || 'Erro ao excluir o motivo de estoque.');
+          
+          alert('Motivo de estoque excluído permanentemente com sucesso!');
+          carregarMotivosEstoque();
+          return;
+        } catch (err: any) {
+          alert(err.message || 'Erro ao conectar com o servidor.');
+          return;
+        }
+      }
+    }
+
+    const acaoTexto = estaAtivo ? 'desativar' : 'ativar';
+
+    if (!window.confirm(`Tem certeza que deseja ${acaoTexto} este motivo de estoque?`)) return;
+    
     try {
       const response = await fetch(`${API_URL}/motivos-estoque/${id}/inativar`, {
         method: 'PATCH',

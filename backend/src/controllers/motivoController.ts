@@ -121,7 +121,7 @@ export const motivoController = {
   
   async inativar(req: Request, res: Response) {
     try {
-      const id  = String(req.params.id);
+      const id = String(req.params.id);
 
       // Verifica se o motivo existe no banco
       const motivoExistente = await prisma.motivoEstoque.findUnique({
@@ -132,12 +132,28 @@ export const motivoController = {
         return res.status(404).json({ message: 'Motivo de estoque não encontrado.' });
       }
 
-      // Alterna o status de 'ativo' (exclusão lógica / inativação)
-      // Ou define explicitamente para 'false' caso queira apenas desativar:
+      // 1. Verifica se existem movimentações vinculadas a este motivo
+      const movimentacoesVinculadas = await prisma.movimentacaoEstoque.findMany({
+        where: { motivoId: id },
+        select: { id: true }
+      });
+
+      // 2. Se não houver vínculos, exclui permanentemente do banco de dados
+      if (movimentacoesVinculadas.length === 0) {
+        await prisma.motivoEstoque.delete({
+          where: { id }
+        });
+
+        return res.status(200).json({ 
+          message: 'Motivo de estoque sem vínculos foi excluído permanentemente com sucesso!' 
+        });
+      }
+
+      // 3. Se houver vínculos, alterna o status de 'ativo' (inativação / reativação)
       const motivoAtualizado = await prisma.motivoEstoque.update({
         where: { id },
         data: {
-          ativo: !motivoExistente.ativo, // Se estiver ativo, inativa. Se estiver inativo, reativa.
+          ativo: !motivoExistente.ativo,
         },
       });
 
@@ -149,8 +165,8 @@ export const motivoController = {
       });
 
     } catch (error) {
-      console.error('Erro ao inativar motivo de estoque:', error);
-      return res.status(500).json({ message: 'Erro interno ao alterar status do motivo.' });
+      console.error('Erro ao processar motivo de estoque:', error);
+      return res.status(500).json({ message: 'Erro interno ao processar motivo de estoque.' });
     }
   },
 };
