@@ -119,6 +119,36 @@ export const tamanhoController = {
         data: { ativo: false }
       });
 
+      // 5. Verifica os produtos afetados e desativa o produto principal se ficar sem variações ativas
+      const produtosAfetados = await prisma.produto.findMany({
+        where: {
+          estoques: {
+            some: { tamanhoId: id }
+          }
+        },
+        include: {
+          estoques: {
+            include: { tamanho: true, cor: true }
+          }
+        }
+      });
+
+      for (const produto of produtosAfetados) {
+        const temAlgumaVariacaoAtiva = produto.estoques.some((item: any) => {
+          const tamanhoAtivo = item.tamanho?.ativo !== false;
+          const corAtiva = !item.cor || item.cor.ativo !== false;
+          const estoqueItemAtivo = item.ativo !== false;
+          return tamanhoAtivo && corAtiva && estoqueItemAtivo;
+        });
+
+        if (!temAlgumaVariacaoAtiva) {
+          await prisma.produto.update({
+            where: { id: produto.id },
+            data: { ativo: false, isVisible: false }
+          });
+        }
+      }
+
       return res.status(200).json({ 
         message: 'Tamanho e seus estoques vinculados foram desativados com sucesso!',
         tamanho: tamanhoAtualizado 
@@ -144,6 +174,36 @@ export const tamanhoController = {
         where: { tamanhoId: id },
         data: { ativo: true }
       });
+
+      // 3. Busca os produtos afetados e reativa o produto principal caso ele volte a ter variações válidas
+      const produtosAfetados = await prisma.produto.findMany({
+        where: {
+          estoques: {
+            some: { tamanhoId: id }
+          }
+        },
+        include: {
+          estoques: {
+            include: { tamanho: true, cor: true }
+          }
+        }
+      });
+
+      for (const produto of produtosAfetados) {
+        const temAlgumaVariacaoAtiva = produto.estoques.some((item: any) => {
+          const tamanhoAtivo = item.tamanho?.ativo !== false;
+          const corAtiva = !item.cor || item.cor.ativo !== false;
+          const estoqueItemAtivo = item.ativo !== false;
+          return tamanhoAtivo && corAtiva && estoqueItemAtivo;
+        });
+
+        if (temAlgumaVariacaoAtiva) {
+          await prisma.produto.update({
+            where: { id: produto.id },
+            data: { ativo: true }
+          });
+        }
+      }
 
       return res.status(200).json({ 
         message: 'Tamanho e seus estoques vinculados foram ativados com sucesso!',
