@@ -133,6 +133,16 @@ export const produtoController = {
         },
       });
 
+      // 📝 Registra o log de atividade do cadastro do produto
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Cadastrou o produto "${nome}"`
+          }
+        });
+      }
+
       return res.status(201).json(novoProduto);
     } catch (error) {
       console.error('Erro ao criar produto:', error);
@@ -146,9 +156,13 @@ export const produtoController = {
       const { nome, preco, descricao, categoryId, tamanhos, imagensMantidas } = req.body;
       const novosArquivos = req.files as Express.Multer.File[];
 
+      // Captura o ID do admin para salvar no atualizadoPorId e nos logs
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
+
       const produtoExistente = await prisma.produto.findUnique({
         where: { id },
-        include: { imagens: true, estoques: true }
+        include: { imagens: true, estoques: true, categoria: true }
       });
 
       if (!produtoExistente) {
@@ -218,15 +232,17 @@ export const produtoController = {
         : [];
 
       const precoNumerico = preco !== undefined ? Number(preco) : produtoExistente.preco;
+      const nomeFinal = nome || produtoExistente.nome;
 
-      // 2. Atualizar dados gerais do produto e novas imagens
+      // 2. Atualizar dados gerais do produto, novas imagens e quem atualizou por último
       await prisma.produto.update({
         where: { id },
         data: {
-          nome: nome || produtoExistente.nome,
+          nome: nomeFinal,
           preco: precoNumerico,
           descricao: descricao !== undefined ? descricao : produtoExistente.descricao,
           categoryId: categoryId ? String(categoryId) : produtoExistente.categoryId,
+          atualizadoPorId: adminId, 
           imagens: {
             create: novasImagensCreate
           }
@@ -319,6 +335,16 @@ export const produtoController = {
         }
       }
 
+      // 📝 Registra o log padrão e direto da atualização do produto
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Atualizou os dados do produto "${nomeFinal}"`
+          }
+        });
+      }
+
       const produtoFinal = await prisma.produto.findUnique({
         where: { id },
         include: {
@@ -338,77 +364,6 @@ export const produtoController = {
     }
   },
   
-  async excluir(req: Request, res: Response) {
-    try {
-      const id = String(req.params.id);
-
-      const produto = await prisma.produto.findUnique({
-        where: { id },
-        include: { imagens: true }
-      });
-
-      if (!produto) {
-        return res.status(404).json({ message: 'Produto não encontrado.' });
-      }
-
-      // 1. Verifica se o produto possui alguma movimentação de estoque registrada
-      const totalMovimentacoes = await prisma.movimentacaoEstoque.count({
-        where: { produtoId: id }
-      });
-
-      // 2. Se tiver histórico, faz a exclusão lógica (Inativação) do produto e de seus estoques
-      if (totalMovimentacoes > 0) {
-        // Inativa os estoques vinculados
-        await prisma.produtoEstoque.updateMany({
-          where: { produtoId: id },
-          data: { ativo: false }
-        });
-
-        // Inativa o produto principal na tabela produtos
-        await prisma.produto.update({
-          where: { id },
-          data: { ativo: false }
-        });
-
-        return res.status(200).json({ 
-          message: 'Produto possui histórico de movimentações e foi inativado com sucesso.' 
-        });
-      }
-
-      // 3. Se NÃO tiver histórico, prossegue com a exclusão completa
-      produto.imagens.forEach(img => {
-        try {
-          const filename = img.url.split('/uploads/')[1];
-          if (filename) {
-            const filePath = path.resolve(__dirname, '..', '..', 'uploads', filename);
-            if (fs.existsSync(filePath)) {
-              fs.unlinkSync(filePath);
-            }
-          }
-        } catch (err) {
-          console.error('Erro ao apagar arquivo de imagem do disco:', err);
-        }
-      });
-
-      await prisma.produtoEstoque.deleteMany({
-        where: { produtoId: id }
-      });
-
-      await prisma.produtoImagem.deleteMany({
-        where: { produtoId: id }
-      });
-
-      await prisma.produto.delete({
-        where: { id },
-      });
-
-      return res.status(200).json({ message: 'Produto nunca foi movimentado e foi excluído completamente com sucesso.' });
-    } catch (error) {
-      console.error('Erro ao excluir produto:', error);
-      return res.status(500).json({ message: 'Erro interno ao excluir produto.' });
-    }
-  },
-
   async configurarOferta(req: Request, res: Response) {
     try {
       const { id } = req.params;
@@ -417,6 +372,10 @@ export const produtoController = {
       if (!id) {
         return res.status(400).json({ message: 'O ID do produto é obrigatório.' });
       }
+
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
 
       // Busca o produto atual para verificar se ele existe e pegar o preço original (tabela)
       const produtoExistente = await prisma.produto.findUnique({
@@ -444,6 +403,17 @@ export const produtoController = {
             imagens: true,
           },
         });
+
+        // 📝 Registra o log de remoção da oferta
+        if (adminId) {
+          await prisma.logAtividade.create({
+            data: {
+              adminId: adminId,
+              acao: `Removeu a oferta do produto "${produtoExistente.nome}"`
+            }
+          });
+        }
+
         return res.status(200).json({ message: 'Oferta removida com sucesso.', produto: produtoAtualizado });
       }
 
@@ -479,6 +449,20 @@ export const produtoController = {
           imagens: true,
         },
       });
+
+      // 📝 Registra o log de configuração/atualização da oferta
+      if (adminId) {
+        const descricaoOferta = discountType === 'percentual' 
+          ? `${valorNumerico}% de desconto (R$ ${Number(calculatedPromoPrice.toFixed(2))})` 
+          : `preço fixo de R$ ${Number(calculatedPromoPrice.toFixed(2))}`;
+
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Configurou oferta no produto "${produtoExistente.nome}": ${descricaoOferta}`
+          }
+        });
+      }
 
       return res.status(200).json({
         message: 'Oferta configurada com sucesso!',
@@ -526,9 +510,106 @@ export const produtoController = {
     }
   },
 
+  async excluir(req: Request, res: Response) {
+    try {
+      const id = String(req.params.id);
+
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
+
+      const produto = await prisma.produto.findUnique({
+        where: { id },
+        include: { imagens: true }
+      });
+
+      if (!produto) {
+        return res.status(404).json({ message: 'Produto não encontrado.' });
+      }
+
+      // 1. Verifica se o produto possui alguma movimentação de estoque registrada
+      const totalMovimentacoes = await prisma.movimentacaoEstoque.count({
+        where: { produtoId: id }
+      });
+
+      // 2. Se tiver histórico, faz a exclusão lógica (Inativação) do produto e de seus estoques
+      if (totalMovimentacoes > 0) {
+        await prisma.produtoEstoque.updateMany({
+          where: { produtoId: id },
+          data: { ativo: false }
+        });
+
+        await prisma.produto.update({
+          where: { id },
+          data: { ativo: false }
+        });
+
+        // 📝 Registra o log de inativação
+        if (adminId) {
+          await prisma.logAtividade.create({
+            data: {
+              adminId: adminId,
+              acao: `Inativou o produto "${produto.nome}"`
+            }
+          });
+        }
+
+        return res.status(200).json({ 
+          message: 'Produto possui histórico de movimentações e foi inativado com sucesso.' 
+        });
+      }
+
+      // 3. Se NÃO tiver histórico, prossegue com a exclusão completa
+      produto.imagens.forEach(img => {
+        try {
+          const filename = img.url.split('/uploads/')[1];
+          if (filename) {
+            const filePath = path.resolve(__dirname, '..', '..', 'uploads', filename);
+            if (fs.existsSync(filePath)) {
+              fs.unlinkSync(filePath);
+            }
+          }
+        } catch (err) {
+          console.error('Erro ao apagar arquivo de imagem do disco:', err);
+        }
+      });
+
+      await prisma.produtoEstoque.deleteMany({
+        where: { produtoId: id }
+      });
+
+      await prisma.produtoImagem.deleteMany({
+        where: { produtoId: id }
+      });
+
+      await prisma.produto.delete({
+        where: { id },
+      });
+
+      // 📝 Registra o log de exclusão permanente
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Excluiu permanentemente o produto "${produto.nome}"`
+          }
+        });
+      }
+
+      return res.status(200).json({ message: 'Produto nunca foi movimentado e foi excluído completamente com sucesso.' });
+    } catch (error) {
+      console.error('Erro ao excluir produto:', error);
+      return res.status(500).json({ message: 'Erro interno ao excluir produto.' });
+    }
+  },
+
   async reativar(req: Request, res: Response) {
     try {
       const { id } = req.params;
+
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
 
       const produto = await prisma.produto.findUnique({
         where: { id: String(id) },
@@ -546,8 +627,6 @@ export const produtoController = {
         return res.status(404).json({ message: 'Produto não encontrado.' });
       }
 
-      // Validação flexível: Verifica se existe pelo menos um registro de estoque 
-      // onde a Cor e o Tamanho globais estejam ativos.
       const temItemValidoParaAtivar = produto.estoques.some((item: any) => {
         const tamanhoAtivo = item.tamanho?.ativo !== false;
         const corAtiva = !item.cor || item.cor.ativo !== false;
@@ -560,7 +639,6 @@ export const produtoController = {
         });
       }
 
-      // Reativa o produto e também garante que os estoques vinculados fiquem ativos novamente
       const produtoReativado = await prisma.produto.update({
         where: { id: String(id) },
         data: { 
@@ -576,6 +654,16 @@ export const produtoController = {
           estoques: { include: { tamanho: true, cor: true } }
         }
       });
+
+      // 📝 Registra o log de reativação
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Reativou o produto "${produto.nome}"`
+          }
+        });
+      }
 
       return res.status(200).json({ message: 'Produto reativado com sucesso!', produtoReativado });
     } catch (error) {

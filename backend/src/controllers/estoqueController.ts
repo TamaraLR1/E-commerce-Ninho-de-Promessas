@@ -59,6 +59,9 @@ export const estoqueController = {
           cor: { nome: corNomeFinal },
           tamanho: { nome: tamanhoFinal }
         },
+        include: {
+          produto: { select: { nome: true } } // 🔍 Incluído para pegar o nome do produto no log
+        }
       });
 
       if (!produtoEstoque) {
@@ -76,7 +79,9 @@ export const estoqueController = {
         return res.status(400).json({ message: 'Estoque insuficiente para esta saída.' });
       }
 
-      // 2. Executa a criação da movimentação (com o adminId corrigido) e a atualização do estoque físico em transação
+      const nomeProdutoLog = produtoEstoque.produto?.nome || 'Produto';
+
+      // 2. Executa a criação da movimentação, atualização do estoque físico e o log em transação atômica
       const [novaMovimentacao] = await prisma.$transaction([
         // Cria o registro no histórico salvando o responsável
         prisma.movimentacaoEstoque.create({
@@ -87,10 +92,10 @@ export const estoqueController = {
             tipo,
             quantidade: qtdNumerica,
             motivoId: motivoId || null,
-            adminId: Number(adminId), // Salvando o ID correto do administrador responsável
+            adminId: Number(adminId),
           },
           include: {
-            admin: true, // Já retorna os dados do admin na resposta
+            admin: true,
             motivo: true,
           }
         }),
@@ -102,6 +107,13 @@ export const estoqueController = {
               [tipo === 'ENTRADA' ? 'increment' : 'decrement']: qtdNumerica
             }
           }
+        }),
+        // 📝 Registra a ação na tabela de LogAtividade de forma síncrona na transação
+        prisma.logAtividade.create({
+          data: {
+            adminId: Number(adminId),
+            acao: `Registrou uma ${tipo.toLowerCase()} de ${qtdNumerica} un. no produto "${nomeProdutoLog}" (Cor: ${corNomeFinal}, Tam: ${tamanhoFinal})`
+          }
         })
       ]);
 
@@ -111,7 +123,7 @@ export const estoqueController = {
       return res.status(500).json({ message: 'Erro interno ao salvar movimentação.' });
     }
   },
-
+  
   async obterDashboard(req: Request, res: Response) {
     try {
       // 1. Total de variações de produtos ativas no estoque

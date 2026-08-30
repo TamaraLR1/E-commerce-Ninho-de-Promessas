@@ -91,4 +91,18 @@ export class AdminAuthController {
       return res.status(500).json({ message: 'Erro interno ao buscar dados do usuário.' });
     }
   }
+
+  async listarLogs(req: Request, res: Response) {
+    try {
+      const logs = await prisma.logAtividade.findMany({
+        orderBy: { data: 'desc' },
+        take: 50,
+        include: { admin: { select: { nome: true } } }
+      });
+      return res.status(200).json(logs);
+    } catch (error) {
+      console.error('Erro ao listar logs:', error);
+      return res.status(500).json({ message: 'Erro interno ao buscar logs.' });
+    }
+  }
 }

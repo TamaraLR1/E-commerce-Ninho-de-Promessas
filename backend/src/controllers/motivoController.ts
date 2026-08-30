@@ -2,9 +2,14 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 
 export const motivoController = {
-  async criar(req: Request, res: Response) {
+
+ async criar(req: Request, res: Response) {
     try {
       const { nome, tipo } = req.body;
+
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
 
       // Validação básica
       if (!nome || !tipo) {
@@ -34,6 +39,16 @@ export const motivoController = {
         },
       });
 
+      // 📝 Registra o log de cadastro do motivo
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Cadastrou o motivo de estoque "${novoMotivo.nome}" (${novoMotivo.tipo})`
+          }
+        });
+      }
+
       return res.status(201).json({
         message: 'Motivo de estoque cadastrado com sucesso!',
         motivo: novoMotivo,
@@ -45,27 +60,14 @@ export const motivoController = {
     }
   },
 
-  async listarMotivos(req: Request, res: Response) {
-    try {
-      const { tipo } = req.query;
-      const whereClause = tipo ? { tipo: String(tipo).toUpperCase() } : {};
-
-      const motivos = await prisma.motivoEstoque.findMany({
-        where: whereClause,
-        orderBy: { nome: 'asc' },
-      });
-
-      return res.json(motivos);
-    } catch (error) {
-      console.error('Erro ao listar motivos de estoque:', error);
-      return res.status(500).json({ error: 'Erro interno ao buscar motivos.' });
-    }
-  },
-
   async editar(req: Request, res: Response) {
     try {
       const id = String(req.params.id);
       const { nome, tipo } = req.body;
+
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
 
       // Validação básica
       if (!nome || !tipo) {
@@ -80,7 +82,7 @@ export const motivoController = {
 
       // Verifica se o motivo a ser editado existe
       const motivoExistente = await prisma.motivoEstoque.findUnique({
-        where: { id } // Altere para Number(id) caso o ID no seu banco seja inteiro/autoincrement
+        where: { id }
       });
 
       if (!motivoExistente) {
@@ -101,12 +103,22 @@ export const motivoController = {
 
       // Atualiza o motivo no banco
       const motivoAtualizado = await prisma.motivoEstoque.update({
-        where: { id }, // Altere para Number(id) se necessário
+        where: { id },
         data: {
           nome,
           tipo: tipoUpper,
         },
       });
+
+      // 📝 Registra o log de atualização do motivo
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Atualizou o motivo de estoque "${motivoExistente.nome}" para "${motivoAtualizado.nome}" (${motivoAtualizado.tipo})`
+          }
+        });
+      }
 
       return res.status(200).json({
         message: 'Motivo de estoque atualizado com sucesso!',
@@ -118,10 +130,31 @@ export const motivoController = {
       return res.status(500).json({ message: 'Erro interno ao atualizar motivo.' });
     }
   },
+
+  async listarMotivos(req: Request, res: Response) {
+    try {
+      const { tipo } = req.query;
+      const whereClause = tipo ? { tipo: String(tipo).toUpperCase() } : {};
+
+      const motivos = await prisma.motivoEstoque.findMany({
+        where: whereClause,
+        orderBy: { nome: 'asc' },
+      });
+
+      return res.json(motivos);
+    } catch (error) {
+      console.error('Erro ao listar motivos de estoque:', error);
+      return res.status(500).json({ error: 'Erro interno ao buscar motivos.' });
+    }
+  },
   
   async inativar(req: Request, res: Response) {
     try {
       const id = String(req.params.id);
+
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
 
       // Verifica se o motivo existe no banco
       const motivoExistente = await prisma.motivoEstoque.findUnique({
@@ -144,6 +177,16 @@ export const motivoController = {
           where: { id }
         });
 
+        // 📝 Registra o log de exclusão permanente do motivo
+        if (adminId) {
+          await prisma.logAtividade.create({
+            data: {
+              adminId: adminId,
+              acao: `Excluiu permanentemente o motivo de estoque "${ motivoExistente.nome || id}"`
+            }
+          });
+        }
+
         return res.status(200).json({ 
           message: 'Motivo de estoque sem vínculos foi excluído permanentemente com sucesso!' 
         });
@@ -158,6 +201,17 @@ export const motivoController = {
       });
 
       const acao = motivoAtualizado.ativo ? 'reativado' : 'inativado';
+
+      // 📝 Registra o log de inativação ou reativação
+      if (adminId) {
+        const nomeMotivo = motivoAtualizado.nome || id;
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `${motivoAtualizado.ativo ? 'Reativou' : 'Inativou'} o motivo de estoque "${nomeMotivo}"`
+          }
+        });
+      }
 
       return res.status(200).json({
         message: `Motivo de estoque ${acao} com sucesso!`,

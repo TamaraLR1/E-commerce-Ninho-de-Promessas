@@ -21,7 +21,7 @@ async function main() {
     where: { email: 'gustavo@ninhodepromessas.com' },
     update: {},
     create: {
-      nome: 'Gustavo',
+      nome: 'Gustavo de Lima',
       email: 'gustavo@ninhodepromessas.com',
       senha: senhaHash2,
     },

@@ -61,6 +61,13 @@ interface MotivoEstoque {
   ativo?: boolean;
 }
 
+interface LogAtividade {
+  id: string;
+  acao: string;
+  data: string;
+  admin: { nome: string };
+}
+
 interface ColorSizeConfig {
   corId: string;
   tamanhosIds: string[];
@@ -89,13 +96,18 @@ interface DashboardData {
 
 export const AdminDashboard: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cadastro' | 'lista' | 'oferta' | 'estoque' | 'historico-estoque' | 'categorias' | 'tamanhos' | 'cores' | 'motivos'>('dashboard');
+  // 🛡️ Adicionado 'logs' no tipo do activeTab
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'cadastro' | 'lista' | 'oferta' | 'estoque' | 'historico-estoque' | 'categorias' | 'tamanhos' | 'cores' | 'motivos' | 'logs'>('dashboard');
 
   const [products, setProducts] = useState<ProductMaster[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [motivosEstoqueList, setMotivosEstoqueList] = useState<MotivoEstoque[]>([]);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
+
+  // 🛡️ Estado para armazenar os logs de atividade do sistema
+  const [logsList, setLogsList] = useState<LogAtividade[]>([]);
+  const [logSearchQuery, setLogSearchQuery] = useState('');
 
   // 👤 Estado para armazenar os dados do administrador logado
   const [adminUser, setAdminUser] = useState<{ nome: string; email: string } | null>(null);
@@ -170,12 +182,14 @@ export const AdminDashboard: React.FC = () => {
     carregarMovimentacoes();
     carregarMotivosEstoque();
     carregarDashboard();
-    carregarPerfilAdmin(); // 👤 Busca o nome do usuário logado ao carregar o componente
+    carregarPerfilAdmin();
+    carregarLogsAtividade(); // 🛡️ Carrega os logs ao iniciar
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'dashboard') {
+    if (activeTab === 'dashboard' || activeTab === 'logs') {
       carregarDashboard();
+      carregarLogsAtividade();
     }
   }, [activeTab]);
 
@@ -208,6 +222,19 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  // 🛡️ Função para buscar os logs de atividade do backend
+  const carregarLogsAtividade = async () => {
+    try {
+      const response = await fetch(`${API_URL}/admin/logs`, { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setLogsList(data);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar logs de atividade', err);
+    }
+  };
+
   // 🚪 Função para realizar o logout e redirecionar para a tela de login
   const handleLogout = async () => {
     try {
@@ -217,10 +244,7 @@ export const AdminDashboard: React.FC = () => {
       });
 
       if (response.ok) {
-        // 🧹 Limpa a chave de autenticação do localStorage
         localStorage.removeItem('@EcommerceAdmin:logged');
-
-        // Redireciona para a raiz ou tela de login
         window.location.href = '/'; 
       } else {
         alert('Erro ao realizar logout.');
@@ -1138,6 +1162,13 @@ export const AdminDashboard: React.FC = () => {
     return nomeProduto.includes(query) || idProduto.includes(query);
   });
 
+  // 🛡️ Filtro para a tela dedicada de Logs
+  const filteredLogs = logsList.filter(log => {
+    if (!logSearchQuery.trim()) return true;
+    const q = logSearchQuery.toLowerCase();
+    return log.acao.toLowerCase().includes(q) || log.admin.nome.toLowerCase().includes(q);
+  });
+
   const handleDeleteProductDirect = async (productId: string) => {
     const confirmacao = window.confirm('Tem certeza que deseja desativar ou excluir este produto?');
     if (!confirmacao) return;
@@ -1185,7 +1216,7 @@ export const AdminDashboard: React.FC = () => {
             <p style={{ 
               fontSize: '1rem', 
               fontWeight: '700', 
-              color: '#12738b', // 🎨 Alterado para um azul claro de alto contraste (ou use '#fbbf24' para amarelo)
+              color: '#12738b', 
               margin: '4px 0 0 0', 
               wordBreak: 'break-word'
             }}>
@@ -1220,6 +1251,8 @@ export const AdminDashboard: React.FC = () => {
             <div className={`${styles.navItem} ${activeTab === 'lista' ? styles.active : ''}`} onClick={() => { setActiveTab('lista'); setIsMenuOpen(false); }}>📋 Lista & Vitrine ({products.length})</div>
             <div className={`${styles.navItem} ${activeTab === 'estoque' ? styles.active : ''}`} onClick={() => { setActiveTab('estoque'); setIsMenuOpen(false); }}>📦 Controle de Estoque</div>
             <div className={`${styles.navItem} ${activeTab === 'historico-estoque' ? styles.active : ''}`} onClick={() => { setActiveTab('historico-estoque'); setIsMenuOpen(false); }}>📜 Histórico de Estoque</div>
+            {/* 🛡️ Novo Menu para Logs de Atividade */}
+            <div className={`${styles.navItem} ${activeTab === 'logs' ? styles.active : ''}`} onClick={() => { setActiveTab('logs'); setIsMenuOpen(false); }}>🛡️ Logs de Atividade</div>
           </nav>
         </div>
 
@@ -1256,7 +1289,7 @@ export const AdminDashboard: React.FC = () => {
             <section className={styles.card}>
               <div className={styles.headerBetween}>
                 <h3>Dashboard de Estoque</h3>
-                <button type="button" onClick={carregarDashboard} className={styles.btnSecondary} disabled={dashboardLoading}>
+                <button type="button" onClick={() => { carregarDashboard(); carregarLogsAtividade(); }} className={styles.btnSecondary} disabled={dashboardLoading}>
                   {dashboardLoading ? 'Atualizando...' : '🔄 Atualizar Dados'}
                 </button>
               </div>
@@ -1286,6 +1319,37 @@ export const AdminDashboard: React.FC = () => {
                       <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>Saídas (Este Mês)</p>
                       <p style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#dc2626', margin: '8px 0 0 0' }}>-{dashboardData.cards.saidasNoMes}</p>
                     </div>
+                  </div>
+
+                  {/* 🛡️ Card de Últimas Ações do Sistema no Dashboard (Boas práticas de UX) */}
+                  <div style={{ marginTop: '30px', background: '#f8fafc', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div className={styles.headerBetween} style={{ marginBottom: '12px' }}>
+                      <h4 className={styles.listSubheading} style={{ margin: 0 }}>🛡️ Últimas Ações do Sistema</h4>
+                      <button 
+                        type="button" 
+                        onClick={() => setActiveTab('logs')}
+                        style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Ver todos os logs →
+                      </button>
+                    </div>
+                    {logsList.length === 0 ? (
+                      <p className={styles.emptyNotice}>Nenhuma ação recente registrada.</p>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {logsList.slice(0, 5).map((log) => (
+                          <div key={log.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#fff', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '0.85rem' }}>
+                            <div>
+                              <strong style={{ color: '#1e293b' }}>{log.admin?.nome || 'Admin'}</strong>{' '}
+                              <span style={{ color: '#475569' }}>{log.acao}</span>
+                            </div>
+                            <span style={{ color: '#64748b', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                              {new Date(log.data).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ marginTop: '30px' }}>
@@ -1347,6 +1411,62 @@ export const AdminDashboard: React.FC = () => {
                 </>
               ) : (
                 <p className={styles.emptyNotice} style={{ color: '#dc2626' }}>Erro ao carregar dados do dashboard.</p>
+              )}
+            </section>
+          </div>
+        )}
+
+        {/* 🛡️ Nova Tela / Aba dedicada aos Logs de Atividade */}
+        {activeTab === 'logs' && (
+          <div className={styles.singleContainer}>
+            <section className={styles.card}>
+              <div className={styles.headerBetween}>
+                <h3>🛡️ Auditoria e Logs de Atividade do Sistema</h3>
+                <button type="button" onClick={carregarLogsAtividade} className={styles.btnSecondary}>
+                  🔄 Atualizar Logs
+                </button>
+              </div>
+              <p className={styles.infoText}>Histórico cronológico completo de todas as ações sensíveis realizadas pelos administradores.</p>
+
+              <div className={styles.searchSection} style={{ marginTop: '15px', marginBottom: '15px' }}>
+                <input 
+                  type="text" 
+                  className={styles.searchInput} 
+                  placeholder="🔍 Pesquisar por ação ou nome do administrador..." 
+                  value={logSearchQuery} 
+                  onChange={e => setLogSearchQuery(e.target.value)} 
+                />
+              </div>
+
+              {filteredLogs.length === 0 ? (
+                <p className={styles.emptyNotice}>Nenhum registro de log encontrado.</p>
+              ) : (
+                <div style={{ overflowX: 'auto', marginTop: '15px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #cbd5e1', color: '#475569' }}>
+                        <th style={{ padding: '10px' }}>Data e Hora</th>
+                        <th style={{ padding: '10px' }}>Administrador</th>
+                        <th style={{ padding: '10px' }}>Ação Realizada</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredLogs.map((log) => (
+                        <tr key={log.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '10px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                            {new Date(log.data).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </td>
+                          <td style={{ padding: '10px', fontWeight: 600, color: '#1e293b' }}>
+                            {log.admin?.nome || 'Administrador'}
+                          </td>
+                          <td style={{ padding: '10px', color: '#334155' }}>
+                            {log.acao}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </section>
           </div>
@@ -2147,7 +2267,6 @@ export const AdminDashboard: React.FC = () => {
                       <div className={styles.carouselContainer} style={{ position: 'relative' }}>
                         <img src={prod.images[0]} alt="" className={styles.catalogCardImage} />
 
-                        {/* Selo grande de % OFF no canto superior direito da imagem em cor preta */}
                         {prod.hasOffer && (
                           <div style={{
                             position: 'absolute',
@@ -2203,7 +2322,6 @@ export const AdminDashboard: React.FC = () => {
                           )}
                         </div>
 
-                        {/* 👤 Exibição da Autoria nos Cards de Produtos */}
                         {(prod.criadoPor || prod.atualizadoPor) && (
                           <div style={{ fontSize: '0.73rem', color: '#64748b', marginTop: '6px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
                             {prod.criadoPor && <span>👤 Criado por: <strong>{prod.criadoPor.nome}</strong></span>}
@@ -2218,12 +2336,9 @@ export const AdminDashboard: React.FC = () => {
                               checked={prod.isVisible} 
                               onChange={async (e) => {
                                 const novoStatus = e.target.checked;
-
-                                // Atualiza o estado local imediatamente para fluidez visual
                                 setProducts(products.map(p => p.id === prod.id ? { ...p, isVisible: novoStatus } : p));
 
                                 try {
-                                  // Dispara a chamada PATCH para a nova rota do backend
                                   const response = await fetch(`${API_URL}/produtos/${prod.id}/visibilidade`, {
                                     method: 'PATCH',
                                     headers: { 'Content-Type': 'application/json' },
@@ -2232,13 +2347,12 @@ export const AdminDashboard: React.FC = () => {
                                   });
 
                                   const data = await response.json();
-
                                   if (!response.ok) {
                                     throw new Error(data.message || 'Erro ao atualizar a visibilidade.');
                                   }
                                 } catch (err: any) {
                                   alert(err.message || 'Erro ao conectar com o servidor.');
-                                  carregarProdutos(); // Reverte em caso de erro
+                                  carregarProdutos();
                                 }
                               }} 
                             />
@@ -2761,7 +2875,8 @@ export const AdminDashboard: React.FC = () => {
                                             await Promise.all([
                                               carregarMovimentacoes(),
                                               carregarProdutos(),
-                                              carregarDashboard()
+                                              carregarDashboard(),
+                                              carregarLogsAtividade()
                                             ]);
                                             
                                             setStockInputValues(prev => ({

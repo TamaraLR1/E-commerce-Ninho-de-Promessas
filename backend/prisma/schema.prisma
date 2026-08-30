@@ -32,7 +32,8 @@ model Admin {
   produtosCriados     Produto[]             @relation("ProdutoCriado")
   produtosAtualizados Produto[]             @relation("ProdutoAtualizado")
   movimentacoes       MovimentacaoEstoque[]
-
+  logsAtividade LogAtividade[]
+  
   @@map("admins")
 }
 
@@ -173,4 +174,12 @@ model MovimentacaoEstoque {
 
 
   @@map("movimentacoes_estoque")
+}
+
+model LogAtividade {
+   id        String   @id @default(uuid())
+   adminId   Int
+   admin     Admin    @relation(fields: [adminId], references: [id])
+   acao      String   // Ex: "Cadastrou o produto X", "Alterou preço de Y"
+   data      DateTime @default(now())
 }

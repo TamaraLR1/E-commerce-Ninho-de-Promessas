@@ -30,11 +30,14 @@ export const categoriaController = {
       const { nome } = req.body;
       let { slug } = req.body;
 
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
+
       if (!nome) {
         return res.status(400).json({ message: 'O nome da categoria é obrigatório.' });
       }
 
-      // Se o slug não foi enviado, gera automaticamente pelo nome
       if (!slug) {
         slug = gerarSlug(nome);
       } else {
@@ -53,6 +56,16 @@ export const categoriaController = {
         data: { nome, slug },
       });
 
+      // 📝 Registra o log de criação da categoria
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Cadastrou a categoria "${novaCategoria.nome}"`
+          }
+        });
+      }
+
       return res.status(201).json(novaCategoria);
     } catch (error) {
       console.error('Erro ao criar categoria:', error);
@@ -66,24 +79,25 @@ export const categoriaController = {
       const { nome } = req.body;
       let { slug } = req.body;
 
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
+
       if (!nome) {
         return res.status(400).json({ message: 'O nome da categoria é obrigatório.' });
       }
 
-      // Se o slug não foi enviado na atualização, gera com base no novo nome
       if (!slug) {
         slug = gerarSlug(nome);
       } else {
         slug = gerarSlug(slug);
       }
 
-      // Verifica se o ID existe
       const categoriaAtual = await prisma.categoria.findUnique({ where: { id: String(id) } });
       if (!categoriaAtual) {
         return res.status(404).json({ message: 'Categoria não encontrada.' });
       }
 
-      // Verifica se já existe outra categoria com o mesmo nome ou slug
       const categoriaConflitante = await prisma.categoria.findFirst({
         where: {
           AND: [
@@ -102,6 +116,20 @@ export const categoriaController = {
         data: { nome, slug },
       });
 
+      // 📝 Registra o log de atualização da categoria
+      if (adminId) {
+        const alteracaoNome = categoriaAtual.nome !== nome 
+          ? `o nome de "${categoriaAtual.nome}" para "${nome}"` 
+          : `os dados`;
+
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Atualizou a categoria "${categoriaAtual.nome}": alterou ${alteracaoNome}`
+          }
+        });
+      }
+
       return res.status(200).json(categoriaAtualizada);
     } catch (error) {
       console.error('Erro ao atualizar categoria:', error);
@@ -113,7 +141,15 @@ export const categoriaController = {
     try {
       const id = String(req.params.id);
 
-      // 1. Busca produtos vinculados a esta categoria para verificar se há vínculos
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
+
+      const categoriaExistente = await prisma.categoria.findUnique({ where: { id } });
+      if (!categoriaExistente) {
+        return res.status(404).json({ message: 'Categoria não encontrada.' });
+      }
+
       const produtosDaCategoria = await prisma.produto.findMany({
         where: { categoryId: id },
         select: { id: true }
@@ -124,6 +160,16 @@ export const categoriaController = {
         await prisma.categoria.delete({
           where: { id }
         });
+
+        // 📝 Registra o log de exclusão permanente
+        if (adminId) {
+          await prisma.logAtividade.create({
+            data: {
+              adminId: adminId,
+              acao: `Excluiu permanentemente a categoria "${categoriaExistente.nome}"`
+            }
+          });
+        }
 
         return res.status(200).json({ 
           message: 'Categoria sem vínculos foi excluída permanentemente com sucesso!' 
@@ -138,11 +184,20 @@ export const categoriaController = {
 
       const produtoIds = produtosDaCategoria.map(p => p.id);
 
-      // 4. Desativa os estoques/variações de todos os produtos dessa categoria
       if (produtoIds.length > 0) {
         await prisma.produtoEstoque.updateMany({
           where: { produtoId: { in: produtoIds } },
           data: { ativo: false }
+        });
+      }
+
+      // 📝 Registra o log de inativação
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Inativou a categoria "${categoriaExistente.nome}" e seus produtos vinculados`
+          }
         });
       }
 
@@ -160,13 +215,21 @@ export const categoriaController = {
     try {
       const id = String(req.params.id);
 
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
+
+      const categoriaExistente = await prisma.categoria.findUnique({ where: { id } });
+      if (!categoriaExistente) {
+        return res.status(404).json({ message: 'Categoria não encontrada.' });
+      }
+
       // 1. Ativa a categoria
       const categoriaAtualizada = await prisma.categoria.update({
         where: { id },
         data: { ativo: true }
       });
 
-      // 2. Busca todos os produtos vinculados a esta categoria
       const produtosDaCategoria = await prisma.produto.findMany({
         where: { categoryId: id },
         select: { id: true }
@@ -174,11 +237,20 @@ export const categoriaController = {
 
       const produtoIds = produtosDaCategoria.map(p => p.id);
 
-      // 3. Reativa os estoques/variações de todos os produtos dessa categoria, liberando novamente o controle de estoque
       if (produtoIds.length > 0) {
         await prisma.produtoEstoque.updateMany({
           where: { produtoId: { in: produtoIds } },
           data: { ativo: true }
+        });
+      }
+
+      // 📝 Registra o log de reativação
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Reativou a categoria "${categoriaExistente.nome}" e seus produtos vinculados`
+          }
         });
       }
 

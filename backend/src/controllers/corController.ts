@@ -18,6 +18,10 @@ export const corController = {
     try {
       const { nome, slug, hex } = req.body;
 
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
+
       if (!nome || !slug) {
         return res.status(400).json({ message: 'Nome e slug são obrigatórios.' });
       }
@@ -38,6 +42,16 @@ export const corController = {
         },
       });
 
+      // 📝 Registra o log de cadastro da cor
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Cadastrou a cor "${novaCor.nome}"`
+          }
+        });
+      }
+
       return res.status(201).json(novaCor);
     } catch (error) {
       console.error('Erro ao criar cor:', error);
@@ -49,6 +63,10 @@ export const corController = {
     try {
       const { id } = req.params;
       const { nome, slug, hex } = req.body;
+
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
 
       const corExistente = await prisma.cor.findUnique({
         where: { id: String(id) },
@@ -78,6 +96,16 @@ export const corController = {
         },
       });
 
+      // 📝 Registra o log de atualização da cor
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Atualizou a cor "${corExistente.nome}" para "${corAtualizada.nome}"`
+          }
+        });
+      }
+
       return res.status(200).json(corAtualizada);
     } catch (error) {
       console.error('Erro ao atualizar cor:', error);
@@ -89,7 +117,15 @@ export const corController = {
     try {
       const { id } = req.params;
 
-      // Verificação de vínculo com produtos (ajuste para a tabela/relação atualizada de estoque)
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
+
+      const corExistente = await prisma.cor.findUnique({ where: { id: String(id) } });
+      if (!corExistente) {
+        return res.status(404).json({ message: 'Cor não encontrada.' });
+      }
+
       const produtosVinculados = await prisma.produtoEstoque.count({
         where: { corId: String(id) },
       });
@@ -104,6 +140,16 @@ export const corController = {
         where: { id: String(id) } 
       });
 
+      // 📝 Registra o log de exclusão
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Excluiu permanentemente a cor "${corExistente.nome}"`
+          }
+        });
+      }
+
       return res.status(200).json({ message: 'Cor excluída com sucesso.' });
     } catch (error) {
       console.error('Erro ao excluir cor:', error);
@@ -114,6 +160,15 @@ export const corController = {
   async inativar(req: Request, res: Response) {
     try {
       const id = String(req.params.id);
+
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
+
+      const corExistente = await prisma.cor.findUnique({ where: { id } });
+      if (!corExistente) {
+        return res.status(404).json({ message: 'Cor não encontrada.' });
+      }
 
       // 1. Verifica se existem estoques vinculados a esta cor
       const estoquesVinculados = await prisma.produtoEstoque.findMany({
@@ -126,6 +181,16 @@ export const corController = {
         await prisma.cor.delete({
           where: { id }
         });
+
+        // 📝 Registra o log de exclusão permanente por falta de vínculos
+        if (adminId) {
+          await prisma.logAtividade.create({
+            data: {
+              adminId: adminId,
+              acao: `Excluiu permanentemente a cor sem vínculos "${corExistente.nome}"`
+            }
+          });
+        }
 
         return res.status(200).json({ 
           message: 'Cor sem vínculos foi excluída permanentemente com sucesso!' 
@@ -174,6 +239,16 @@ export const corController = {
         }
       }
 
+      // 📝 Registra o log de inativação
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Inativou a cor "${corExistente.nome}" e seus estoques vinculados`
+          }
+        });
+      }
+
       return res.status(200).json({ 
         message: 'Cor e seus estoques vinculados foram inativados com sucesso!',
         cor: corAtualizada 
@@ -187,6 +262,15 @@ export const corController = {
   async ativar(req: Request, res: Response) {
     try {
       const id = String(req.params.id);
+
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
+
+      const corExistente = await prisma.cor.findUnique({ where: { id } });
+      if (!corExistente) {
+        return res.status(404).json({ message: 'Cor não encontrada.' });
+      }
 
       // 1. Ativa a cor globalmente
       const corAtualizada = await prisma.cor.update({
@@ -222,13 +306,22 @@ export const corController = {
           return tamanhoAtivo && corAtiva && estoqueItemAtivo;
         });
 
-        // Se o produto agora possui ao menos uma variação ativa, volta o produto para ativo = true
         if (temAlgumaVariacaoAtiva) {
           await prisma.produto.update({
             where: { id: produto.id },
             data: { ativo: true }
           });
         }
+      }
+
+      // 📝 Registra o log de ativação
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Reativou a cor "${corExistente.nome}" e seus estoques vinculados`
+          }
+        });
       }
 
       return res.status(200).json({ 

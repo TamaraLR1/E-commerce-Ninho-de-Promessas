@@ -18,6 +18,10 @@ export const tamanhoController = {
     try {
       const { nome, slug } = req.body;
 
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
+
       if (!nome || !slug) {
         return res.status(400).json({ message: 'Nome e slug são obrigatórios.' });
       }
@@ -34,6 +38,16 @@ export const tamanhoController = {
         data: { nome, slug },
       });
 
+      // 📝 Registra o log de cadastro do tamanho
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Cadastrou o tamanho "${novoTamanho.nome}"`
+          }
+        });
+      }
+
       return res.status(201).json(novoTamanho);
     } catch (error) {
       console.error('Erro ao criar tamanho:', error);
@@ -46,14 +60,33 @@ export const tamanhoController = {
       const { id } = req.params;
       const { nome, slug } = req.body;
 
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
+
       if (!nome || !slug) {
         return res.status(400).json({ message: 'Nome e slug são obrigatórios.' });
+      }
+
+      const tamanhoExistente = await prisma.tamanho.findUnique({ where: { id: String(id) } });
+      if (!tamanhoExistente) {
+        return res.status(404).json({ message: 'Tamanho não encontrado.' });
       }
 
       const tamanhoAtualizado = await prisma.tamanho.update({
         where: { id: String(id) },
         data: { nome, slug },
       });
+
+      // 📝 Registra o log de atualização do tamanho
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Atualizou o tamanho "${tamanhoExistente.nome}" para "${tamanhoAtualizado.nome}"`
+          }
+        });
+      }
 
       return res.status(200).json(tamanhoAtualizado);
     } catch (error) {
@@ -66,7 +99,15 @@ export const tamanhoController = {
     try {
       const { id } = req.params;
 
-      // Substitua 'produtoEstoque' pelo nome exato da nova tabela no seu schema.prisma
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
+
+      const tamanhoExistente = await prisma.tamanho.findUnique({ where: { id: String(id) } });
+      if (!tamanhoExistente) {
+        return res.status(404).json({ message: 'Tamanho não encontrado.' });
+      }
+
       const produtosVinculados = await prisma.produtoEstoque.count({
         where: { tamanhoId: String(id) },
       });
@@ -79,6 +120,16 @@ export const tamanhoController = {
 
       await prisma.tamanho.delete({ where: { id: String(id) } });
 
+      // 📝 Registra o log de exclusão
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Excluiu permanentemente o tamanho "${tamanhoExistente.nome}"`
+          }
+        });
+      }
+
       return res.status(200).json({ message: 'Tamanho excluído com sucesso.' });
     } catch (error) {
       console.error('Erro ao excluir tamanho:', error);
@@ -89,6 +140,15 @@ export const tamanhoController = {
   async inativar(req: Request, res: Response) {
     try {
       const id = String(req.params.id);
+
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
+
+      const tamanhoExistente = await prisma.tamanho.findUnique({ where: { id } });
+      if (!tamanhoExistente) {
+        return res.status(404).json({ message: 'Tamanho não encontrado.' });
+      }
 
       // 1. Verifica se existem estoques vinculados a este tamanho
       const estoquesVinculados = await prisma.produtoEstoque.findMany({
@@ -101,6 +161,16 @@ export const tamanhoController = {
         await prisma.tamanho.delete({
           where: { id }
         });
+
+        // 📝 Registra o log de exclusão permanente por falta de vínculos
+        if (adminId) {
+          await prisma.logAtividade.create({
+            data: {
+              adminId: adminId,
+              acao: `Excluiu permanentemente o tamanho sem vínculos "${tamanhoExistente.nome}"`
+            }
+          });
+        }
 
         return res.status(200).json({ 
           message: 'Tamanho sem vínculos foi excluído permanentemente com sucesso!' 
@@ -149,6 +219,16 @@ export const tamanhoController = {
         }
       }
 
+      // 📝 Registra o log de inativação
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Inativou o tamanho "${tamanhoExistente.nome}" e seus estoques vinculados`
+          }
+        });
+      }
+
       return res.status(200).json({ 
         message: 'Tamanho e seus estoques vinculados foram desativados com sucesso!',
         tamanho: tamanhoAtualizado 
@@ -162,6 +242,15 @@ export const tamanhoController = {
   async ativar(req: Request, res: Response) {
     try {
       const id = String(req.params.id);
+
+      // Captura o ID do admin logado
+      const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
+      const adminId = rawAdminId ? Number(rawAdminId) : null;
+
+      const tamanhoExistente = await prisma.tamanho.findUnique({ where: { id } });
+      if (!tamanhoExistente) {
+        return res.status(404).json({ message: 'Tamanho não encontrado.' });
+      }
 
       // 1. Ativa o tamanho globalmente
       const tamanhoAtualizado = await prisma.tamanho.update({
@@ -203,6 +292,16 @@ export const tamanhoController = {
             data: { ativo: true }
           });
         }
+      }
+
+      // 📝 Registra o log de ativação
+      if (adminId) {
+        await prisma.logAtividade.create({
+          data: {
+            adminId: adminId,
+            acao: `Reativou o tamanho "${tamanhoExistente.nome}" e seus estoques vinculados`
+          }
+        });
       }
 
       return res.status(200).json({ 

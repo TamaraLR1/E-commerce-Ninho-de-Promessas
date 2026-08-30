@@ -8,5 +8,6 @@ const adminAuthController = new AdminAuthController();
 router.post('/admin/login', (req, res) => adminAuthController.login(req, res));
 router.post('/admin/logout', adminAuthController.logout);
 router.get('/admin/me', ensureAdminAuthenticated, adminAuthController.obterPerfil);
+router.get('/admin/logs', ensureAdminAuthenticated, adminAuthController.listarLogs);
 
 export default router;
