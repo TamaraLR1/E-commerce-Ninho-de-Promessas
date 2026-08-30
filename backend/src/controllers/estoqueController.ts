@@ -123,7 +123,7 @@ export const estoqueController = {
       return res.status(500).json({ message: 'Erro interno ao salvar movimentação.' });
     }
   },
-  
+
   async obterDashboard(req: Request, res: Response) {
     try {
       // 1. Total de variações de produtos ativas no estoque
@@ -131,7 +131,7 @@ export const estoqueController = {
         where: { ativo: true }
       });
 
-      // 2. Quantidade física total real (Soma de todo o estoque de todas as variações ativas)
+      // 2. Quantidade física total real
       const estoqueAgregado = await prisma.produtoEstoque.aggregate({
         where: { ativo: true },
         _sum: { estoque: true }
@@ -139,7 +139,7 @@ export const estoqueController = {
 
       const quantidadeFisicaTotal = estoqueAgregado._sum.estoque || 0;
 
-      // 3. Contagem de movimentações do mês atual (Apenas o fluxo real de entradas e saídas manuais/automáticas do mês)
+      // 3. Contagem de movimentações do mês atual
       const inicioDoMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
       
       const movimentacoesMes = await prisma.movimentacaoEstoque.findMany({
@@ -150,7 +150,8 @@ export const estoqueController = {
         },
         include: {
           motivo: true,
-        }
+        },
+        orderBy: { data: 'asc' }
       });
 
       const totalEntradasMes = movimentacoesMes
@@ -161,18 +162,99 @@ export const estoqueController = {
         .filter(m => m.tipo === 'SAIDA')
         .reduce((acc, m) => acc + m.quantidade, 0);
 
-      // 4. Últimas 5 movimentações para tabela rápida de auditoria
+      // Agrupando movimentações por dia para o gráfico de fluxo
+      const historicoPorDiaMap: { [key: string]: { entradas: number; saidas: number } } = {};
+
+      movimentacoesMes.forEach(m => {
+        const diaStr = new Date(m.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        
+        if (!historicoPorDiaMap[diaStr]) {
+          historicoPorDiaMap[diaStr] = { entradas: 0, saidas: 0 };
+        }
+
+        if (m.tipo === 'ENTRADA') {
+          historicoPorDiaMap[diaStr].entradas += m.quantidade;
+        } else if (m.tipo === 'SAIDA') {
+          historicoPorDiaMap[diaStr].saidas += m.quantidade;
+        }
+      });
+
+      const historicoMensal = Object.keys(historicoPorDiaMap).map(dia => ({
+        dia,
+        entradas: historicoPorDiaMap[dia].entradas,
+        saidas: historicoPorDiaMap[dia].saidas,
+      }));
+
+      // Gráfico 2: Distribuição de Produtos por Categoria (PieChart)
+      const produtosAtivosComCategoria = await prisma.produto.findMany({
+        where: { ativo: true },
+        include: {
+          categoria: true,
+          estoques: { where: { ativo: true } }
+        }
+      });
+
+      const categoriasMap: { [key: string]: number } = {};
+      produtosAtivosComCategoria.forEach(p => {
+        const catNome = p.categoria?.nome || 'Geral';
+        const somaEstoqueProd = p.estoques.reduce((acc, item) => acc + item.estoque, 0);
+        
+        if (!categoriasMap[catNome]) {
+          categoriasMap[catNome] = 0;
+        }
+        categoriasMap[catNome] += somaEstoqueProd;
+      });
+
+      const distribuicaoCategorias = Object.keys(categoriasMap).map(nome => ({
+        name: nome,
+        value: categoriasMap[nome]
+      }));
+
+      // Gráfico 3: Produtos com Menor Estoque (Top Alertas)
+      const todasVariacoesEstoque = await prisma.produtoEstoque.findMany({
+        where: { ativo: true },
+        include: {
+          produto: true,
+          tamanho: true,
+          cor: true
+        },
+        orderBy: { estoque: 'asc' },
+        take: 5
+      });
+
+      const produtosCriticos = todasVariacoesEstoque.map(item => ({
+        nome: `${item.produto?.nome || 'Prod'} (${item.cor?.nome || ''}/${item.tamanho?.nome || 'Único'})`,
+        estoque: item.estoque
+      }));
+
+      // Gráfico 4: Saídas por Motivo (BarChart)
+      const saidasPorMotivoMap: { [key: string]: number } = {};
+      movimentacoesMes
+        .filter(m => m.tipo === 'SAIDA')
+        .forEach(m => {
+          const motivoNome = m.motivo?.nome || 'Outros';
+          if (!saidasPorMotivoMap[motivoNome]) {
+            saidasPorMotivoMap[motivoNome] = 0;
+          }
+          saidasPorMotivoMap[motivoNome] += m.quantidade;
+        });
+
+      const saidasPorMotivo = Object.keys(saidasPorMotivoMap).map(nome => ({
+        motivo: nome,
+        quantidade: saidasPorMotivoMap[nome]
+      }));
+
+      // 4. Últimas movimentações para tabela rápida
       const ultimasMovimentacoes = await prisma.movimentacaoEstoque.findMany({
         orderBy: { data: 'desc' },
         take: 5,
         include: {
           motivo: true,
           produto: true,
-          admin: true, // 👤 Traz o responsável nas últimas movimentações do dashboard
+          admin: true,
         }
       });
 
-      // Retornando os dados consolidados para o Dashboard
       return res.status(200).json({
         cards: {
           totalProdutosAtivos: totalProdutosEstoque,
@@ -180,6 +262,10 @@ export const estoqueController = {
           entradasNoMes: totalEntradasMes,
           saidasNoMes: totalSaidasMes,
         },
+        historicoMensal,
+        distribuicaoCategorias,
+        produtosCriticos,
+        saidasPorMotivo,
         ultimasMovimentacoes,
       });
 

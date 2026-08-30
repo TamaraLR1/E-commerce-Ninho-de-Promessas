@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import styles from './AdminDashboard.module.css';
+import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 interface ProductMaster {
   id: string;
@@ -81,6 +82,23 @@ interface DashboardData {
     entradasNoMes: number;
     saidasNoMes: number;
   };
+  historicoMensal: Array<{
+    dia: string;
+    entradas: number;
+    saidas: number;
+  }>;
+  distribuicaoCategorias: Array<{
+    name: string;
+    value: number;
+  }>;
+  produtosCriticos: Array<{
+    nome: string;
+    estoque: number;
+  }>;
+  saidasPorMotivo: Array<{
+    motivo: string;
+    quantidade: number;
+  }>;
   ultimasMovimentacoes: Array<{
     id: string;
     corNome: string;
@@ -1286,6 +1304,74 @@ export const AdminDashboard: React.FC = () => {
                       <p className={styles.dashboardStatLabel}>Saídas (Este Mês)</p>
                       <p className={styles.dashboardStatValueRed}>-{dashboardData.cards.saidasNoMes}</p>
                     </div>
+                  </div>
+
+                  <div className={styles.listSectionWrapper} style={{ marginTop: '30px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    
+                    {/* Gráfico 1: Fluxo de Movimentações (Linha) */}
+                    <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', gridColumn: '1 / -1' }}>
+                      <h4 className={styles.listSubheading}>📈 Evolução Diária de Entradas vs Saídas</h4>
+                      <div style={{ width: '100%', height: 280 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={dashboardData.historicoMensal}>
+                            <XAxis dataKey="dia" stroke="#64748b" />
+                            <YAxis stroke="#64748b" />
+                            <Tooltip contentStyle={{ background: '#1e293b', color: '#fff', borderRadius: '6px' }} />
+                            <Legend />
+                            <Line type="monotone" dataKey="entradas" name="Entradas" stroke="#10b981" strokeWidth={2} />
+                            <Line type="monotone" dataKey="saidas" name="Saídas" stroke="#ef4444" strokeWidth={2} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    {/* Gráfico 2: Distribuição por Categoria (Pizza) */}
+                    <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+                      <h4 className={styles.listSubheading}>🥧 Estoque por Categoria</h4>
+                      <div style={{ width: '100%', height: 260 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={dashboardData.distribuicaoCategorias} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#6366f1" label>
+                              {dashboardData.distribuicaoCategorias?.map((_, index) => (
+                                <Cell key={`cell-${index}`} fill={['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'][index % 5]} />
+                              ))}
+                            </Pie>
+                            <Tooltip />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    {/* Gráfico 3: Produtos Mais Críticos / Menor Estoque (Barras) */}
+                    <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+                      <h4 className={styles.listSubheading}>⚠️ Top Produtos com Menor Estoque</h4>
+                      <div style={{ width: '100%', height: 260 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={dashboardData.produtosCriticos} layout="vertical">
+                            <XAxis type="number" stroke="#64748b" />
+                            <YAxis dataKey="nome" type="category" width={110} stroke="#64748b" tick={{ fontSize: 11 }} />
+                            <Tooltip contentStyle={{ background: '#1e293b', color: '#fff', borderRadius: '6px' }} />
+                            <Bar dataKey="estoque" name="Qtd Atual" fill="#f59e0b" radius={[0, 4, 4, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    {/* Gráfico 4: Saídas por Motivo (Barras Verticais) */}
+                    <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', gridColumn: '1 / -1' }}>
+                      <h4 className={styles.listSubheading}>📤 Volume de Saídas por Motivo (Mês Atual)</h4>
+                      <div style={{ width: '100%', height: 260 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={dashboardData.saidasPorMotivo}>
+                            <XAxis dataKey="motivo" stroke="#64748b" />
+                            <YAxis stroke="#64748b" />
+                            <Tooltip contentStyle={{ background: '#1e293b', color: '#fff', borderRadius: '6px' }} />
+                            <Bar dataKey="quantidade" name="Qtd Saída" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
                   </div>
 
                   <div className={styles.dashboardLogsContainer}>
