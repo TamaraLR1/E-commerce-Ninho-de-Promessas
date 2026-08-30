@@ -13,7 +13,7 @@ interface ProductMaster {
   offerPrice: number;
   sizes: string[];
   colors: any[];
-  rawSizes?: { tamanhoId: string; corId?: string; estoque?: number; ativo?: boolean; tamanho?: { nome: string }; cor?: { nome: string } }[];
+  rawSizes?: { tamanhoId: string; corId?: string; estoque?: number; ativo?: boolean; tamanho?: { nome: string; ativo?: boolean }; cor?: { nome: string; ativo?: boolean } }[];
   rawColors?: { corId: string; id?: string; cor?: { nome: string }; nome?: string }[];
   ativo?: boolean | number;
   criadoPor?: { nome: string };     
@@ -96,7 +96,6 @@ interface DashboardData {
 
 export const AdminDashboard: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  // 🛡️ Adicionado 'logs' no tipo do activeTab
   const [activeTab, setActiveTab] = useState<'dashboard' | 'cadastro' | 'lista' | 'oferta' | 'estoque' | 'historico-estoque' | 'categorias' | 'tamanhos' | 'cores' | 'motivos' | 'logs'>('dashboard');
 
   const [products, setProducts] = useState<ProductMaster[]>([]);
@@ -105,11 +104,9 @@ export const AdminDashboard: React.FC = () => {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
 
-  // 🛡️ Estado para armazenar os logs de atividade do sistema
   const [logsList, setLogsList] = useState<LogAtividade[]>([]);
   const [logSearchQuery, setLogSearchQuery] = useState('');
 
-  // 👤 Estado para armazenar os dados do administrador logado
   const [adminUser, setAdminUser] = useState<{ nome: string; email: string } | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -135,21 +132,18 @@ export const AdminDashboard: React.FC = () => {
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [colorSizeConfigs, setColorSizeConfigs] = useState<ColorSizeConfig[]>([]);
 
-  // Estados de Categorias
   const [categoriasList, setCategoriasList] = useState<Categoria[]>([]);
   const [novaCategoriaNome, setNovaCategoriaNome] = useState('');
   const [categoriaLoading, setCategoriaLoading] = useState(false);
   const [categoriaError, setCategoriaError] = useState('');
   const [editingCategoriaId, setEditingCategoriaId] = useState<string | null>(null);
 
-  // Estados de Tamanhos
   const [tamanhosList, setTamanhosList] = useState<Tamanho[]>([]);
   const [novoTamanhoNome, setNovoTamanhoNome] = useState('');
   const [tamanhoLoading, setTamanhoLoading] = useState(false);
   const [tamanhoError, setTamanhoError] = useState('');
   const [editingTamanhoId, setEditingTamanhoId] = useState<string | null>(null);
 
-  // Estados de Cores
   const [coresList, setCoresList] = useState<Cor[]>([]);
   const [novaCorNome, setNovaCorNome] = useState('');
   const [novaCorHex, setNovaCorHex] = useState('#000000');
@@ -157,7 +151,6 @@ export const AdminDashboard: React.FC = () => {
   const [corError, setCorError] = useState('');
   const [editingCorId, setEditingCorId] = useState<string | null>(null);
 
-  // Estados de Motivos de Estoque
   const [novoMotivoNome, setNovoMotivoNome] = useState('');
   const [novoMotivoTipo, setNovoMotivoTipo] = useState<'ENTRADA' | 'SAIDA'>('ENTRADA');
   const [motivoLoading, setMotivoLoading] = useState(false);
@@ -183,7 +176,7 @@ export const AdminDashboard: React.FC = () => {
     carregarMotivosEstoque();
     carregarDashboard();
     carregarPerfilAdmin();
-    carregarLogsAtividade(); // 🛡️ Carrega os logs ao iniciar
+    carregarLogsAtividade();
   }, []);
 
   useEffect(() => {
@@ -209,7 +202,6 @@ export const AdminDashboard: React.FC = () => {
     });
   }, [selectedColors]);
 
-  // 👤 Função para buscar os dados do perfil do administrador logado
   const carregarPerfilAdmin = async () => {
     try {
       const response = await fetch(`${API_URL}/admin/me`, { credentials: 'include' });
@@ -222,7 +214,6 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // 🛡️ Função para buscar os logs de atividade do backend
   const carregarLogsAtividade = async () => {
     try {
       const response = await fetch(`${API_URL}/admin/logs`, { credentials: 'include' });
@@ -235,7 +226,6 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // 🚪 Função para realizar o logout e redirecionar para a tela de login
   const handleLogout = async () => {
     try {
       const response = await fetch(`${API_URL}/admin/logout`, {
@@ -335,7 +325,8 @@ export const AdminDashboard: React.FC = () => {
               coresUnicasMap.set(item.cor.id, {
                 id: item.cor.id,
                 nome: item.cor.nome,
-                hex: item.cor.hex || '#000000'
+                hex: item.cor.hex || '#000000',
+                ativo: item.cor.ativo
               });
             }
           });
@@ -1162,7 +1153,6 @@ export const AdminDashboard: React.FC = () => {
     return nomeProduto.includes(query) || idProduto.includes(query);
   });
 
-  // 🛡️ Filtro para a tela dedicada de Logs
   const filteredLogs = logsList.filter(log => {
     if (!logSearchQuery.trim()) return true;
     const q = logSearchQuery.toLowerCase();
@@ -1210,7 +1200,6 @@ export const AdminDashboard: React.FC = () => {
         <div>
           <h2>Painel Admin</h2>
           
-          {/* 👤 Exibição do Nome do Usuário Logado na Sidebar */}
           <div style={{ padding: '0 16px 16px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '16px' }}>
             <p style={{ fontSize: '0.8rem', color: '#141516', margin: 0 }}>Logado como:</p>
             <p style={{ 
@@ -1251,12 +1240,10 @@ export const AdminDashboard: React.FC = () => {
             <div className={`${styles.navItem} ${activeTab === 'lista' ? styles.active : ''}`} onClick={() => { setActiveTab('lista'); setIsMenuOpen(false); }}>📋 Lista & Vitrine ({products.length})</div>
             <div className={`${styles.navItem} ${activeTab === 'estoque' ? styles.active : ''}`} onClick={() => { setActiveTab('estoque'); setIsMenuOpen(false); }}>📦 Controle de Estoque</div>
             <div className={`${styles.navItem} ${activeTab === 'historico-estoque' ? styles.active : ''}`} onClick={() => { setActiveTab('historico-estoque'); setIsMenuOpen(false); }}>📜 Histórico de Estoque</div>
-            {/* 🛡️ Novo Menu para Logs de Atividade */}
             <div className={`${styles.navItem} ${activeTab === 'logs' ? styles.active : ''}`} onClick={() => { setActiveTab('logs'); setIsMenuOpen(false); }}>🛡️ Logs de Atividade</div>
           </nav>
         </div>
 
-        {/* 🚪 Botão de Sair / Logout na parte inferior da Sidebar */}
         <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
           <button 
             type="button" 
@@ -1321,7 +1308,6 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* 🛡️ Card de Últimas Ações do Sistema no Dashboard (Boas práticas de UX) */}
                   <div style={{ marginTop: '30px', background: '#f8fafc', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <div className={styles.headerBetween} style={{ marginBottom: '12px' }}>
                       <h4 className={styles.listSubheading} style={{ margin: 0 }}>🛡️ Últimas Ações do Sistema</h4>
@@ -1416,7 +1402,6 @@ export const AdminDashboard: React.FC = () => {
           </div>
         )}
 
-        {/* 🛡️ Nova Tela / Aba dedicada aos Logs de Atividade */}
         {activeTab === 'logs' && (
           <div className={styles.singleContainer}>
             <section className={styles.card}>
@@ -2482,13 +2467,14 @@ export const AdminDashboard: React.FC = () => {
                               const isSelected = selectedColorForDetails === cId;
                               
                               const corGlobal = coresList.find(corItem => corItem.id === cId);
-                              const isCorInativa = corGlobal?.ativo === false;
+                              const isCorInativa = corGlobal?.ativo === false || c.ativo === false;
 
                               return (
                                 <button
                                   key={cId}
                                   type="button"
                                   onClick={() => setSelectedColorForDetails(cId)}
+                                  /* 🛡️ CORREÇÃO APLICADA: Aplica a classe .corInativada caso a cor esteja inativa */
                                   className={`${styles.modalColorButton} ${isSelected ? styles.modalColorButtonSelected : styles.modalColorButtonUnselected} ${isCorInativa ? styles.corInativada : ''}`}
                                   title={isCorInativa ? 'Cor Desativada' : c.nome}
                                 >
@@ -2542,14 +2528,15 @@ export const AdminDashboard: React.FC = () => {
                               return (
                                 <div 
                                   key={idx}
-                                  className={`${styles.modalSizeItemBox} ${isTamanhoInativo ? styles.sizeBoxSoldOut : (estoqueDisp > 0 ? styles.sizeBoxAvailable : styles.sizeBoxSoldOut)}`}
+                                  /* 🛡️ CORREÇÃO APLICADA: Aplica a classe .corInativada também no tamanho se inativo */
+                                  className={`${styles.modalSizeItemBox} ${isTamanhoInativo ? styles.corInativada + ' ' + styles.sizeBoxSoldOut : (estoqueDisp > 0 ? styles.sizeBoxAvailable : styles.sizeBoxSoldOut)}`}
                                 >
                                   <div className={styles.modalSizeName}>
                                     {nomeTamanho}
                                     {isTamanhoInativo && <div className={styles.badgeInativoTamanho}>DESATIVADO</div>}
                                   </div>
                                   <div className={`${styles.modalSizeStockQty} ${isTamanhoInativo ? styles.textRed : (estoqueDisp > 0 ? styles.textGreen : styles.textRed)}`}>
-                                    {isTamanhoInativo ? '' : (estoqueDisp > 0 ? `${estoqueDisp} un` : 'Esgotado')}
+                                    {isTamanhoInativo ? 'Inativo' : (estoqueDisp > 0 ? `${estoqueDisp} un` : 'Esgotado')}
                                   </div>
                                 </div>
                               );
@@ -2618,17 +2605,19 @@ export const AdminDashboard: React.FC = () => {
                     const categoriaEncontrada = categoriasList.find(c => c.nome === prod.category);
                     const isCardInativo = prod.ativo === 0 || prod.ativo === false || (prod as any).ativoGeral === false || !temAlgumEstoqueAtivo || categoriaEncontrada?.ativo === false;
 
-                    const colorMap = new Map<string, { colorName: string; colorHex: string; sizes: { size: string; stock: number }[] }>();
+                    const colorMap = new Map<string, { colorName: string; colorHex: string; isColorActive?: boolean; sizes: { size: string; stock: number; isSizeActive?: boolean }[] }>();
 
                     if (rawList.length > 0) {
                       rawList.forEach((item: any) => {
                         const cName = item.cor?.nome || 'Padrão';
                         const cHex = item.cor?.hex || '#000000';
+                        const cAtivo = item.cor?.ativo !== false;
                         const sName = item.tamanho?.nome || item.tamanhoId || 'Único';
+                        const sAtivo = item.tamanho?.ativo !== false && item.ativo !== false;
                         const baseEstoque = item.estoque ?? 0;
                         
                         if (!colorMap.has(cName)) {
-                          colorMap.set(cName, { colorName: cName, colorHex: cHex, sizes: [] });
+                          colorMap.set(cName, { colorName: cName, colorHex: cHex, isColorActive: cAtivo, sizes: [] });
                         }
 
                         const existingSizes = colorMap.get(cName)?.sizes;
@@ -2636,14 +2625,15 @@ export const AdminDashboard: React.FC = () => {
 
                         if (!alreadyExists) {
                           const currentStockVal = getAvailableStockByColorAndSize(prod.id, cName, sName, baseEstoque);
-                          existingSizes?.push({ size: sName, stock: currentStockVal });
+                          existingSizes?.push({ size: sName, stock: currentStockVal, isSizeActive: sAtivo });
                         }
                       });
                     } else {
                       colorMap.set('Padrão', {
                         colorName: 'Padrão',
                         colorHex: '#000000',
-                        sizes: prod.sizes.map(sz => ({ size: sz, stock: getAvailableStockByColorAndSize(prod.id, 'Padrão', sz, 0) }))
+                        isColorActive: true,
+                        sizes: prod.sizes.map(sz => ({ size: sz, stock: getAvailableStockByColorAndSize(prod.id, 'Padrão', sz, 0), isSizeActive: true }))
                       });
                     }
 
@@ -2699,208 +2689,225 @@ export const AdminDashboard: React.FC = () => {
                         </div>
 
                         <div className={styles.stockVariationMatrix}>
-                          {colorStockData.map(colorItem => (
-                            <div key={colorItem.colorName} className={styles.stockColorGroupCard}>
-                              
-                              <div className={styles.stockColorHeaderRow}>
-                                <span
-                                  className={styles.stockColorDotBox}
-                                  style={{ backgroundColor: colorItem.colorHex }}
-                                />
-                                <span className={styles.stockColorNameHeading}>Cor: {colorItem.colorName}</span>
-                              </div>
+                          {colorStockData.map(colorItem => {
+                            const isCorInativaGlobal = colorItem.isColorActive === false;
 
-                              <div className={styles.stockSizesGridUX}>
-                                {colorItem.sizes.map(sizeItem => {
-                                  const mapKey = `${prod.id}-${colorItem.colorName}-${sizeItem.size}`;
-                                  const currentInputValue = stockInputValues[mapKey] || '';
-                                  const currentTypeKey = `${mapKey}-type`;
-                                  const currentMotivoIdKey = `${mapKey}-motivoId`;
-                                  
-                                  const stockType = stockInputValues[currentTypeKey] || 'ENTRADA';
-                                  const stockMotivoId = stockInputValues[currentMotivoIdKey] || '';
-                                  
-                                  const stockStatusClass = sizeItem.stock === 0 ? styles.redStock : sizeItem.stock <= 3 ? styles.yellowStock : styles.greenStock;
+                            return (
+                              <div 
+                                key={colorItem.colorName} 
+                                className={`${styles.stockColorGroupCard} ${isCorInativaGlobal ? styles.corInativada : ''}`}
+                              >
+                                
+                                <div className={styles.stockColorHeaderRow}>
+                                  <span
+                                    className={styles.stockColorDotBox}
+                                    style={{ backgroundColor: colorItem.colorHex }}
+                                  />
+                                  <span className={styles.stockColorNameHeading}>
+                                    Cor: {colorItem.colorName} {isCorInativaGlobal && '(Inativa)'}
+                                  </span>
+                                </div>
 
-                                  const motivosFiltrados = motivosEstoqueList.filter(m => m.tipo === stockType && m.ativo !== false);
-                                  const isLoadingThis = loadingMovimentacao[mapKey] || false;
+                                <div className={styles.stockSizesGridUX}>
+                                  {colorItem.sizes.map(sizeItem => {
+                                    const mapKey = `${prod.id}-${colorItem.colorName}-${sizeItem.size}`;
+                                    const currentInputValue = stockInputValues[mapKey] || '';
+                                    const currentTypeKey = `${mapKey}-type`;
+                                    const currentMotivoIdKey = `${mapKey}-motivoId`;
+                                    
+                                    const stockType = stockInputValues[currentTypeKey] || 'ENTRADA';
+                                    const stockMotivoId = stockInputValues[currentMotivoIdKey] || '';
+                                    
+                                    const isTamInativoGlobal = sizeItem.isSizeActive === false;
+                                    const stockStatusClass = sizeItem.stock === 0 ? styles.redStock : sizeItem.stock <= 3 ? styles.yellowStock : styles.greenStock;
 
-                                  return (
-                                    <div key={sizeItem.size} className={styles.sizeConfigBox} style={{ background: '#fff', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                      
-                                      <div className={styles.stockSizeCardHeader}>
-                                        <span className={styles.stockSizeBadgeLabel}>Tam: {sizeItem.size}</span>
-                                        <span className={`${styles.stockCounter} ${stockStatusClass}`}>
-                                          Atual: {sizeItem.stock} un
-                                        </span>
-                                      </div>
+                                    const motivosFiltrados = motivosEstoqueList.filter(m => m.tipo === stockType && m.ativo !== false);
+                                    const isLoadingThis = loadingMovimentacao[mapKey] || false;
 
-                                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center', fontSize: '0.85rem', padding: '2px 0' }}>
-                                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', color: '#10b981', fontWeight: 600 }}>
+                                    return (
+                                      <div 
+                                        key={sizeItem.size} 
+                                        /* 🛡️ CORREÇÃO APLICADA: Aplica a classe .corInativada no card do tamanho se ele estiver inativo */
+                                        className={`${styles.sizeConfigBox} ${isTamInativoGlobal ? styles.corInativada : ''}`} 
+                                        style={{ background: '#fff', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}
+                                      >
+                                        
+                                        <div className={styles.stockSizeCardHeader}>
+                                          <span className={styles.stockSizeBadgeLabel}>
+                                            Tam: {sizeItem.size} {isTamInativoGlobal && '🚫'}
+                                          </span>
+                                          <span className={`${styles.stockCounter} ${stockStatusClass}`}>
+                                            Atual: {sizeItem.stock} un
+                                          </span>
+                                        </div>
+
+                                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', fontSize: '0.85rem', padding: '2px 0' }}>
+                                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', color: '#10b981', fontWeight: 600 }}>
+                                            <input
+                                              type="radio"
+                                              name={currentTypeKey}
+                                              value="ENTRADA"
+                                              checked={stockType === 'ENTRADA'}
+                                              onChange={() => {
+                                                setStockInputValues(prev => ({
+                                                  ...prev,
+                                                  [currentTypeKey]: 'ENTRADA',
+                                                  [currentMotivoIdKey]: ''
+                                                }));
+                                              }}
+                                            />
+                                            Entrada
+                                          </label>
+                                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', color: '#ef4444', fontWeight: 600 }}>
+                                            <input
+                                              type="radio"
+                                              name={currentTypeKey}
+                                              value="SAIDA"
+                                              checked={stockType === 'SAIDA'}
+                                              onChange={() => {
+                                                setStockInputValues(prev => ({
+                                                  ...prev,
+                                                  [currentTypeKey]: 'SAIDA',
+                                                  [currentMotivoIdKey]: ''
+                                                }));
+                                              }}
+                                            />
+                                            Saída
+                                          </label>
+                                        </div>
+
+                                        <div className={styles.quantityControlGroup}>
+                                          <button
+                                            type="button"
+                                            className={styles.qtyButton}
+                                            onClick={() => {
+                                              const atual = parseInt(currentInputValue || '0', 10);
+                                              const novoValor = Math.max(0, atual - 1);
+                                              setStockInputValues(prev => ({ ...prev, [mapKey]: novoValor === 0 ? '' : novoValor.toString() }));
+                                            }}
+                                          >
+                                            -
+                                          </button>
+
                                           <input
-                                            type="radio"
-                                            name={currentTypeKey}
-                                            value="ENTRADA"
-                                            checked={stockType === 'ENTRADA'}
-                                            onChange={() => {
-                                              setStockInputValues(prev => ({
-                                                ...prev,
-                                                [currentTypeKey]: 'ENTRADA',
-                                                [currentMotivoIdKey]: ''
-                                              }));
+                                            type="text"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            placeholder="Qtd"
+                                            className={styles.stockQuickInputNumber}
+                                            value={currentInputValue}
+                                            onChange={(e) => {
+                                              const valorLimpo = e.target.value.replace(/\D/g, '');
+                                              setStockInputValues(prev => ({ ...prev, [mapKey]: valorLimpo }));
                                             }}
                                           />
-                                          Entrada
-                                        </label>
-                                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', color: '#ef4444', fontWeight: 600 }}>
-                                          <input
-                                            type="radio"
-                                            name={currentTypeKey}
-                                            value="SAIDA"
-                                            checked={stockType === 'SAIDA'}
-                                            onChange={() => {
+
+                                          <button
+                                            type="button"
+                                            className={styles.qtyButton}
+                                            onClick={() => {
+                                              const atual = parseInt(currentInputValue || '0', 10);
+                                              const novoValor = atual + 1;
+                                              setStockInputValues(prev => ({ ...prev, [mapKey]: novoValor.toString() }));
+                                            }}
+                                          >
+                                            +
+                                          </button>
+                                        </div>
+
+                                        <select
+                                          value={stockMotivoId}
+                                          onChange={(e) => setStockInputValues(prev => ({ ...prev, [currentMotivoIdKey]: e.target.value }))}
+                                          style={{ padding: '6px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid #cbd5e1', width: '100%', background: '#fff' }}
+                                          required
+                                        >
+                                          <option value="">Selecione o motivo...</option>
+                                          {motivosFiltrados.map(motivo => (
+                                            <option key={motivo.id} value={motivo.id}>
+                                              {motivo.nome}
+                                            </option>
+                                          ))}
+                                        </select>
+
+                                        <button
+                                          type="button"
+                                          disabled={isLoadingThis}
+                                          style={{
+                                            background: stockType === 'ENTRADA' ? '#10b981' : '#ef4444',
+                                            color: '#fff',
+                                            border: 'none',
+                                            padding: '6px',
+                                            borderRadius: '4px',
+                                            fontWeight: 'bold',
+                                            cursor: isLoadingThis ? 'not-allowed' : 'pointer',
+                                            fontSize: '0.8rem',
+                                            opacity: isLoadingThis ? 0.7 : 1
+                                          }}
+                                          onClick={async () => {
+                                            const qtyInput = parseInt(currentInputValue, 10);
+                                            if (isNaN(qtyInput) || qtyInput <= 0) {
+                                              alert('Insira uma quantidade válida.');
+                                              return;
+                                            }
+                                            if (!stockMotivoId) {
+                                              alert('Selecione um motivo para a movimentação.');
+                                              return;
+                                            }
+                                            if (stockType === 'SAIDA' && sizeItem.stock < qtyInput) {
+                                              alert('Estoque insuficiente para esta saída!');
+                                              return;
+                                            }
+
+                                            try {
+                                              setLoadingMovimentacao(prev => ({ ...prev, [mapKey]: true }));
+
+                                              const response = await fetch(`${API_URL}/movimentacoes`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                credentials: 'include',
+                                                body: JSON.stringify({
+                                                  produtoId: prod.id,
+                                                  corNome: colorItem.colorName,
+                                                  tamanho: sizeItem.size,
+                                                  tipo: stockType,
+                                                  quantidade: qtyInput,
+                                                  motivoId: stockMotivoId
+                                                })
+                                              });
+
+                                              const data = await response.json();
+                                              if (!response.ok) throw new Error(data.message || 'Erro ao registrar movimentação.');
+
+                                              await Promise.all([
+                                                carregarMovimentacoes(),
+                                                carregarProdutos(),
+                                                carregarDashboard(),
+                                                carregarLogsAtividade()
+                                              ]);
+                                              
                                               setStockInputValues(prev => ({
                                                 ...prev,
-                                                [currentTypeKey]: 'SAIDA',
+                                                [mapKey]: '',
                                                 [currentMotivoIdKey]: ''
                                               }));
-                                            }}
-                                          />
-                                          Saída
-                                        </label>
-                                      </div>
-
-                                      <div className={styles.quantityControlGroup}>
-                                        <button
-                                          type="button"
-                                          className={styles.qtyButton}
-                                          onClick={() => {
-                                            const atual = parseInt(currentInputValue || '0', 10);
-                                            const novoValor = Math.max(0, atual - 1);
-                                            setStockInputValues(prev => ({ ...prev, [mapKey]: novoValor === 0 ? '' : novoValor.toString() }));
+                                            } catch (err: any) {
+                                              alert(err.message || 'Erro ao conectar com o servidor.');
+                                            } finally {
+                                              setLoadingMovimentacao(prev => ({ ...prev, [mapKey]: false }));
+                                            }
                                           }}
                                         >
-                                          -
+                                          {isLoadingThis ? 'Salvando...' : `Registrar ${stockType === 'ENTRADA' ? 'Entrada' : 'Saída'}`}
                                         </button>
 
-                                        <input
-                                          type="text"
-                                          inputMode="numeric"
-                                          pattern="[0-9]*"
-                                          placeholder="Qtd"
-                                          className={styles.stockQuickInputNumber}
-                                          value={currentInputValue}
-                                          onChange={(e) => {
-                                            const valorLimpo = e.target.value.replace(/\D/g, '');
-                                            setStockInputValues(prev => ({ ...prev, [mapKey]: valorLimpo }));
-                                          }}
-                                        />
-
-                                        <button
-                                          type="button"
-                                          className={styles.qtyButton}
-                                          onClick={() => {
-                                            const atual = parseInt(currentInputValue || '0', 10);
-                                            const novoValor = atual + 1;
-                                            setStockInputValues(prev => ({ ...prev, [mapKey]: novoValor.toString() }));
-                                          }}
-                                        >
-                                          +
-                                        </button>
                                       </div>
+                                    );
+                                  })}
+                                </div>
 
-                                      <select
-                                        value={stockMotivoId}
-                                        onChange={(e) => setStockInputValues(prev => ({ ...prev, [currentMotivoIdKey]: e.target.value }))}
-                                        style={{ padding: '6px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid #cbd5e1', width: '100%', background: '#fff' }}
-                                        required
-                                      >
-                                        <option value="">Selecione o motivo...</option>
-                                        {motivosFiltrados.map(motivo => (
-                                          <option key={motivo.id} value={motivo.id}>
-                                            {motivo.nome}
-                                          </option>
-                                        ))}
-                                      </select>
-
-                                      <button
-                                        type="button"
-                                        disabled={isLoadingThis}
-                                        style={{
-                                          background: stockType === 'ENTRADA' ? '#10b981' : '#ef4444',
-                                          color: '#fff',
-                                          border: 'none',
-                                          padding: '6px',
-                                          borderRadius: '4px',
-                                          fontWeight: 'bold',
-                                          cursor: isLoadingThis ? 'not-allowed' : 'pointer',
-                                          fontSize: '0.8rem',
-                                          opacity: isLoadingThis ? 0.7 : 1
-                                        }}
-                                        onClick={async () => {
-                                          const qtyInput = parseInt(currentInputValue, 10);
-                                          if (isNaN(qtyInput) || qtyInput <= 0) {
-                                            alert('Insira uma quantidade válida.');
-                                            return;
-                                          }
-                                          if (!stockMotivoId) {
-                                            alert('Selecione um motivo para a movimentação.');
-                                            return;
-                                          }
-                                          if (stockType === 'SAIDA' && sizeItem.stock < qtyInput) {
-                                            alert('Estoque insuficiente para esta saída!');
-                                            return;
-                                          }
-
-                                          try {
-                                            setLoadingMovimentacao(prev => ({ ...prev, [mapKey]: true }));
-
-                                            const response = await fetch(`${API_URL}/movimentacoes`, {
-                                              method: 'POST',
-                                              headers: { 'Content-Type': 'application/json' },
-                                              credentials: 'include',
-                                              body: JSON.stringify({
-                                                produtoId: prod.id,
-                                                corNome: colorItem.colorName,
-                                                tamanho: sizeItem.size,
-                                                tipo: stockType,
-                                                quantidade: qtyInput,
-                                                motivoId: stockMotivoId
-                                              })
-                                            });
-
-                                            const data = await response.json();
-                                            if (!response.ok) throw new Error(data.message || 'Erro ao registrar movimentação.');
-
-                                            await Promise.all([
-                                              carregarMovimentacoes(),
-                                              carregarProdutos(),
-                                              carregarDashboard(),
-                                              carregarLogsAtividade()
-                                            ]);
-                                            
-                                            setStockInputValues(prev => ({
-                                              ...prev,
-                                              [mapKey]: '',
-                                              [currentMotivoIdKey]: ''
-                                            }));
-                                          } catch (err: any) {
-                                            alert(err.message || 'Erro ao conectar com o servidor.');
-                                          } finally {
-                                            setLoadingMovimentacao(prev => ({ ...prev, [mapKey]: false }));
-                                          }
-                                        }}
-                                      >
-                                        {isLoadingThis ? 'Salvando...' : `Registrar ${stockType === 'ENTRADA' ? 'Entrada' : 'Saída'}`}
-                                      </button>
-
-                                    </div>
-                                  );
-                                })}
                               </div>
-
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     );

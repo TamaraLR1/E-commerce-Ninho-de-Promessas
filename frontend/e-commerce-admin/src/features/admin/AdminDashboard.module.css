@@ -1039,10 +1039,6 @@
   border: 1px solid #bbf7d0;
 }
 
-/* ========================================================
-   NOVAS CLASSES DE UX PARA MOVIMENTAÇÃO RÁPIDA DE ESTOQUE
-   ======================================================== */
-
 .stockQuickActions {
   display: flex;
   align-items: center;
@@ -1170,10 +1166,6 @@
     grid-template-columns: 1fr;
   }
 }
-
-/* ========================================================
-   ESTRUTURA DE GRADE UX PARA ESTOQUE POR COR E TAMANHO
-   ======================================================== */
 
 .stockVariationMatrix {
   display: flex;
@@ -1336,7 +1328,6 @@
   font-weight: bold;
 }
 
-/* Container para alinhar os botões e o input de quantidade */
 .quantityControlGroup {
   display: flex;
   align-items: center;
@@ -1344,9 +1335,8 @@
   width: 100%;
 }
 
-/* Estilo padrão para os botões de mais e menos */
 .qtyButton {
-  background-color: #10b981; /* Cor verde */
+  background-color: #10b981;
   color: #ffffff;
   border: none;
   width: 32px;
@@ -1362,38 +1352,28 @@
 }
 
 .qtyButton:hover {
-  background-color: #059669; /* Verde um pouco mais escuro no hover */
-}
-
-/* Ajuste do campo numérico para centralizar o texto entre os botões */
-.stockQuickInputNumber {
-  text-align: center;
-  width: 100%;
-  padding: 4px;
-  font-size: 0.85rem;
-  border-radius: 4px;
-  border: 1px solid #cbd5e1;
+  background-color: #059669;
 }
 
 .card-produto img {
   width: 100%;
-  height: 250px; /* Defina a altura padrão que você usa no card */
-  object-fit: contain; /* Faz a imagem inteira aparecer dentro do espaço, sem cortar */
-  background-color: #f9f9f9; /* Opcional: cor de fundo caso fique alguma bordinha vazia */
+  height: 250px;
+  object-fit: contain;
+  background-color: #f9f9f9;
 }
 
 .catalogCardImage {
   width: 100%;
-  height: 250px; /* Ou a altura que você já utiliza no seu card */
-  object-fit: contain; /* Faz a foto inteira aparecer sem cortar as bordas */
-  object-position: center; /* Centraliza a imagem no espaço */
-  background-color: #f9f9f9; /* Fundo opcional para preencher eventuais espaços vazios */
+  height: 250px;
+  object-fit: contain;
+  object-position: center;
+  background-color: #f9f9f9;
 }
 
 .modalMainImage {
   width: 100%;
   max-height: 400px;
-  object-fit: contain; /* Garante que o body apareça inteiro no modal também */
+  object-fit: contain;
   background-color: #f9f9f9;
 }
 
@@ -1430,7 +1410,6 @@
   background-color: #1d4ed8;
 }
 
-/* Estilo para o card inativo */
 .card-produto.inativo {
   opacity: 0.65;
   filter: grayscale(80%);
@@ -1438,7 +1417,6 @@
   border-color: #d1d5db;
 }
 
-/* Etiqueta indicativa de produto inativo */
 .card-produto.inativo::before {
   position: absolute;
   top: 10px;
@@ -1465,7 +1443,7 @@
   left: 0;
   width: 100%;
   height: 2px;
-  background-color: #ff4d4f; /* Linha reta vermelha horizontal no meio */
+  background-color: #ff4d4f;
   transform: translateY(-50%);
 }
 
