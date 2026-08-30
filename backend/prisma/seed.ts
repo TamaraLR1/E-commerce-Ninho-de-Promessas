@@ -62,24 +62,24 @@ async function main() {
   }
   console.log('🎨 Cores cadastradas com sucesso!');
 
-  // 3. Criar Tamanhos até 5 anos de idade
+  // 3. Criar Tamanhos até 5 anos de idade com ordem
   const tamanhosData = [
-    { nome: 'RN (Recém-Nascido)', slug: 'rn' },
-    { nome: 'P (0 a 3 Meses)', slug: 'p-0-3m' },
-    { nome: 'M (3 a 6 Meses)', slug: 'm-3-6m' },
-    { nome: 'G (6 a 9 Meses)', slug: 'g-6-9m' },
-    { nome: 'GG (9 a 12 Meses)', slug: 'gg-9-12m' },
-    { nome: '1 Ano', slug: '1-ano' },
-    { nome: '2 Anos', slug: '2-anos' },
-    { nome: '3 Anos', slug: '3-anos' },
-    { nome: '4 Anos', slug: '4-anos' },
-    { nome: '5 Anos', slug: '5-anos' },
+    { nome: 'RN (Recém-Nascido)', slug: 'rn', ordem: 1 },
+    { nome: 'P (0 a 3 Meses)', slug: 'p-0-3m', ordem: 2 },
+    { nome: 'M (3 a 6 Meses)', slug: 'm-3-6m', ordem: 3 },
+    { nome: 'G (6 a 9 Meses)', slug: 'g-6-9m', ordem: 4 },
+    { nome: 'GG (9 a 12 Meses)', slug: 'gg-9-12m', ordem: 5 },
+    { nome: '1 Ano', slug: '1-ano', ordem: 6 },
+    { nome: '2 Anos', slug: '2-anos', ordem: 7 },
+    { nome: '3 Anos', slug: '3-anos', ordem: 8 },
+    { nome: '4 Anos', slug: '4-anos', ordem: 9 },
+    { nome: '5 Anos', slug: '5-anos', ordem: 10 },
   ];
 
   for (const tamanho of tamanhosData) {
     await prisma.tamanho.upsert({
       where: { slug: tamanho.slug },
-      update: {},
+      update: { ordem: tamanho.ordem },
       create: tamanho,
     });
   }

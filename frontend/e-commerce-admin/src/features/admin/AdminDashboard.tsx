@@ -44,6 +44,7 @@ interface Tamanho {
   id: string;
   nome: string;
   slug: string;
+  ordem?: number;
   ativo?: boolean;
 }
 
@@ -158,6 +159,7 @@ export const AdminDashboard: React.FC = () => {
 
   const [tamanhosList, setTamanhosList] = useState<Tamanho[]>([]);
   const [novoTamanhoNome, setNovoTamanhoNome] = useState('');
+  const [novoTamanhoOrdem, setNovoTamanhoOrdem] = useState('0');
   const [tamanhoLoading, setTamanhoLoading] = useState(false);
   const [tamanhoError, setTamanhoError] = useState('');
   const [editingTamanhoId, setEditingTamanhoId] = useState<string | null>(null);
@@ -511,13 +513,18 @@ export const AdminDashboard: React.FC = () => {
         method,
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ nome: novoTamanhoNome, slug }),
+        body: JSON.stringify({ 
+          nome: novoTamanhoNome, 
+          slug, 
+          ordem: novoTamanhoOrdem !== '' ? Number(novoTamanhoOrdem) : 0 
+        }),
       });
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Erro ao salvar tamanho.');
 
       setNovoTamanhoNome('');
+      setNovoTamanhoOrdem('0');
       setEditingTamanhoId(null);
       carregarTamanhos();
       alert(editingTamanhoId ? 'Tamanho atualizado com sucesso!' : 'Tamanho cadastrado com sucesso!');
@@ -531,6 +538,7 @@ export const AdminDashboard: React.FC = () => {
   const handleStartEditTamanho = (tam: Tamanho) => {
     setEditingTamanhoId(tam.id);
     setNovoTamanhoNome(tam.nome);
+    setNovoTamanhoOrdem(tam.ordem !== undefined ? tam.ordem.toString() : '0');
   };
 
   const handleDesativarTamanho = async (parametro: Tamanho | string) => {
@@ -1816,7 +1824,7 @@ export const AdminDashboard: React.FC = () => {
               <div className={styles.headerBetween}>
                 <h3>{editingTamanhoId ? 'Editar Tamanho' : 'Gerenciar Tamanhos'}</h3>
                 {editingTamanhoId && (
-                  <button type="button" onClick={() => { setEditingTamanhoId(null); setNovoTamanhoNome(''); }} className={styles.btnSecondary}>
+                  <button type="button" onClick={() => { setEditingTamanhoId(null); setNovoTamanhoNome(''); setNovoTamanhoOrdem('0'); }} className={styles.btnSecondary}>
                     Cancelar Edição
                   </button>
                 )}
@@ -1838,6 +1846,16 @@ export const AdminDashboard: React.FC = () => {
                   <small className={styles.slugPreviewText}>
                     Slug gerado: <b>{novoTamanhoNome ? gerarSlug(novoTamanhoNome) : '...'}</b>
                   </small>
+                </div>
+
+                <div className={styles.group}>
+                  <label>Ordem de Exibição (Sequência)</label>
+                  <input 
+                    type="number" 
+                    value={novoTamanhoOrdem} 
+                    onChange={e => setNovoTamanhoOrdem(e.target.value)} 
+                    placeholder="Ex: 1, 2, 3..." 
+                  />
                 </div>
 
                 <button type="submit" className={styles.btnPrimary} disabled={tamanhoLoading}>
@@ -1865,6 +1883,7 @@ export const AdminDashboard: React.FC = () => {
                           <div>
                             <span>
                               <strong>{tam.nome}</strong>
+                              <span style={{ marginLeft: '10px', fontSize: '0.8rem', color: '#64748b' }}>(Ordem: {tam.ordem ?? 0})</span>
                               {!estaAtivo && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>(Desativado)</span>}
                             </span>
                             <code className={styles.slugCodeBadge} style={{ marginLeft: '10px' }}>slug: {tam.slug}</code>

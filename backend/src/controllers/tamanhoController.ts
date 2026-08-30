@@ -5,7 +5,7 @@ export const tamanhoController = {
   async listar(req: Request, res: Response) {
     try {
       const tamanhos = await prisma.tamanho.findMany({
-        orderBy: { nome: 'asc' },
+        orderBy: { ordem: 'asc' }, // Ordena pela sequência numérica configurada
       });
       return res.status(200).json(tamanhos);
     } catch (error) {
@@ -16,7 +16,7 @@ export const tamanhoController = {
 
   async criar(req: Request, res: Response) {
     try {
-      const { nome, slug } = req.body;
+      const { nome, slug, ordem } = req.body; // <-- Adicionado 'ordem' aqui
 
       // Captura o ID do admin logado
       const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
@@ -35,7 +35,11 @@ export const tamanhoController = {
       }
 
       const novoTamanho = await prisma.tamanho.create({
-        data: { nome, slug },
+        data: { 
+          nome, 
+          slug, 
+          ordem: ordem !== undefined && ordem !== '' ? Number(ordem) : 0 // <-- Salva a ordem enviada ou 0 por padrão
+        },
       });
 
       // 📝 Registra o log de cadastro do tamanho
@@ -58,7 +62,7 @@ export const tamanhoController = {
   async atualizar(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const { nome, slug } = req.body;
+      const { nome, slug, ordem } = req.body; // <-- Adicionado 'ordem' aqui
 
       // Captura o ID do admin logado
       const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
@@ -75,7 +79,11 @@ export const tamanhoController = {
 
       const tamanhoAtualizado = await prisma.tamanho.update({
         where: { id: String(id) },
-        data: { nome, slug },
+        data: { 
+          nome, 
+          slug, 
+          ordem: ordem !== undefined && ordem !== '' ? Number(ordem) : 0 // <-- Atualiza a ordem enviada ou 0 por padrão
+        },
       });
 
       // 📝 Registra o log de atualização do tamanho
