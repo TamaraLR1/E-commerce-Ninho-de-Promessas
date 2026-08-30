@@ -88,6 +88,11 @@ interface DashboardData {
     entradas: number;
     saidas: number;
   }>;
+  volumePorMes: Array<{
+    mes: string;
+    entradas: number;
+    saidas: number;
+  }>;
   distribuicaoCategorias: Array<{
     name: string;
     value: number;
@@ -1329,6 +1334,23 @@ export const AdminDashboard: React.FC = () => {
                             <Line type="monotone" dataKey="entradas" name="Entradas" stroke="#10b981" strokeWidth={2} />
                             <Line type="monotone" dataKey="saidas" name="Saídas" stroke="#ef4444" strokeWidth={2} />
                           </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    {/* Gráfico Novo: Volume Total por Mês (Barras) */}
+                    <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', gridColumn: '1 / -1' }}>
+                      <h4 className={styles.listSubheading}>📅 Volume Total por Mês (Entradas vs Saídas)</h4>
+                      <div style={{ width: '100%', height: 280 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={dashboardData.volumePorMes}>
+                            <XAxis dataKey="mes" stroke="#64748b" />
+                            <YAxis stroke="#64748b" />
+                            <Tooltip contentStyle={{ background: '#1e293b', color: '#fff', borderRadius: '6px' }} />
+                            <Legend />
+                            <Bar dataKey="entradas" name="Entradas" fill="#10b981" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="saidas" name="Saídas" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                          </BarChart>
                         </ResponsiveContainer>
                       </div>
                     </div>

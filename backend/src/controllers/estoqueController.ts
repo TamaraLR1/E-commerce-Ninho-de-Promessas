@@ -139,7 +139,7 @@ export const estoqueController = {
 
       const quantidadeFisicaTotal = estoqueAgregado._sum.estoque || 0;
 
-      // 3. Contagem de movimentações do mês atual
+      // 3. Contagem de movimentações do mês atual para os cards e gráfico diário
       const inicioDoMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
       
       const movimentacoesMes = await prisma.movimentacaoEstoque.findMany({
@@ -162,7 +162,7 @@ export const estoqueController = {
         .filter(m => m.tipo === 'SAIDA')
         .reduce((acc, m) => acc + m.quantidade, 0);
 
-      // Agrupando movimentações por dia para o gráfico de fluxo
+      // Agrupando movimentações por dia para o gráfico de fluxo diário
       const historicoPorDiaMap: { [key: string]: { entradas: number; saidas: number } } = {};
 
       movimentacoesMes.forEach(m => {
@@ -184,6 +184,36 @@ export const estoqueController = {
         entradas: historicoPorDiaMap[dia].entradas,
         saidas: historicoPorDiaMap[dia].saidas,
       }));
+
+      // --- NOVO: Agrupamento de Volume Total por Mês (último ano / histórico) ---
+      const todasMovimentacoes = await prisma.movimentacaoEstoque.findMany({
+        orderBy: { data: 'asc' }
+      });
+
+      const volumePorMesMap: { [key: string]: { entradas: number; saidas: number } } = {};
+
+      todasMovimentacoes.forEach(m => {
+        const dataMov = new Date(m.data);
+        // Chave no formato "MM/AAAA" (ex: "08/2026") para ordenar ou exibir bonitinho
+        const mesAnoStr = dataMov.toLocaleDateString('pt-BR', { month: '2-digit', year: 'numeric' });
+
+        if (!volumePorMesMap[mesAnoStr]) {
+          volumePorMesMap[mesAnoStr] = { entradas: 0, saidas: 0 };
+        }
+
+        if (m.tipo === 'ENTRADA') {
+          volumePorMesMap[mesAnoStr].entradas += m.quantidade;
+        } else if (m.tipo === 'SAIDA') {
+          volumePorMesMap[mesAnoStr].saidas += m.quantidade;
+        }
+      });
+
+      const volumePorMes = Object.keys(volumePorMesMap).map(mes => ({
+        mes,
+        entradas: volumePorMesMap[mes].entradas,
+        saidas: volumePorMesMap[mes].saidas,
+      }));
+      // --------------------------------------------------------------------------
 
       // Gráfico 2: Distribuição de Produtos por Categoria (PieChart)
       const produtosAtivosComCategoria = await prisma.produto.findMany({
@@ -263,6 +293,7 @@ export const estoqueController = {
           saidasNoMes: totalSaidasMes,
         },
         historicoMensal,
+        volumePorMes, // <-- Novo bloco agregado mensalmente disponível para o front-end
         distribuicaoCategorias,
         produtosCriticos,
         saidasPorMotivo,
