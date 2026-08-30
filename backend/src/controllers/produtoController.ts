@@ -169,6 +169,9 @@ export const produtoController = {
         return res.status(404).json({ message: 'Produto não encontrado.' });
       }
 
+      // 🔍 Variável para rastrear se realmente houve alteração nos dados principais
+      let houveAlteracaoReal = false;
+
       const tamanhosParsed = typeof tamanhos === 'string' ? JSON.parse(tamanhos) : tamanhos;
 
       // Validação: Garante que na edição não fiquem sem variações válidas
@@ -201,13 +204,16 @@ export const produtoController = {
         return res.status(400).json({ message: 'Um produto pode ter no máximo 10 imagens.' });
       }
 
-      // 1. Tratamento de remoção de imagens físicas e do banco
+      // Verifica se houve mudança nas imagens (se removeu alguma ou adicionou novas)
+      if (novosArquivos && novosArquivos.length > 0) {
+        houveAlteracaoReal = true;
+      }
       const imagensParaRemover = produtoExistente.imagens.filter(
         img => !imagensMantidasParsed.includes(img.url)
       );
-      const idsParaDeletar = imagensParaRemover.map(img => img.id);
-
-      if (idsParaDeletar.length > 0) {
+      if (imagensParaRemover.length > 0) {
+        houveAlteracaoReal = true;
+        const idsParaDeletar = imagensParaRemover.map(img => img.id);
         for (const imgAntiga of imagensParaRemover) {
           try {
             const filename = imgAntiga.url.split('/uploads/')[1];
@@ -233,6 +239,18 @@ export const produtoController = {
 
       const precoNumerico = preco !== undefined ? Number(preco) : produtoExistente.preco;
       const nomeFinal = nome || produtoExistente.nome;
+      const descricaoFinal = descricao !== undefined ? descricao : produtoExistente.descricao;
+      const categoryIdFinal = categoryId ? String(categoryId) : produtoExistente.categoryId;
+
+      // Compara se os campos básicos mudaram
+      if (
+        nomeFinal !== produtoExistente.nome ||
+        Number(precoNumerico.toFixed(2)) !== Number(produtoExistente.preco.toFixed(2)) ||
+        descricaoFinal !== produtoExistente.descricao ||
+        categoryIdFinal !== produtoExistente.categoryId
+      ) {
+        houveAlteracaoReal = true;
+      }
 
       // 2. Atualizar dados gerais do produto, novas imagens e quem atualizou por último
       await prisma.produto.update({
@@ -240,8 +258,8 @@ export const produtoController = {
         data: {
           nome: nomeFinal,
           preco: precoNumerico,
-          descricao: descricao !== undefined ? descricao : produtoExistente.descricao,
-          categoryId: categoryId ? String(categoryId) : produtoExistente.categoryId,
+          descricao: descricaoFinal,
+          categoryId: categoryIdFinal,
           atualizadoPorId: adminId, 
           imagens: {
             create: novasImagensCreate
@@ -259,6 +277,7 @@ export const produtoController = {
         );
 
         if (!aindaEnviado) {
+          houveAlteracaoReal = true;
           const corObj = estoqueAtual.corId ? await prisma.cor.findUnique({ where: { id: estoqueAtual.corId } }) : null;
           const corNomeBusca = corObj?.nome || 'Padrão';
 
@@ -288,6 +307,10 @@ export const produtoController = {
             (item) => item.tamanhoId === tAtualId && item.corId === cAtualId
           );
 
+          if (itemEncontrado && itemEncontrado.estoque !== estoqueAtual.estoque) {
+            houveAlteracaoReal = true;
+          }
+
           await prisma.produtoEstoque.update({
             where: { id: estoqueAtual.id },
             data: { 
@@ -307,6 +330,7 @@ export const produtoController = {
         );
 
         if (estoqueInativoExistente) {
+          houveAlteracaoReal = true;
           await prisma.produtoEstoque.update({
             where: { id: estoqueInativoExistente.id },
             data: {
@@ -322,6 +346,7 @@ export const produtoController = {
           );
 
           if (!jaExisteAtivo) {
+            houveAlteracaoReal = true;
             await prisma.produtoEstoque.create({
               data: {
                 produtoId: id,
@@ -335,8 +360,8 @@ export const produtoController = {
         }
       }
 
-      // 📝 Registra o log padrão e direto da atualização do produto
-      if (adminId) {
+      // 📝 Registra o log apenas se houver alguma alteração real nos dados do produto
+      if (adminId && houveAlteracaoReal) {
         await prisma.logAtividade.create({
           data: {
             adminId: adminId,
