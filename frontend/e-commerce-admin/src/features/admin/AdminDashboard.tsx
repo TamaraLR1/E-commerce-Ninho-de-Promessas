@@ -1200,15 +1200,9 @@ export const AdminDashboard: React.FC = () => {
         <div>
           <h2>Painel Admin</h2>
           
-          <div style={{ padding: '0 16px 16px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '16px' }}>
-            <p style={{ fontSize: '0.8rem', color: '#141516', margin: 0 }}>Logado como:</p>
-            <p style={{ 
-              fontSize: '1rem', 
-              fontWeight: '700', 
-              color: '#12738b', 
-              margin: '4px 0 0 0', 
-              wordBreak: 'break-word'
-            }}>
+          <div className={styles.userInfoSection}>
+            <p className={styles.userInfoLabel}>Logado como:</p>
+            <p className={styles.userInfoValue}>
               {adminUser?.nome || 'Carregando...'}
             </p>
           </div>
@@ -1244,25 +1238,11 @@ export const AdminDashboard: React.FC = () => {
           </nav>
         </div>
 
-        <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+        <div className={styles.logoutSection}>
           <button 
             type="button" 
             onClick={handleLogout}
-            style={{
-              width: '100%',
-              padding: '10px',
-              backgroundColor: '#ef4444',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '6px',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              fontSize: '0.9rem'
-            }}
+            className={styles.logoutButton}
           >
             🚪 Sair (Logout)
           </button>
@@ -1286,35 +1266,35 @@ export const AdminDashboard: React.FC = () => {
                 <p className={styles.emptyNotice}>Carregando dados do dashboard...</p>
               ) : dashboardData ? (
                 <>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', margin: '20px 0' }}>
-                    <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>Produtos Ativos</p>
-                      <p style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#1e293b', margin: '8px 0 0 0' }}>{dashboardData.cards.totalProdutosAtivos}</p>
+                  <div className={styles.dashboardCardsGrid}>
+                    <div className={styles.dashboardStatCard}>
+                      <p className={styles.dashboardStatLabel}>Produtos Ativos</p>
+                      <p className={styles.dashboardStatValuePrimary}>{dashboardData.cards.totalProdutosAtivos}</p>
                     </div>
 
-                    <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>Volume Total em Estoque</p>
-                      <p style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#2563eb', margin: '8px 0 0 0' }}>{dashboardData.cards.quantidadeFisicaTotal}</p>
+                    <div className={styles.dashboardStatCard}>
+                      <p className={styles.dashboardStatLabel}>Volume Total em Estoque</p>
+                      <p className={styles.dashboardStatValueBlue}>{dashboardData.cards.quantidadeFisicaTotal}</p>
                     </div>
 
-                    <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>Entradas (Este Mês)</p>
-                      <p style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#059669', margin: '8px 0 0 0' }}>+{dashboardData.cards.entradasNoMes}</p>
+                    <div className={styles.dashboardStatCard}>
+                      <p className={styles.dashboardStatLabel}>Entradas (Este Mês)</p>
+                      <p className={styles.dashboardStatValueGreen}>+{dashboardData.cards.entradasNoMes}</p>
                     </div>
 
-                    <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>Saídas (Este Mês)</p>
-                      <p style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#dc2626', margin: '8px 0 0 0' }}>-{dashboardData.cards.saidasNoMes}</p>
+                    <div className={styles.dashboardStatCard}>
+                      <p className={styles.dashboardStatLabel}>Saídas (Este Mês)</p>
+                      <p className={styles.dashboardStatValueRed}>-{dashboardData.cards.saidasNoMes}</p>
                     </div>
                   </div>
 
-                  <div style={{ marginTop: '30px', background: '#f8fafc', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <div className={styles.headerBetween} style={{ marginBottom: '12px' }}>
-                      <h4 className={styles.listSubheading} style={{ margin: 0 }}>🛡️ Últimas Ações do Sistema</h4>
+                  <div className={styles.dashboardLogsContainer}>
+                    <div className={`${styles.headerBetween} ${styles.dashboardLogsHeader}`}>
+                      <h4 className={`${styles.listSubheading} ${styles.dashboardLogsHeaderTitle}`}>🛡️ Últimas Ações do Sistema</h4>
                       <button 
                         type="button" 
                         onClick={() => setActiveTab('logs')}
-                        style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}
+                        className={styles.dashboardLogsLinkButton}
                       >
                         Ver todos os logs →
                       </button>
@@ -1322,14 +1302,14 @@ export const AdminDashboard: React.FC = () => {
                     {logsList.length === 0 ? (
                       <p className={styles.emptyNotice}>Nenhuma ação recente registrada.</p>
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div className={styles.form}>
                         {logsList.slice(0, 5).map((log) => (
-                          <div key={log.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#fff', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '0.85rem' }}>
+                          <div key={log.id} className={styles.dashboardLogItem}>
                             <div>
-                              <strong style={{ color: '#1e293b' }}>{log.admin?.nome || 'Admin'}</strong>{' '}
-                              <span style={{ color: '#475569' }}>{log.acao}</span>
+                              <strong className={styles.dashboardLogTextBold}>{log.admin?.nome || 'Admin'}</strong>{' '}
+                              <span className={styles.dashboardLogTextSpan}>{log.acao}</span>
                             </div>
-                            <span style={{ color: '#64748b', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                            <span className={styles.dashboardLogDateSpan}>
                               {new Date(log.data).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                             </span>
                           </div>
@@ -1338,53 +1318,46 @@ export const AdminDashboard: React.FC = () => {
                     )}
                   </div>
 
-                  <div style={{ marginTop: '30px' }}>
+                  <div className={styles.listSectionWrapper}>
                     <h4 className={styles.listSubheading}>Últimas Movimentações</h4>
                     {dashboardData.ultimasMovimentacoes.length === 0 ? (
                       <p className={styles.emptyNotice}>Nenhuma movimentação registrada recentemente.</p>
                     ) : (
-                      <div style={{ overflowX: 'auto', marginTop: '10px' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+                      <div className={styles.dashboardTableWrapper}>
+                        <table className={styles.dashboardTableElement}>
                           <thead>
-                            <tr style={{ borderBottom: '2px solid #cbd5e1', color: '#475569' }}>
-                              <th style={{ padding: '8px' }}>Data</th>
-                              <th style={{ padding: '8px' }}>Produto</th>
-                              <th style={{ padding: '8px' }}>Variação (Cor / Tam)</th>
-                              <th style={{ padding: '8px' }}>Tipo</th>
-                              <th style={{ padding: '8px' }}>Qtd</th>
-                              <th style={{ padding: '8px' }}>Motivo</th>
-                              <th style={{ padding: '8px' }}>Responsável</th>
+                            <tr className={styles.dashboardTableHeaderRow}>
+                              <th className={styles.dashboardTableCell}>Data</th>
+                              <th className={styles.dashboardTableCell}>Produto</th>
+                              <th className={styles.dashboardTableCell}>Variação (Cor / Tam)</th>
+                              <th className={styles.dashboardTableCell}>Tipo</th>
+                              <th className={styles.dashboardTableCell}>Qtd</th>
+                              <th className={styles.dashboardTableCell}>Motivo</th>
+                              <th className={styles.dashboardTableCell}>Responsável</th>
                             </tr>
                           </thead>
                           <tbody>
                             {dashboardData.ultimasMovimentacoes.map((item) => (
                               <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                                <td style={{ padding: '8px', color: '#64748b' }}>
+                                <td className={styles.dashboardTableDateCell}>
                                   {new Date(item.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                 </td>
-                                <td style={{ padding: '8px', fontWeight: 600, color: '#1e293b' }}>
+                                <td className={styles.dashboardTableProductCell}>
                                   {item.produto?.nome || item.produto?.name || 'Produto'}
                                 </td>
-                                <td style={{ padding: '8px', color: '#334155' }}>
+                                <td className={styles.dashboardTableVariationCell}>
                                   {item.corNome} / {item.tamanho}
                                 </td>
-                                <td style={{ padding: '8px' }}>
-                                  <span style={{
-                                    padding: '2px 8px',
-                                    borderRadius: '4px',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 'bold',
-                                    background: item.tipo === 'ENTRADA' ? '#d1fae5' : '#fee2e2',
-                                    color: item.tipo === 'ENTRADA' ? '#065f46' : '#991b1b'
-                                  }}>
+                                <td className={styles.dashboardTableCell}>
+                                  <span className={item.tipo === 'ENTRADA' ? styles.motivoTipoBadgeEntrada : styles.motivoTipoBadgeSaida}>
                                     {item.tipo}
                                   </span>
                                 </td>
-                                <td style={{ padding: '8px', fontWeight: 'bold', color: item.tipo === 'ENTRADA' ? '#059669' : '#dc2626' }}>
+                                <td className={item.tipo === 'ENTRADA' ? styles.dashboardTableQuantityGreen : styles.dashboardTableQuantityRed}>
                                   {item.tipo === 'ENTRADA' ? `+${item.quantidade}` : `-${item.quantidade}`}
                                 </td>
-                                <td style={{ padding: '8px', color: '#475569' }}>{item.motivo?.nome || '—'}</td>
-                                <td style={{ padding: '8px', color: '#475569', fontWeight: 500 }}>
+                                <td className={styles.dashboardTableReasonCell}>{item.motivo?.nome || '—'}</td>
+                                <td className={styles.dashboardTableAdminCell}>
                                   {item.admin?.nome || 'Administrador'}
                                 </td>
                               </tr>
@@ -1396,7 +1369,7 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </>
               ) : (
-                <p className={styles.emptyNotice} style={{ color: '#dc2626' }}>Erro ao carregar dados do dashboard.</p>
+                <p className={`${styles.emptyNotice} ${styles.dashboardErrorNotice}`}>Erro ao carregar dados do dashboard.</p>
               )}
             </section>
           </div>
@@ -1406,14 +1379,16 @@ export const AdminDashboard: React.FC = () => {
           <div className={styles.singleContainer}>
             <section className={styles.card}>
               <div className={styles.headerBetween}>
-                <h3>🛡️ Auditoria e Logs de Atividade do Sistema</h3>
+                <div>
+                  <h3>🛡️ Auditoria e Logs de Atividade do Sistema</h3>
+                  <p className={styles.infoText} style={{ margin: '4px 0 0 0' }}>Histórico cronológico completo de todas as ações sensíveis realizadas pelos administradores.</p>
+                </div>
                 <button type="button" onClick={carregarLogsAtividade} className={styles.btnSecondary}>
                   🔄 Atualizar Logs
                 </button>
               </div>
-              <p className={styles.infoText}>Histórico cronológico completo de todas as ações sensíveis realizadas pelos administradores.</p>
 
-              <div className={styles.searchSection} style={{ marginTop: '15px', marginBottom: '15px' }}>
+              <div className={styles.searchSection} style={{ marginTop: '20px' }}>
                 <input 
                   type="text" 
                   className={styles.searchInput} 
@@ -1426,25 +1401,25 @@ export const AdminDashboard: React.FC = () => {
               {filteredLogs.length === 0 ? (
                 <p className={styles.emptyNotice}>Nenhum registro de log encontrado.</p>
               ) : (
-                <div style={{ overflowX: 'auto', marginTop: '15px' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+                <div className={styles.logsTableWrapper}>
+                  <table className={styles.logsTableElement}>
                     <thead>
-                      <tr style={{ borderBottom: '2px solid #cbd5e1', color: '#475569' }}>
-                        <th style={{ padding: '10px' }}>Data e Hora</th>
-                        <th style={{ padding: '10px' }}>Administrador</th>
-                        <th style={{ padding: '10px' }}>Ação Realizada</th>
+                      <tr className={styles.logsTableHeaderRow}>
+                        <th className={styles.dashboardTableCell}>Data e Hora</th>
+                        <th className={styles.dashboardTableCell}>Administrador</th>
+                        <th className={styles.dashboardTableCell}>Ação Realizada</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredLogs.map((log) => (
                         <tr key={log.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                          <td style={{ padding: '10px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                          <td className={styles.logsTableDateCell}>
                             {new Date(log.data).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                           </td>
-                          <td style={{ padding: '10px', fontWeight: 600, color: '#1e293b' }}>
+                          <td className={styles.logsTableAdminCell}>
                             {log.admin?.nome || 'Administrador'}
                           </td>
-                          <td style={{ padding: '10px', color: '#334155' }}>
+                          <td className={styles.logsTableActionCell}>
                             {log.acao}
                           </td>
                         </tr>
@@ -1605,8 +1580,8 @@ export const AdminDashboard: React.FC = () => {
                                       </div>
 
                                       {isChecked && (!editingProductId || !itemJaExistia) && (
-                                        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>
+                                        <div className={styles.initialStockBoxGroup}>
+                                          <label className={styles.initialStockLabel}>
                                             Estoque Inicial (Novo Item):
                                           </label>
                                           <input 
@@ -1615,13 +1590,13 @@ export const AdminDashboard: React.FC = () => {
                                             placeholder="0"
                                             value={estoqueValor}
                                             onChange={(e) => handleStockChangeForSize(cId, tam.id, e.target.value)}
-                                            style={{ padding: '4px 8px', fontSize: '0.85rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                                            className={styles.initialStockInput}
                                           />
                                         </div>
                                       )}
 
                                       {isChecked && editingProductId && itemJaExistia && (
-                                        <div style={{ marginTop: '6px', fontSize: '0.7rem', color: '#059669', fontStyle: 'italic' }}>
+                                        <div className={styles.existingItemNotice}>
                                           ✓ Item existente (Estoque preservado)
                                         </div>
                                       )}
@@ -1713,11 +1688,8 @@ export const AdminDashboard: React.FC = () => {
                       return (
                         <li 
                           key={cat.id} 
-                          className={styles.simpleDataListItem} 
+                          className={`${styles.simpleDataListItem} ${styles.categoryItemLi}`} 
                           style={{ 
-                            display: 'flex', 
-                            justifyContent: 'space-between', 
-                            alignItems: 'center',
                             opacity: estaAtivo ? 1 : 0.6,
                             backgroundColor: estaAtivo ? 'transparent' : '#f1f5f9'
                           }}
@@ -1729,7 +1701,7 @@ export const AdminDashboard: React.FC = () => {
                             </span>
                             <code className={styles.slugCodeBadge} style={{ marginLeft: '10px' }}>slug: {cat.slug}</code>
                           </div>
-                          <div className={styles.cardActions} style={{ display: 'flex', gap: '8px' }}>
+                          <div className={styles.categoryActionsGroup}>
                             <button type="button" onClick={() => handleStartEditCategoria(cat)} className={styles.btnEditTable}>
                               ✏️ Editar
                             </button>
@@ -1798,11 +1770,8 @@ export const AdminDashboard: React.FC = () => {
                       return (
                         <li 
                           key={tam.id} 
-                          className={styles.simpleDataListItem} 
+                          className={`${styles.simpleDataListItem} ${styles.categoryItemLi}`} 
                           style={{ 
-                            display: 'flex', 
-                            justifyContent: 'space-between', 
-                            alignItems: 'center',
                             opacity: estaAtivo ? 1 : 0.6,
                             backgroundColor: estaAtivo ? 'transparent' : '#f1f5f9'
                           }}
@@ -1814,7 +1783,7 @@ export const AdminDashboard: React.FC = () => {
                             </span>
                             <code className={styles.slugCodeBadge} style={{ marginLeft: '10px' }}>slug: {tam.slug}</code>
                           </div>
-                          <div className={styles.cardActions} style={{ display: 'flex', gap: '8px' }}>
+                          <div className={styles.categoryActionsGroup}>
                             <button type="button" onClick={() => handleStartEditTamanho(tam)} className={styles.btnEditTable}>
                               ✏️ Editar
                             </button>
@@ -1901,11 +1870,8 @@ export const AdminDashboard: React.FC = () => {
                       return (
                         <li 
                           key={cor.id} 
-                          className={styles.simpleDataListItem} 
+                          className={`${styles.simpleDataListItem} ${styles.categoryItemLi}`} 
                           style={{ 
-                            display: 'flex', 
-                            justifyContent: 'space-between', 
-                            alignItems: 'center',
                             opacity: estaAtivo ? 1 : 0.6,
                             backgroundColor: estaAtivo ? 'transparent' : '#f1f5f9'
                           }}
@@ -1923,7 +1889,7 @@ export const AdminDashboard: React.FC = () => {
                             </span>
                             <code className={styles.slugCodeBadge} style={{ marginLeft: '10px' }}>slug: {cor.slug}</code>
                           </div>
-                          <div className={styles.cardActions} style={{ display: 'flex', gap: '8px' }}>
+                          <div className={styles.categoryActionsGroup}>
                             <button type="button" onClick={() => handleStartEditCor(cor)} className={styles.btnEditTable}>
                               ✏️ Editar
                             </button>
@@ -1990,16 +1956,16 @@ export const AdminDashboard: React.FC = () => {
                 </button>
               </form>
 
-              <div style={{ marginTop: '30px', borderTop: '2px dashed #cbd5e1', paddingTop: '20px' }}>
-                <h4 style={{ fontSize: '1rem', color: '#1e293b', marginBottom: '14px' }}>📖 Guia de Referência dos Motivos de Estoque</h4>
+              <div className={styles.motivosGuiaWrapper}>
+                <h4 className={styles.motivosGuiaTitle}>📖 Guia de Referência dos Motivos de Estoque</h4>
                 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+                <div className={styles.motivosGuiaGrid}>
                   
-                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <h5 style={{ color: '#059669', fontSize: '0.95rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div className={styles.motivosGuiaCard}>
+                    <h5 className={styles.motivosGuiaHeaderEntrada}>
                       📥 Motivos para Entrada de Estoque
                     </h5>
-                    <ul style={{ paddingLeft: '16px', fontSize: '0.8rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <ul className={styles.motivosGuiaList}>
                       <li><strong>Compra de Fornecedores / Reposição:</strong> Recebimento de novos lotes de mercadorias adquiridas de fabricantes ou fornecedores para reabastecer a vitrine.</li>
                       <li><strong>Devolução de Clientes:</strong> Retorno de um produto enviado ao cliente (por desistência, defeito ou troca de tamanho/cor) que retorna em condições de ser recomercializado.</li>
                       <li><strong>Estorno ou Cancelamento de Pedido:</strong> Retorno físico de itens cujos pedidos foram cancelados antes da expedição definitiva ou que voltaram da transportadora.</li>
@@ -2009,11 +1975,11 @@ export const AdminDashboard: React.FC = () => {
                     </ul>
                   </div>
 
-                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <h5 style={{ color: '#dc2626', fontSize: '0.95rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div className={styles.motivosGuiaCard}>
+                    <h5 className={styles.motivosGuiaHeaderSaida}>
                       📤 Motivos para Saída de Estoque
                     </h5>
-                    <ul style={{ paddingLeft: '16px', fontSize: '0.8rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <ul className={styles.motivosGuiaList}>
                       <li><strong>Vendas Realizadas:</strong> Baixa automática gerada pela finalização de um pedido no e-commerce (geralmente integrada ao gateway de pagamento ou emissão de nota fiscal).</li>
                       <li><strong>Trocas e Garantias:</strong> Saída de um produto novo enviado para substituir outro com defeito ou trocado pelo cliente.</li>
                       <li><strong>Avarias e Danos:</strong> Produtos que sofreram danos no armazém (queda, vazamento, umidade, pragas) e tornaram-se imprestáveis para venda.</li>
@@ -2039,22 +2005,12 @@ export const AdminDashboard: React.FC = () => {
                           key={motivo.id} 
                           className={styles.simpleDataListItem} 
                           style={{ 
-                            display: 'flex', 
-                            justifyContent: 'space-between', 
-                            alignItems: 'center',
                             opacity: estaAtivo ? 1 : 0.6,
                             backgroundColor: estaAtivo ? 'transparent' : '#f1f5f9'
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span style={{
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                              fontSize: '0.7rem',
-                              fontWeight: 'bold',
-                              background: motivo.tipo === 'ENTRADA' ? '#d1fae5' : '#fee2e2',
-                              color: motivo.tipo === 'ENTRADA' ? '#065f46' : '#991b1b'
-                            }}>
+                          <div className={styles.categoryItemLi} style={{ gap: '10px' }}>
+                            <span className={motivo.tipo === 'ENTRADA' ? styles.motivoTipoBadgeEntrada : styles.motivoTipoBadgeSaida}>
                               {motivo.tipo}
                             </span>
                             <span>
@@ -2062,7 +2018,7 @@ export const AdminDashboard: React.FC = () => {
                               {!estaAtivo && <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#dc2626', fontWeight: 'bold' }}>(Desativado)</span>}
                             </span>
                           </div>
-                          <div className={styles.cardActions} style={{ display: 'flex', gap: '8px' }}>
+                          <div className={styles.categoryActionsGroup}>
                             <button 
                               type="button" 
                               onClick={() => handleStartEditMotivo(motivo)} 
@@ -2148,8 +2104,8 @@ export const AdminDashboard: React.FC = () => {
 
                 <div className={styles.group}>
                   <label>Tipo de Desconto</label>
-                  <div style={{ display: 'flex', gap: '20px', marginTop: '6px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                  <div className={styles.categoryItemLi} style={{ gap: '20px', marginTop: '6px' }}>
+                    <label className={styles.sizeInnerLabel} style={{ cursor: 'pointer' }}>
                       <input 
                         type="radio" 
                         name="discountType" 
@@ -2159,7 +2115,7 @@ export const AdminDashboard: React.FC = () => {
                       />
                       Porcentagem (% OFF)
                     </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                    <label className={styles.sizeInnerLabel} style={{ cursor: 'pointer' }}>
                       <input 
                         type="radio" 
                         name="discountType" 
@@ -2186,7 +2142,7 @@ export const AdminDashboard: React.FC = () => {
                     required 
                   />
                   {matchedProductForOffer && discountType === 'percentual' && promoValue && !isNaN(Number(promoValue)) && (
-                    <small style={{ display: 'block', marginTop: '6px', color: '#059669', fontWeight: 'bold' }}>
+                    <small className={styles.offerDiscountPreviewText}>
                       ✨ Preço final com {promoValue}% de desconto: R$ {(matchedProductForOffer.originalPrice * (1 - Number(promoValue) / 100)).toFixed(2)}
                     </small>
                   )}
@@ -2200,13 +2156,13 @@ export const AdminDashboard: React.FC = () => {
 
         {activeTab === 'lista' && (
           <div className={styles.singleContainer}>
-            <div className={styles.searchSection} style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <input type="text" className={styles.searchInput} style={{ flex: 1, minWidth: '240px' }} placeholder="🔍 Buscar por nome, categoria, descrição ou ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            <div className={`${styles.searchSection} ${styles.listSearchFilterRow}`}>
+              <input type="text" className={`${styles.searchInput} ${styles.listSearchInputFlex}`} placeholder="🔍 Buscar por nome, categoria, descrição ou ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
               
               <select 
                 value={statusFilter} 
                 onChange={(e) => setStatusFilter(e.target.value as any)}
-                style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.9rem', cursor: 'pointer' }}
+                className={styles.listSelectDropdown}
               >
                 <option value="todos">👁️ Todos os Status</option>
                 <option value="ativos">🟢 Apenas Ativos</option>
@@ -2216,7 +2172,7 @@ export const AdminDashboard: React.FC = () => {
               <select 
                 value={sortBy} 
                 onChange={(e) => setSortBy(e.target.value as any)}
-                style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '0.9rem', cursor: 'pointer' }}
+                className={styles.listSelectDropdown}
               >
                 <option value="nome-asc">🔤 Nome (A - Z)</option>
                 <option value="nome-desc">🔤 Nome (Z - A)</option>
@@ -2253,39 +2209,13 @@ export const AdminDashboard: React.FC = () => {
                         <img src={prod.images[0]} alt="" className={styles.catalogCardImage} />
 
                         {prod.hasOffer && (
-                          <div style={{
-                            position: 'absolute',
-                            top: '12px',
-                            right: '12px',
-                            backgroundColor: '#000000',
-                            color: '#ffffff',
-                            padding: '6px 12px',
-                            borderRadius: '6px',
-                            fontSize: '1rem',
-                            fontWeight: '800',
-                            letterSpacing: '0.5px',
-                            zIndex: 3,
-                            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
-                            textTransform: 'uppercase'
-                          }}>
+                          <div className={styles.badgeOfferBadge}>
                             {Math.round((1 - (prod.offerPrice / prod.originalPrice)) * 100)}% OFF
                           </div>
                         )}
 
                         {isDesativado && (
-                          <span style={{
-                            position: 'absolute',
-                            top: '10px',
-                            left: '10px',
-                            background: '#ef4444',
-                            color: '#fff',
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            fontSize: '0.75rem',
-                            fontWeight: 'bold',
-                            zIndex: 2,
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                          }}>
+                          <span className={styles.badgeDisabledProduct}>
                             DESATIVADO
                           </span>
                         )}
@@ -2308,7 +2238,7 @@ export const AdminDashboard: React.FC = () => {
                         </div>
 
                         {(prod.criadoPor || prod.atualizadoPor) && (
-                          <div style={{ fontSize: '0.73rem', color: '#64748b', marginTop: '6px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
+                          <div className={styles.productCardAuditInfo}>
                             {prod.criadoPor && <span>👤 Criado por: <strong>{prod.criadoPor.nome}</strong></span>}
                             {prod.atualizadoPor && <span style={{ display: 'block' }}>🔄 Última alt: <strong>{prod.atualizadoPor.nome}</strong></span>}
                           </div>
@@ -2474,7 +2404,6 @@ export const AdminDashboard: React.FC = () => {
                                   key={cId}
                                   type="button"
                                   onClick={() => setSelectedColorForDetails(cId)}
-                                  /* 🛡️ CORREÇÃO APLICADA: Aplica a classe .corInativada caso a cor esteja inativa */
                                   className={`${styles.modalColorButton} ${isSelected ? styles.modalColorButtonSelected : styles.modalColorButtonUnselected} ${isCorInativa ? styles.corInativada : ''}`}
                                   title={isCorInativa ? 'Cor Desativada' : c.nome}
                                 >
@@ -2528,7 +2457,6 @@ export const AdminDashboard: React.FC = () => {
                               return (
                                 <div 
                                   key={idx}
-                                  /* 🛡️ CORREÇÃO APLICADA: Aplica a classe .corInativada também no tamanho se inativo */
                                   className={`${styles.modalSizeItemBox} ${isTamanhoInativo ? styles.corInativada + ' ' + styles.sizeBoxSoldOut : (estoqueDisp > 0 ? styles.sizeBoxAvailable : styles.sizeBoxSoldOut)}`}
                                 >
                                   <div className={styles.modalSizeName}>
@@ -2560,7 +2488,7 @@ export const AdminDashboard: React.FC = () => {
               <h3>Controle de Estoque</h3>
               <p className={styles.infoText}>Utilize os filtros rápidos abaixo para focar imediatamente nos itens que exigem atenção ou pesquise por nome/ID.</p>
               
-              <div className={styles.searchSection} style={{ marginBottom: '15px' }}>
+              <div className={styles.searchSection}>
                 <input 
                   type="text" 
                   className={styles.searchInput} 
@@ -2651,40 +2579,19 @@ export const AdminDashboard: React.FC = () => {
                     return (
                       <div 
                         key={prod.id} 
-                        className={`${styles.stockProductBlockCard} ${isCardInativo ? styles.inativo : ''}`} 
-                        style={{ 
-                          marginTop: '20px', 
-                          padding: '16px', 
-                          border: '1px solid #e2e8f0', 
-                          borderRadius: '8px', 
-                          background: isCardInativo ? '#f8fafc' : '#fafafa',
-                          opacity: isCardInativo ? 0.6 : 1,
-                          position: 'relative'
-                        }}
+                        className={isCardInativo ? styles.stockProductBlockCardInativo : styles.stockProductBlockCard}
                       >
                         {isCardInativo && (
-                          <span style={{
-                            position: 'absolute',
-                            top: '16px',
-                            right: '16px',
-                            background: '#ef4444',
-                            color: '#fff',
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            fontSize: '0.75rem',
-                            fontWeight: 'bold',
-                            zIndex: 2,
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                          }}>
+                          <span className={styles.badgeDisabledProduct}>
                             DESATIVADO
                           </span>
                         )}
 
-                        <div className={styles.headerBetween} style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <img src={prod.images[0]} alt="" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />
+                        <div className={styles.stockProductHeaderInfo}>
+                          <img src={prod.images[0]} alt="" className={styles.stockProductThumb} />
                           <div>
-                            <h4 style={{ margin: 0, fontSize: '1rem', color: '#1e293b' }}>{prod.name}</h4>
-                            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>ID: {prod.id} | Categoria: {prod.category}</span>
+                            <h4 className={styles.stockProductTitleHeading}>{prod.name}</h4>
+                            <span className={styles.stockProductSubtitleSpan}>ID: {prod.id} | Categoria: {prod.category}</span>
                           </div>
                         </div>
 
@@ -2725,12 +2632,10 @@ export const AdminDashboard: React.FC = () => {
                                     const isLoadingThis = loadingMovimentacao[mapKey] || false;
 
                                     return (
-                                      <div 
-                                        key={sizeItem.size} 
-                                        /* 🛡️ CORREÇÃO APLICADA: Aplica a classe .corInativada no card do tamanho se ele estiver inativo */
-                                        className={`${styles.sizeConfigBox} ${isTamInativoGlobal ? styles.corInativada : ''}`} 
-                                        style={{ background: '#fff', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}
-                                      >
+                                        <div 
+                                          key={sizeItem.size} 
+                                          className={`${styles.sizeConfigBox} ${isTamInativoGlobal ? styles.corInativada : ''} ${styles.stockSizeCardBoxWhite}`}
+                                        >
                                         
                                         <div className={styles.stockSizeCardHeader}>
                                           <span className={styles.stockSizeBadgeLabel}>
@@ -2741,8 +2646,8 @@ export const AdminDashboard: React.FC = () => {
                                           </span>
                                         </div>
 
-                                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', fontSize: '0.85rem', padding: '2px 0' }}>
-                                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', color: '#10b981', fontWeight: 600 }}>
+                                        <div className={styles.stockRadioRow}>
+                                          <label className={styles.stockRadioLabelGreen}>
                                             <input
                                               type="radio"
                                               name={currentTypeKey}
@@ -2758,7 +2663,7 @@ export const AdminDashboard: React.FC = () => {
                                             />
                                             Entrada
                                           </label>
-                                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', color: '#ef4444', fontWeight: 600 }}>
+                                          <label className={styles.stockRadioLabelRed}>
                                             <input
                                               type="radio"
                                               name={currentTypeKey}
@@ -2818,7 +2723,7 @@ export const AdminDashboard: React.FC = () => {
                                         <select
                                           value={stockMotivoId}
                                           onChange={(e) => setStockInputValues(prev => ({ ...prev, [currentMotivoIdKey]: e.target.value }))}
-                                          style={{ padding: '6px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid #cbd5e1', width: '100%', background: '#fff' }}
+                                          className={styles.stockSelectMotivo}
                                           required
                                         >
                                           <option value="">Selecione o motivo...</option>
@@ -2921,10 +2826,17 @@ export const AdminDashboard: React.FC = () => {
         {activeTab === 'historico-estoque' && (
           <div className={styles.singleContainer}>
             <section className={styles.card}>
-              <h3>📜 Histórico de Movimentações de Estoque</h3>
-              <p className={styles.infoText}>Registro completo de todas as entradas e saídas realizadas no sistema.</p>
+              <div className={styles.headerBetween}>
+                <div>
+                  <h3>📜 Histórico de Movimentações de Estoque</h3>
+                  <p className={styles.infoText} style={{ margin: '4px 0 0 0' }}>Registro completo de todas as entradas e saídas realizadas no sistema.</p>
+                </div>
+                <button type="button" onClick={carregarMovimentacoes} className={styles.btnSecondary}>
+                  🔄 Atualizar
+                </button>
+              </div>
 
-              <div className={styles.searchSection} style={{ marginTop: '15px', marginBottom: '15px' }}>
+              <div className={styles.searchSection} style={{ marginTop: '20px' }}>
                 <input 
                   type="text" 
                   className={styles.searchInput} 
@@ -2937,17 +2849,17 @@ export const AdminDashboard: React.FC = () => {
               {filteredMovements.length === 0 ? (
                 <p className={styles.emptyNotice}>Nenhuma movimentação encontrada com os critérios informados.</p>
               ) : (
-                <div style={{ overflowX: 'auto', marginTop: '15px' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+                <div className={styles.dashboardTableWrapper}>
+                  <table className={styles.dashboardTableElement}>
                     <thead>
-                      <tr style={{ borderBottom: '2px solid #cbd5e1', color: '#475569' }}>
-                        <th style={{ padding: '8px' }}>Data</th>
-                        <th style={{ padding: '8px' }}>Produto</th>
-                        <th style={{ padding: '8px' }}>Cor / Tam</th>
-                        <th style={{ padding: '8px' }}>Tipo</th>
-                        <th style={{ padding: '8px' }}>Qtd</th>
-                        <th style={{ padding: '8px' }}>Motivo</th>
-                        <th style={{ padding: '8px' }}>Responsável</th>
+                      <tr className={styles.dashboardTableHeaderRow}>
+                        <th className={styles.dashboardTableCell}>Data</th>
+                        <th className={styles.dashboardTableCell}>Produto</th>
+                        <th className={styles.dashboardTableCell}>Cor / Tam</th>
+                        <th className={styles.dashboardTableCell}>Tipo</th>
+                        <th className={styles.dashboardTableCell}>Qtd</th>
+                        <th className={styles.dashboardTableCell}>Motivo</th>
+                        <th className={styles.dashboardTableCell}>Responsável</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2955,30 +2867,23 @@ export const AdminDashboard: React.FC = () => {
                         const produtoEncontrado = products.find(p => p.id === mov.productId);
                         return (
                           <tr key={mov.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                            <td style={{ padding: '8px', color: '#64748b' }}>{mov.date}</td>
-                            <td style={{ padding: '8px', fontWeight: 600, color: '#1e293b' }}>
+                            <td className={styles.dashboardTableDateCell}>{mov.date}</td>
+                            <td className={styles.dashboardTableProductCell}>
                               {produtoEncontrado ? produtoEncontrado.name : `ID: ${mov.productId.slice(0, 6)}...`}
                             </td>
-                            <td style={{ padding: '8px', color: '#334155' }}>
+                            <td className={styles.dashboardTableVariationCell}>
                               {mov.colorName} / {mov.size || 'Único'}
                             </td>
-                            <td style={{ padding: '8px' }}>
-                              <span style={{
-                                padding: '2px 8px',
-                                borderRadius: '4px',
-                                fontSize: '0.75rem',
-                                fontWeight: 'bold',
-                                background: mov.type === 'ENTRADA' ? '#d1fae5' : '#fee2e2',
-                                color: mov.type === 'ENTRADA' ? '#065f46' : '#991b1b'
-                              }}>
+                            <td className={styles.dashboardTableCell}>
+                              <span className={mov.type === 'ENTRADA' ? styles.motivoTipoBadgeEntrada : styles.motivoTipoBadgeSaida}>
                                 {mov.type}
                               </span>
                             </td>
-                            <td style={{ padding: '8px', fontWeight: 'bold', color: mov.type === 'ENTRADA' ? '#059669' : '#dc2626' }}>
+                            <td className={mov.type === 'ENTRADA' ? styles.dashboardTableQuantityGreen : styles.dashboardTableQuantityRed}>
                               {mov.type === 'ENTRADA' ? `+${mov.quantity}` : `-${mov.quantity}`}
                             </td>
-                            <td style={{ padding: '8px', color: '#475569' }}>{mov.reason}</td>
-                            <td style={{ padding: '8px', color: '#475569', fontWeight: 500 }}>
+                            <td className={styles.dashboardTableReasonCell}>{mov.reason}</td>
+                            <td className={styles.dashboardTableAdminCell}>
                               {mov.admin?.nome || 'Administrador'}
                             </td>
                           </tr>
