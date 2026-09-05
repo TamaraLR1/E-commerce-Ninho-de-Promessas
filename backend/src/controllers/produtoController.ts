@@ -3,6 +3,29 @@ import { prisma } from '../lib/prisma';
 import fs from 'fs';
 import path from 'path';
 
+// 🧮 Função auxiliar para calcular estoque ativo e percentual de desconto de forma padronizada
+function formatarProduto(produto: any) {
+  if (!produto) return null;
+
+  const estoques = produto.estoques || [];
+  const temEstoqueAtivo = estoques.length > 0 ? estoques.some((est: any) => est.ativo === true) : true;
+
+  let percentualDesconto = 0;
+  if (produto.temOferta && produto.precoPromocional && Number(produto.precoPromocional) > 0 && Number(produto.preco) > 0) {
+    const precoNormal = Number(produto.preco);
+    const precoPromo = Number(produto.precoPromocional);
+    if (precoPromo < precoNormal) {
+      percentualDesconto = Math.round(((precoNormal - precoPromo) / precoNormal) * 100);
+    }
+  }
+
+  return {
+    ...produto,
+    ativoGeral: temEstoqueAtivo,
+    percentualDesconto,
+  };
+}
+
 export const produtoController = {
 
   async listar(req: Request, res: Response) {
@@ -17,27 +40,15 @@ export const produtoController = {
               cor: true,
             },
           },
-          criadoPor: true,    // <--- Adicionado aqui
-          atualizadoPor: true,// <--- Adicionado aqui
+          criadoPor: true,    
+          atualizadoPor: true,
         },
         orderBy: {
           createdAt: "desc",
         },
       });
 
-      // Calcula o status real do produto baseado exclusivamente nas suas variações de estoque
-      const produtosComStatus = produtos.map((produto: any) => {
-        const estoques = produto.estoques || [];
-        
-        // Verifica se existe pelo menos uma variação de estoque ativa
-        const temEstoqueAtivo = estoques.length > 0 ? estoques.some((est: any) => est.ativo === true) : true;
-
-        return {
-          ...produto,
-          // Se não houver nenhum estoque ativo (todas as cores/tamanhos inativos), define ativoGeral como falso
-          ativoGeral: temEstoqueAtivo,
-        };
-      });
+      const produtosComStatus = produtos.map(formatarProduto);
 
       return res.status(200).json(produtosComStatus);
     } catch (error) {
@@ -51,7 +62,6 @@ export const produtoController = {
       const { nome, preco, descricao, categoryId, tamanhos } = req.body;
       const arquivos = req.files as Express.Multer.File[];
 
-      // Captura o ID do admin considerando 'id', 'adminId' ou o objeto do usuário, aceitando formato numérico
       const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
       const adminId = rawAdminId ? Number(rawAdminId) : null;
 
@@ -86,7 +96,6 @@ export const produtoController = {
 
       const tamanhosParsed = typeof tamanhos === 'string' ? JSON.parse(tamanhos) : tamanhos;
 
-      // Validação: Garante que o produto possui pelo menos uma variação válida de cor/tamanho
       if (!tamanhosParsed || !Array.isArray(tamanhosParsed) || tamanhosParsed.length === 0) {
         return res.status(400).json({ message: 'O produto deve conter pelo menos uma variação de cor e tamanho.' });
       }
@@ -107,9 +116,7 @@ export const produtoController = {
           preco: precoNumerico,
           descricao: descricao || null,
           categoryId: String(categoryId),
-          isVisible: false, // Define explicitamente como false ao criar
-          
-          // Salvando a autoria do administrador com o ID numérico correto
+          isVisible: false,
           criadoPorId: adminId,
           atualizadoPorId: adminId,
 
@@ -133,7 +140,6 @@ export const produtoController = {
         },
       });
 
-      // 📝 Registra o log de atividade do cadastro do produto
       if (adminId) {
         await prisma.logAtividade.create({
           data: {
@@ -143,7 +149,14 @@ export const produtoController = {
         });
       }
 
-      return res.status(201).json(novoProduto);
+      const produtoFormatado = formatarProduto(novoProduto);
+
+      const io = (req as any).io;
+      if (io) {
+        io.emit('produtoAtualizado', produtoFormatado);
+      }
+
+      return res.status(201).json(produtoFormatado);
     } catch (error) {
       console.error('Erro ao criar produto:', error);
       return res.status(500).json({ message: 'Erro interno ao cadastrar produto.' });
@@ -153,10 +166,9 @@ export const produtoController = {
   async atualizar(req: Request, res: Response) {
     try {
       const id = String(req.params.id);
-      const { nome, preco, descricao, categoryId, tamanhos, imagensMantidas } = req.body;
+      const { nome, preco, descricao, categoryId, tamanhos, imagensMantidas, isVisible } = req.body;
       const novosArquivos = req.files as Express.Multer.File[];
 
-      // Captura o ID do admin para salvar no atualizadoPorId e nos logs
       const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
       const adminId = rawAdminId ? Number(rawAdminId) : null;
 
@@ -169,12 +181,9 @@ export const produtoController = {
         return res.status(404).json({ message: 'Produto não encontrado.' });
       }
 
-      // 🔍 Variável para rastrear se realmente houve alteração nos dados principais
       let houveAlteracaoReal = false;
-
       const tamanhosParsed = typeof tamanhos === 'string' ? JSON.parse(tamanhos) : tamanhos;
 
-      // Validação: Garante que na edição não fiquem sem variações válidas
       if (!tamanhosParsed || !Array.isArray(tamanhosParsed) || tamanhosParsed.length === 0) {
         return res.status(400).json({ message: 'O produto deve conter pelo menos uma variação de cor e tamanho.' });
       }
@@ -191,7 +200,6 @@ export const produtoController = {
         return res.status(400).json({ message: 'É obrigatório selecionar ao menos um tamanho e cor válidos.' });
       }
 
-      // Parse das imagens mantidas
       const imagensMantidasParsed: string[] = typeof imagensMantidas === 'string' 
         ? JSON.parse(imagensMantidas) 
         : (Array.isArray(imagensMantidas) ? imagensMantidas : produtoExistente.imagens.map(img => img.url));
@@ -204,7 +212,6 @@ export const produtoController = {
         return res.status(400).json({ message: 'Um produto pode ter no máximo 10 imagens.' });
       }
 
-      // Verifica se houve mudança nas imagens (se removeu alguma ou adicionou novas)
       if (novosArquivos && novosArquivos.length > 0) {
         houveAlteracaoReal = true;
       }
@@ -241,18 +248,21 @@ export const produtoController = {
       const nomeFinal = nome || produtoExistente.nome;
       const descricaoFinal = descricao !== undefined ? descricao : produtoExistente.descricao;
       const categoryIdFinal = categoryId ? String(categoryId) : produtoExistente.categoryId;
+      
+      const isVisibleFinal = isVisible !== undefined 
+        ? (typeof isVisible === 'string' ? isVisible === 'true' : Boolean(isVisible)) 
+        : produtoExistente.isVisible;
 
-      // Compara se os campos básicos mudaram
       if (
         nomeFinal !== produtoExistente.nome ||
         Number(precoNumerico.toFixed(2)) !== Number(produtoExistente.preco.toFixed(2)) ||
         descricaoFinal !== produtoExistente.descricao ||
-        categoryIdFinal !== produtoExistente.categoryId
+        categoryIdFinal !== produtoExistente.categoryId ||
+        isVisibleFinal !== produtoExistente.isVisible
       ) {
         houveAlteracaoReal = true;
       }
 
-      // 2. Atualizar dados gerais do produto, novas imagens e quem atualizou por último
       await prisma.produto.update({
         where: { id },
         data: {
@@ -260,6 +270,7 @@ export const produtoController = {
           preco: precoNumerico,
           descricao: descricaoFinal,
           categoryId: categoryIdFinal,
+          isVisible: isVisibleFinal,
           atualizadoPorId: adminId, 
           imagens: {
             create: novasImagensCreate
@@ -267,7 +278,6 @@ export const produtoController = {
         }
       });
 
-      // 3. Gerenciamento inteligente do Estoque / Vínculos
       for (const estoqueAtual of produtoExistente.estoques) {
         const tAtualId = String(estoqueAtual.tamanhoId || '');
         const cAtualId = estoqueAtual.corId ? String(estoqueAtual.corId) : null;
@@ -321,7 +331,6 @@ export const produtoController = {
         }
       }
 
-      // Adicionar novos itens ou reativar os que estavam com soft delete (ativo: false)
       for (const itemNovo of itensEnviados) {
         const estoqueInativoExistente = produtoExistente.estoques.find(
           e => String(e.tamanhoId) === itemNovo.tamanhoId && 
@@ -360,7 +369,6 @@ export const produtoController = {
         }
       }
 
-      // 📝 Registra o log apenas se houver alguma alteração real nos dados do produto
       if (adminId && houveAlteracaoReal) {
         await prisma.logAtividade.create({
           data: {
@@ -382,6 +390,13 @@ export const produtoController = {
         }
       });
 
+      const produtoFormatado = formatarProduto(produtoFinal);
+
+      const io = (req as any).io;
+      if (io && produtoFormatado) {
+        io.emit('produtoAtualizado', produtoFormatado);
+      }
+
       return res.status(200).json(produtoFinal);
     } catch (error) {
       console.error('Erro ao atualizar produto:', error);
@@ -398,11 +413,9 @@ export const produtoController = {
         return res.status(400).json({ message: 'O ID do produto é obrigatório.' });
       }
 
-      // Captura o ID do admin logado
       const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
       const adminId = rawAdminId ? Number(rawAdminId) : null;
 
-      // Busca o produto atual para verificar se ele existe e pegar o preço original (tabela)
       const produtoExistente = await prisma.produto.findUnique({
         where: { id: String(id) },
       });
@@ -414,7 +427,6 @@ export const produtoController = {
       const precoOriginal = Number(produtoExistente.preco);
       let calculatedPromoPrice = 0;
 
-      // Se promoValue vier vazio ou nulo, removemos a oferta
       if (promoValue === null || promoValue === undefined || promoValue === '') {
         const produtoAtualizado = await prisma.produto.update({
           where: { id: String(id) },
@@ -429,7 +441,6 @@ export const produtoController = {
           },
         });
 
-        // 📝 Registra o log de remoção da oferta
         if (adminId) {
           await prisma.logAtividade.create({
             data: {
@@ -437,6 +448,13 @@ export const produtoController = {
               acao: `Removeu a oferta do produto "${produtoExistente.nome}"`
             }
           });
+        }
+
+        const produtoFormatado = formatarProduto(produtoAtualizado);
+
+        const io = (req as any).io;
+        if (io && produtoFormatado) {
+          io.emit('produtoAtualizado', produtoFormatado);
         }
 
         return res.status(200).json({ message: 'Oferta removida com sucesso.', produto: produtoAtualizado });
@@ -461,7 +479,6 @@ export const produtoController = {
         return res.status(400).json({ message: 'Tipo de desconto inválido. Use "percentual" ou "fixo".' });
       }
 
-      // Atualiza o produto no banco com os campos em português
       const produtoAtualizado = await prisma.produto.update({
         where: { id: String(id) },
         data: {
@@ -475,7 +492,6 @@ export const produtoController = {
         },
       });
 
-      // 📝 Registra o log de configuração/atualização da oferta
       if (adminId) {
         const descricaoOferta = discountType === 'percentual' 
           ? `${valorNumerico}% de desconto (R$ ${Number(calculatedPromoPrice.toFixed(2))})` 
@@ -487,6 +503,13 @@ export const produtoController = {
             acao: `Configurou oferta no produto "${produtoExistente.nome}": ${descricaoOferta}`
           }
         });
+      }
+
+      const produtoFormatado = formatarProduto(produtoAtualizado);
+
+      const io = (req as any).io;
+      if (io && produtoFormatado) {
+        io.emit('produtoAtualizado', produtoFormatado);
       }
 
       return res.status(200).json({
@@ -520,10 +543,25 @@ export const produtoController = {
       const produtoAtualizado = await prisma.produto.update({
         where: { id: String(id) },
         data: { 
-          // Ajuste o nome da coluna conforme o seu schema do Prisma (ex: isVisible ou ativo)
           isVisible: isVisible 
         },
+        include: {
+          categoria: true,
+          estoques: { 
+            where: { ativo: true },
+            include: { tamanho: true, cor: true } 
+          },
+          imagens: true,
+        }
       });
+
+      // 🚀 Dispara o Socket.io com a formatação correta contendo o percentual de desconto
+      const produtoFormatado = formatarProduto(produtoAtualizado);
+
+      const io = (req as any).io;
+      if (io && produtoFormatado) {
+        io.emit('produtoAtualizado', produtoFormatado);
+      }
 
       return res.status(200).json({ 
         message: 'Visibilidade atualizada com sucesso!', 
@@ -539,7 +577,6 @@ export const produtoController = {
     try {
       const id = String(req.params.id);
 
-      // Captura o ID do admin logado
       const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
       const adminId = rawAdminId ? Number(rawAdminId) : null;
 
@@ -552,12 +589,10 @@ export const produtoController = {
         return res.status(404).json({ message: 'Produto não encontrado.' });
       }
 
-      // 1. Verifica se o produto possui alguma movimentação de estoque registrada
       const totalMovimentacoes = await prisma.movimentacaoEstoque.count({
         where: { produtoId: id }
       });
 
-      // 2. Se tiver histórico, faz a exclusão lógica (Inativação) do produto e de seus estoques
       if (totalMovimentacoes > 0) {
         await prisma.produtoEstoque.updateMany({
           where: { produtoId: id },
@@ -569,7 +604,6 @@ export const produtoController = {
           data: { ativo: false }
         });
 
-        // 📝 Registra o log de inativação
         if (adminId) {
           await prisma.logAtividade.create({
             data: {
@@ -584,7 +618,6 @@ export const produtoController = {
         });
       }
 
-      // 3. Se NÃO tiver histórico, prossegue com a exclusão completa
       produto.imagens.forEach(img => {
         try {
           const filename = img.url.split('/uploads/')[1];
@@ -611,7 +644,6 @@ export const produtoController = {
         where: { id },
       });
 
-      // 📝 Registra o log de exclusão permanente
       if (adminId) {
         await prisma.logAtividade.create({
           data: {
@@ -632,7 +664,6 @@ export const produtoController = {
     try {
       const { id } = req.params;
 
-      // Captura o ID do admin logado
       const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
       const adminId = rawAdminId ? Number(rawAdminId) : null;
 
@@ -680,7 +711,6 @@ export const produtoController = {
         }
       });
 
-      // 📝 Registra o log de reativação
       if (adminId) {
         await prisma.logAtividade.create({
           data: {

@@ -21,7 +21,8 @@
     "jsonwebtoken": "^9.0.3",
     "mariadb": "^3.5.3",
     "multer": "^2.2.0",
-    "mysql2": "^3.23.2"
+    "mysql2": "^3.23.2",
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
@@ -32,6 +33,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.2.0",
     "@types/node": "^26.1.1",
+    "@types/socket.io": "^3.0.1",
     "cross-env": "^10.1.0",
     "dotenv": "^17.4.2",
     "prisma": "^7.8.0",

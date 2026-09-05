@@ -5,7 +5,7 @@ import { ensureAdminAuthenticated } from '../middlewares/authAdminMiddleware';
 
 const router = Router();
 
-router.get('/produtos', ensureAdminAuthenticated, produtoController.listar);
+router.get('/produtos', produtoController.listar);
 router.delete('/produtos/:id', ensureAdminAuthenticated, produtoController.excluir);
 router.post('/produtos', ensureAdminAuthenticated, parseUpload('imagens', 10), produtoController.criar);
 router.put('/produtos/:id', ensureAdminAuthenticated, parseUpload('imagens', 10), produtoController.atualizar);
