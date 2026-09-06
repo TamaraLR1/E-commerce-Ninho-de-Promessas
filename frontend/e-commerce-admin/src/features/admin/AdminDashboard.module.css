@@ -1956,3 +1956,16 @@
   width: 100%;
   background: #fff;
 }
+
+.radioGroupFlex {
+  display: flex;
+  gap: 30px;
+  margin-top: 8px;
+}
+
+.radioLabelFlex {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}

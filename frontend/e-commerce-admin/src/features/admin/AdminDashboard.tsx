@@ -2231,8 +2231,8 @@ export const AdminDashboard: React.FC = () => {
 
                 <div className={styles.group}>
                   <label>Tipo de Desconto</label>
-                  <div className={styles.categoryItemLi} style={{ gap: '20px', marginTop: '6px' }}>
-                    <label className={styles.sizeInnerLabel} style={{ cursor: 'pointer' }}>
+                  <div className={styles.radioGroupFlex}>
+                    <label className={styles.radioLabelFlex}>
                       <input 
                         type="radio" 
                         name="discountType" 
@@ -2242,7 +2242,7 @@ export const AdminDashboard: React.FC = () => {
                       />
                       Porcentagem (% OFF)
                     </label>
-                    <label className={styles.sizeInnerLabel} style={{ cursor: 'pointer' }}>
+                    <label className={styles.radioLabelFlex}>
                       <input 
                         type="radio" 
                         name="discountType" 
