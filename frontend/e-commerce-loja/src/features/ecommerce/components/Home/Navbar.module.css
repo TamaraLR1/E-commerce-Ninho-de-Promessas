@@ -38,6 +38,147 @@
   background-color: #6e9a83; /* Um tom ligeiramente mais escuro para o efeito hover */
 }
 
+/* Container superior do Header atualizado */
+.headerTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 5%;
+  background-color: #ffffff;
+  border-bottom: 1px solid #f1f1f1;
+  gap: 1rem;
+}
+
+/* Caixa de Pesquisa */
+.searchContainer {
+  display: flex;
+  align-items: center;
+  background-color: #f8f9fa;
+  border: 1px solid #ced4da;
+  border-radius: 20px;
+  padding: 0.4rem 1rem;
+  width: 300px;
+  max-width: 100%;
+}
+
+.searchInput {
+  border: none;
+  background: transparent;
+  outline: none;
+  width: 100%;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.searchIcon {
+  margin-right: 8px;
+  color: #7a9974;
+}
+
+/* Ações à direita (Login e Carrinho) */
+.userActions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.iconButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #4a5568;
+}
+
+.iconButton:hover {
+  color: #7a9974;
+}
+
+/* Área inferior do Header: Botão de Categorias e Atalhos */
+.headerBottom {
+  display: flex;
+  align-items: center;
+  padding: 0.8rem 5%;
+  background-color: #fcfcfc;
+  border-bottom: 1px solid #e2e8f0;
+  gap: 1rem;
+  position: relative;
+}
+
+/* Dropdown do Botão de Categorias */
+.categoryDropdownWrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.categoryDropdownButton {
+  background-color: #7a9974;
+  color: white;
+  border: none;
+  padding: 0.5rem 1.2rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.2s;
+}
+
+.categoryDropdownButton:hover {
+  background-color: #637d5f;
+}
+
+.dropdownContent {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background-color: white;
+  min-width: 180px;
+  box-shadow: 0px 8px 16px rgba(0,0,0,0.1);
+  border-radius: 6px;
+  z-index: 1050;
+  margin-top: 4px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+}
+
+.dropdownItem {
+  width: 100%;
+  padding: 10px 16px;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #333;
+  transition: background 0.15s;
+}
+
+.dropdownItem:hover {
+  background-color: #f1f5f9;
+  color: #7a9974;
+}
+
+/* Responsividade Mobile */
+@media (max-width: 768px) {
+  .headerTop {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.8rem;
+  }
+  .searchContainer {
+    width: 100%;
+  }
+  .userActions {
+    justify-content: space-between;
+  }
+}
+
 /* No seu Navbar.module.css */
 
 @media (max-width: 414px) {

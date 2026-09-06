@@ -37,6 +37,12 @@ interface Product {
       nome: string;
       slug: string;
     };
+    cor?: {
+      id: string;
+      nome: string;
+      hex: string;
+      ativo?: boolean;
+    };
   }[];
 }
 
@@ -55,6 +61,104 @@ interface User {
   email: string;
 }
 
+// Componente auxiliar para o Dropdown de Categorias com efeito hover em tempo real
+const CategoryDropdown: React.FC<{ 
+  categories: Category[], 
+  selectedCategory: string, 
+  onSelectCategory: (cat: string) => void 
+}> = ({ categories, selectedCategory, onSelectCategory }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [hoveredIndex, setHoveredIndex] = useState<string | null>(null);
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <button 
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        style={{ 
+          backgroundColor: '#7A9974', 
+          color: 'white', 
+          border: 'none', 
+          padding: '0.5rem 1.2rem', 
+          borderRadius: '6px', 
+          fontWeight: 600, 
+          cursor: 'pointer', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '8px' 
+        }}
+      >
+        📂 Categorias: {selectedCategory} ▼
+      </button>
+
+      {isOpen && (
+        <div style={{ 
+          position: 'absolute', 
+          top: '100%', 
+          left: 0, 
+          backgroundColor: 'white', 
+          minWidth: '180px', 
+          boxShadow: '0px 8px 16px rgba(0,0,0,0.1)', 
+          borderRadius: '6px', 
+          zIndex: 1050, 
+          marginTop: '4px', 
+          border: '1px solid #e2e8f0', 
+          overflow: 'hidden' 
+        }}>
+          <button 
+            type="button"
+            onMouseEnter={() => setHoveredIndex('todos')}
+            onMouseLeave={() => setHoveredIndex(null)}
+            style={{ 
+              width: '100%', 
+              padding: '10px 16px', 
+              textAlign: 'left', 
+              background: hoveredIndex === 'todos' || selectedCategory === 'Todos' ? '#f0f4ef' : 'none', 
+              border: 'none', 
+              cursor: 'pointer', 
+              fontSize: '0.9rem', 
+              color: selectedCategory === 'Todos' || hoveredIndex === 'todos' ? '#7A9974' : '#333',
+              fontWeight: selectedCategory === 'Todos' ? 600 : 400,
+              transition: 'background 0.15s ease, color 0.15s ease'
+            }}
+            onClick={() => { onSelectCategory('Todos'); setIsOpen(false); }}
+          >
+            {selectedCategory === 'Todos' ? '✓ Todos' : 'Todos'}
+          </button>
+
+          {categories.map((cat) => {
+            const isSelected = selectedCategory === cat.nome;
+            const isHovered = hoveredIndex === cat.id;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onMouseEnter={() => setHoveredIndex(cat.id)}
+                onMouseLeave={() => setHoveredIndex(null)}
+                style={{ 
+                  width: '100%', 
+                  padding: '10px 16px', 
+                  textAlign: 'left', 
+                  background: isHovered || isSelected ? '#f0f4ef' : 'none', 
+                  border: 'none', 
+                  cursor: 'pointer', 
+                  fontSize: '0.9rem', 
+                  color: isSelected || isHovered ? '#7A9974' : '#333',
+                  fontWeight: isSelected ? 600 : 400,
+                  transition: 'background 0.15s ease, color 0.15s ease'
+                }}
+                onClick={() => { onSelectCategory(cat.nome); setIsOpen(false); }}
+              >
+                {isSelected ? `✓ ${cat.nome}` : cat.nome}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const Home: React.FC = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
@@ -62,9 +166,14 @@ export const Home: React.FC = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
+  const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedSizes, setSelectedSizes] = useState<{ [productId: string]: string }>({});
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  
+  // Estados para o Modal estilo Admin
+  const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
+  const [selectedColorForDetails, setSelectedColorForDetails] = useState<string | null>(null);
   
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -109,19 +218,15 @@ export const Home: React.FC = () => {
       setProducts(prevProducts => {
         const index = prevProducts.findIndex(p => p.id === produtoAlterado.id);
 
-        // Se o produto foi desmarcado da visibilidade ou inativado, remove da vitrine na hora
         if (produtoAlterado.isVisible === false || produtoAlterado.ativoGeral === false) {
           return prevProducts.filter(p => p.id !== produtoAlterado.id);
         }
 
-        // Se ele está visível e ativo:
         if (index > -1) {
-          // Já está na lista, apenas atualiza seus dados (preço, desconto, etc.)
           const updated = [...prevProducts];
           updated[index] = produtoAlterado;
           return updated;
         } else {
-          // Não estava na lista (nasceu invisível e foi ativado agora), adiciona na vitrine!
           return [produtoAlterado, ...prevProducts];
         }
       });
@@ -203,38 +308,112 @@ export const Home: React.FC = () => {
     if (p.isVisible !== true) return false;
     if (p.ativoGeral === false) return false;
 
+    // Filtro por termo de pesquisa
+    const matchesSearch = p.nome.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          (p.descricao && p.descricao.toLowerCase().includes(searchTerm.toLowerCase()));
+    if (!matchesSearch) return false;
+
+    // Filtro por categoria
     if (selectedCategory === 'Todos') return true;
     return p.categoria && p.categoria.nome.toLowerCase().trim() === selectedCategory.toLowerCase().trim();
   });
 
   return (
     <div className={styles.container}>
-      {/* Banner da Loja */}
-      <div className={styles.bannerContainer}>
+      {/* Banner da Loja com os botões de Carrinho e Entrar visíveis nas telas grandes e omitidos apenas no mobile via classe do módulo */}
+      <div className={styles.bannerContainer} style={{ position: 'relative' }}>
         <img 
           src="/banner.png" 
           alt="Banner Promocional" 
           className={styles.bannerImagem} 
         />
+
+        {/* Botões flutuantes no canto direito */}
+        <div style={{ position: 'absolute', top: '20px', right: '25px', display: 'flex', alignItems: 'center', gap: '10px', zIndex: 10 }}>
+          {/* Botão Carrinho controlado pela classe desktopCartButton do CSS */}
+          <button 
+            type="button"
+            className={styles.desktopCartButton}
+            style={{ 
+              background: 'rgba(255, 255, 255, 0.9)', 
+              color: '#0066cc', 
+              border: '1px solid #cbd5e1', 
+              padding: '0.4rem 0.8rem', 
+              borderRadius: '20px', 
+              fontWeight: 600, 
+              cursor: 'pointer', 
+              fontSize: '0.9rem',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+            }}
+            onClick={() => setIsCartOpen(true)}
+          >
+            🛒 ({totalItems})
+          </button>
+
+          {/* Botão Entrar / Perfil controlado pela classe desktopCartButton do CSS */}
+          {user ? (
+            <button 
+              type="button"
+              className={styles.desktopCartButton}
+              style={{ 
+                background: 'rgba(255, 255, 255, 0.9)', 
+                border: '1px solid #cbd5e1', 
+                cursor: 'pointer', 
+                fontWeight: 600, 
+                color: '#4a5568', 
+                padding: '0.4rem 1rem', 
+                borderRadius: '6px',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+              }}
+              onClick={() => navigate('/perfil')}
+            >
+              👤 {user.nome.split(' ')[0]}
+            </button>
+          ) : (
+            <button 
+              type="button"
+              className={styles.desktopCartButton}
+              style={{ 
+                backgroundColor: '#7A9974', 
+                color: 'white', 
+                border: 'none', 
+                padding: '0.4rem 1rem', 
+                borderRadius: '6px', 
+                fontWeight: 600, 
+                cursor: 'pointer', 
+                fontSize: '0.9rem',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+              }}
+              onClick={() => navigate('/login')}
+            >
+              Entrar
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Barra de Filtros por Categoria */}
-      <div className={styles.filterBar}>
-        <button
-          className={`${styles.filterButton} ${selectedCategory === 'Todos' ? styles.activeFilter : ''}`}
-          onClick={() => setSelectedCategory('Todos')}
-        >
-          Todos
-        </button>
-        {categories.map(cat => (
-          <button
-            key={cat.id}
-            className={`${styles.filterButton} ${selectedCategory === cat.nome ? styles.activeFilter : ''}`}
-            onClick={() => setSelectedCategory(cat.nome)}
-          >
-            {cat.nome}
-          </button>
-        ))}
+      {/* Área Centralizada logo abaixo do Banner: Barra de Pesquisa e Logo abaixo dela as Categorias Centralizadas */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', padding: '1.2rem 5%', backgroundColor: '#fcfcfc', borderBottom: '1px solid #e2e8f0' }}>
+        {/* Campo de Pesquisa Centralizado */}
+        <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#ffffff', border: '1px solid #ced4da', borderRadius: '20px', padding: '0.5rem 1.2rem', width: '100%', maxWidth: '450px', boxShadow: '0 2px 6px rgba(0,0,0,0.03)' }}>
+          <span style={{ marginRight: '8px', color: '#7A9974' }}>🔍</span>
+          <input
+            type="text"
+            placeholder="O que você está procurando para o seu bebê?"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: '0.95rem', color: '#333' }}
+          />
+        </div>
+
+        {/* Botão de Categorias Centralizado Abaixo da Pesquisa */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+          <CategoryDropdown 
+            categories={categories} 
+            selectedCategory={selectedCategory} 
+            onSelectCategory={setSelectedCategory} 
+          />
+        </div>
       </div>
 
       {/* Vitrine de Produtos */}
@@ -248,9 +427,27 @@ export const Home: React.FC = () => {
           ) : (
             filteredProducts.map(product => {
               const imageUrl = product.imagens && product.imagens.length > 0 ? product.imagens[0].url : '';
-              const availableSizes = product.estoques && product.estoques.length > 0 
-                ? Array.from(new Set(product.estoques.map(e => e.tamanho?.nome).filter(Boolean)))
-                : ['U'];
+              
+              // Cores disponíveis no card
+              const coresCardMap = new Map();
+              product.estoques?.forEach((item: any) => {
+                if (item.cor) {
+                  coresCardMap.set(item.cor.id, item.cor);
+                }
+              });
+              const coresCardList = Array.from(coresCardMap.values()) as any[];
+              const currentCardColor = selectedSizes[`color-${product.id}`] || coresCardList[0]?.id;
+
+              // Tamanhos filtrados pela cor selecionada no card (ou todos se não houver cor)
+              const tamanhosDoCard = product.estoques?.filter((item: any) => {
+                return !currentCardColor || item.cor?.id === currentCardColor;
+              }) || [];
+              
+              const availableSizes = tamanhosDoCard.length > 0 
+                ? Array.from(new Set(tamanhosDoCard.map((e: any) => e.tamanho?.nome).filter(Boolean)))
+                : (product.estoques && product.estoques.length > 0 
+                    ? Array.from(new Set(product.estoques.map((e: any) => e.tamanho?.nome).filter(Boolean)))
+                    : ['U']);
               
               const chosenSize = selectedSizes[product.id] || availableSizes[0];
               const numericPrice = parseFloat(product.preco) || 0;
@@ -260,7 +457,11 @@ export const Home: React.FC = () => {
               return (
                 <div key={product.id} className={styles.productCard}>
                   {/* Container da imagem com o selo absoluto em cima */}
-                  <div className={styles.imageContainer} onClick={() => setSelectedProduct(product)}>
+                  <div className={styles.imageContainer} onClick={() => {
+                    setSelectedProduct(product);
+                    setActiveImageIndex(0);
+                    setSelectedColorForDetails(currentCardColor || product.estoques?.find(e => e.cor)?.cor?.id || null);
+                  }}>
                     <img src={imageUrl} alt={product.nome} className={styles.productImage} />
                     {emOferta && product.percentualDesconto && product.percentualDesconto > 0 && (
                       <span className={styles.discountBadgeOverlay}>
@@ -270,7 +471,11 @@ export const Home: React.FC = () => {
                   </div>
 
                   <div className={styles.productInfo}>
-                    <h3 onClick={() => setSelectedProduct(product)}>{product.nome}</h3>
+                    <h3 onClick={() => {
+                      setSelectedProduct(product);
+                      setActiveImageIndex(0);
+                      setSelectedColorForDetails(currentCardColor || product.estoques?.find(e => e.cor)?.cor?.id || null);
+                    }}>{product.nome}</h3>
                     
                     <div className={styles.rating}>
                       {Array.from({ length: 5 }).map((_, i) => <span key={i} className={styles.star}>★</span>)}
@@ -291,6 +496,39 @@ export const Home: React.FC = () => {
                       <p className={styles.price}>
                         R$ {numericPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </p>
+                    )}
+
+                    {/* Exibição das Cores Disponíveis no Card (Selecionáveis) */}
+                    {coresCardList.length > 0 && (
+                      <div className={styles.sizeContainer} style={{ marginTop: '8px', marginBottom: '8px' }}>
+                        <span className={styles.sizeLabel}>Selecione a cor:</span>
+                        <div className={styles.cardColorsRow}>
+                          {coresCardList.map((c: any) => {
+                            const isSelected = currentCardColor === c.id;
+                            return (
+                              <button
+                                key={c.id}
+                                type="button"
+                                title={c.nome}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedSizes(prev => ({
+                                    ...prev,
+                                    [`color-${product.id}`]: c.id
+                                  }));
+                                }}
+                                className={styles.cardColorButton}
+                                style={{
+                                  backgroundColor: c.hex || '#000',
+                                  border: isSelected ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                                  transform: isSelected ? 'scale(1.15)' : 'scale(1)',
+                                  boxShadow: isSelected ? '0 0 0 2px rgba(37, 99, 235, 0.2)' : 'none'
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
 
                     <div className={styles.sizeContainer}>
@@ -360,70 +598,243 @@ export const Home: React.FC = () => {
       {/* Modal de Detalhes do Produto */}
       {selectedProduct && (
         <div className={styles.modalOverlay} onClick={() => setSelectedProduct(null)}>
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <button className={styles.closeButton} onClick={() => setSelectedProduct(null)}>×</button>
+          <div className={styles.modalContentBox} onClick={(e) => e.stopPropagation()}>
             
-            <div style={{ position: 'relative', width: '100%', maxHeight: '350px', overflow: 'hidden' }}>
-              <img 
-                src={selectedProduct.imagens && selectedProduct.imagens.length > 0 ? selectedProduct.imagens[0].url : ''} 
-                alt={selectedProduct.nome} 
-                style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px' }} 
-              />
-              {selectedProduct.temOferta && selectedProduct.percentualDesconto && selectedProduct.percentualDesconto > 0 && (
-                <span style={{ position: 'absolute', top: '10px', right: '10px', backgroundColor: '#7A9974', color: '#fff', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold' }}>
-                  {selectedProduct.percentualDesconto}% OFF
+            <button 
+              type="button"
+              onClick={() => setSelectedProduct(null)}
+              className={styles.modalCloseButton}
+            >
+              ✕
+            </button>
+
+            <div className={styles.modalGridContainer}>
+              {/* Coluna de Imagens e Miniaturas */}
+              <div>
+                <img 
+                  src={
+                    selectedProduct.imagens && selectedProduct.imagens.length > 0 
+                      ? (selectedProduct.imagens[activeImageIndex]?.url || selectedProduct.imagens[0].url)
+                      : ''
+                  } 
+                  alt={selectedProduct.nome} 
+                  className={styles.modalMainImage} 
+                />
+                
+                {selectedProduct.imagens && selectedProduct.imagens.length > 1 && (
+                  <div className={styles.modalThumbnailsList}>
+                    {selectedProduct.imagens.map((img, idx) => {
+                      const isSelectedThumb = activeImageIndex === idx;
+                      return (
+                        <img 
+                          key={img.id || idx} 
+                          src={img.url} 
+                          alt="" 
+                          onClick={() => setActiveImageIndex(idx)}
+                          className={`${styles.modalThumbItem} ${isSelectedThumb ? styles.modalThumbActive : styles.modalThumbInactive}`} 
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Coluna de Informações, Cores, Tamanhos e Botões */}
+              <div>
+                <span className={styles.modalCategoryBadge}>
+                  {selectedProduct.categoria?.nome || 'Geral'}
                 </span>
-              )}
+                <h2 className={styles.modalProductTitle}>{selectedProduct.nome}</h2>
+                
+                <div className={styles.modalPriceBlock}>
+                  {selectedProduct.temOferta && selectedProduct.precoPromocional && Number(selectedProduct.precoPromocional) > 0 ? (
+                    <div className={styles.modalOfferFlex}>
+                      <span className={styles.modalOldPrice}>
+                        R$ {(parseFloat(selectedProduct.preco) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                      <span className={styles.modalNewPrice}>
+                        R$ {Number(selectedProduct.precoPromocional).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className={styles.modalNormalPrice}>
+                      R$ {(parseFloat(selectedProduct.preco) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                  )}
+                </div>
+
+                {/* Descrição formatada com suporte a negrito e tópicos */}
+                <div 
+                  className={styles.modalDescriptionText}
+                  dangerouslySetInnerHTML={{ 
+                    __html: (selectedProduct?.descricao || 'Nenhuma descrição informada.')
+                      .split('\n')
+                      .map(line => {
+                        const trimmed = line.trim();
+                        if (trimmed.startsWith('*')) {
+                          return `<li style="margin-top: 4px; margin-bottom: 4px;">${trimmed.substring(1).trim()}</li>`;
+                        }
+                        if (trimmed === '') {
+                          return '<div style="height: 8px;"></div>';
+                        }
+                        return `<div>${trimmed}</div>`;
+                      })
+                      .join('')
+                  }}
+                />
+
+                {/* Seletor de Cores */}
+                <div className={styles.modalSectionGroup}>
+                  <label className={styles.modalSectionLabel}>
+                    🎨 Escolha a Cor / Estampa:
+                  </label>
+                  <div className={styles.modalColorsList}>
+                    {(() => {
+                      const coresUnicasMap = new Map();
+                      selectedProduct.estoques?.forEach((item: any) => {
+                        if (item.cor) {
+                          coresUnicasMap.set(item.cor.id, item.cor);
+                        }
+                      });
+                      const coresList = Array.from(coresUnicasMap.values());
+
+                      if (coresList.length > 0) {
+                        return coresList.map((c: any) => {
+                          const isSelected = selectedColorForDetails === c.id;
+                          return (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => setSelectedColorForDetails(c.id)}
+                              className={`${styles.modalColorButton} ${isSelected ? styles.modalColorButtonSelected : styles.modalColorButtonUnselected}`}
+                            >
+                              {c.hex && (
+                                <span 
+                                  className={styles.modalColorDot}
+                                  style={{ backgroundColor: c.hex }}
+                                ></span>
+                              )}
+                              {c.nome}
+                            </button>
+                          );
+                        });
+                      }
+                      return <span className={styles.emptyNotice}>Cor única padrão</span>;
+                    })()}
+                  </div>
+                </div>
+
+                {/* Seletor de Tamanhos */}
+                <div className={styles.modalSectionGroup}>
+                  <label className={styles.modalSectionLabel}>
+                    📏 Selecione o Tamanho:
+                  </label>
+                  <div className={styles.modalSizesGrid}>
+                    {(() => {
+                      if (!selectedProduct.estoques || selectedProduct.estoques.length === 0) {
+                        return <span className={styles.emptyNotice}>Tamanho único</span>;
+                      }
+
+                      const tamanhosDaCor = selectedProduct.estoques.filter((item: any) => {
+                        return !selectedColorForDetails || item.cor?.id === selectedColorForDetails;
+                      });
+
+                      if (tamanhosDaCor.length === 0) {
+                        return <span className={styles.emptyNotice}>Selecione uma cor para ver os tamanhos.</span>;
+                      }
+
+                      const availableSizes = Array.from(new Set(tamanhosDaCor.map((e: any) => e.tamanho?.nome).filter(Boolean)));
+                      const currentSelectedSize = selectedSizes[selectedProduct.id] || availableSizes[0];
+
+                      return availableSizes.map((sizeName: any, idx: number) => {
+                        const isSelected = currentSelectedSize === sizeName;
+                        const estoqueItem = tamanhosDaCor.find((e: any) => e.tamanho?.nome === sizeName);
+                        const estoqueDisp = estoqueItem?.estoque ?? 0;
+
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            disabled={estoqueDisp === 0}
+                            className={`${styles.sizeBadge} ${isSelected ? styles.selectedSizeBadge : ''}`}
+                            style={{
+                              opacity: estoqueDisp === 0 ? 0.4 : 1,
+                              cursor: estoqueDisp === 0 ? 'not-allowed' : 'pointer',
+                              padding: '8px 12px',
+                              borderRadius: '6px',
+                              border: isSelected ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                              background: isSelected ? '#eff6ff' : '#fff'
+                            }}
+                            onClick={() => {
+                              setSelectedSizes(prev => ({
+                                ...prev,
+                                [selectedProduct.id]: sizeName
+                              }));
+                            }}
+                          >
+                            {sizeName} ({estoqueDisp})
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+
+                {/* Botões de Ação */}
+                <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <button 
+                    className={styles.actionButton} 
+                    type="button"
+                    onClick={() => {
+                      const availableSizes = selectedProduct.estoques && selectedProduct.estoques.length > 0 
+                        ? Array.from(new Set(selectedProduct.estoques.map((e: any) => e.tamanho?.nome).filter(Boolean)))
+                        : ['U'];
+                      
+                      const sizeSelected = selectedSizes[selectedProduct.id] || availableSizes[0];
+                      if (!selectedSizes[selectedProduct.id] && availableSizes.length > 1) {
+                        showToast('Por favor, selecione um tamanho antes de adicionar ao carrinho!');
+                        return;
+                      }
+
+                      addToCartWithSpecificSize(selectedProduct, sizeSelected);
+                      setSelectedProduct(null);
+                      setIsCartOpen(true); 
+                    }}
+                  >
+                    Adicionar ao Carrinho
+                  </button>
+                  
+                  <button 
+                    className={styles.buyButton} 
+                    type="button"
+                    onClick={() => { 
+                      const availableSizes = selectedProduct.estoques && selectedProduct.estoques.length > 0 
+                        ? Array.from(new Set(selectedProduct.estoques.map((e: any) => e.tamanho?.nome).filter(Boolean)))
+                        : ['U'];
+
+                      const sizeSelected = selectedSizes[selectedProduct.id] || availableSizes[0];
+                      if (!selectedSizes[selectedProduct.id] && availableSizes.length > 1) {
+                        showToast('Por favor, selecione um tamanho antes de comprar!');
+                        return;
+                      }
+
+                      addToCartWithSpecificSize(selectedProduct, sizeSelected); 
+                      setSelectedProduct(null); 
+                      
+                      if (!user) {
+                        navigate('/login');
+                      } else {
+                        setIsCheckoutOpen(true); 
+                      }
+                    }}
+                  >
+                    Comprar
+                  </button>
+                </div>
+
+              </div>
             </div>
 
-            <h2>{selectedProduct.nome}</h2>
-            <p className={styles.modalDescription}>{selectedProduct.descricao}</p>
-            
-            {selectedProduct.temOferta && selectedProduct.precoPromocional && Number(selectedProduct.precoPromocional) > 0 ? (
-              <div style={{ margin: '10px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ textDecoration: 'line-through', color: '#888', fontSize: '1rem' }}>
-                  R$ {(parseFloat(selectedProduct.preco) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </span>
-                <span className={styles.price} style={{ fontSize: '1.5rem', color: '#7A9974' }}>
-                  R$ {Number(selectedProduct.precoPromocional).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-            ) : (
-              <p className={styles.price} style={{ fontSize: '1.5rem' }}>
-                R$ {(parseFloat(selectedProduct.preco) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </p>
-            )}
-
-            <button className={styles.actionButton} onClick={() => { 
-              const availableSizes = selectedProduct.estoques && selectedProduct.estoques.length > 0 
-                ? Array.from(new Set(selectedProduct.estoques.map(e => e.tamanho?.nome).filter(Boolean)))
-                : ['U'];
-              const size = selectedSizes[selectedProduct.id] || availableSizes[0];
-              addToCartWithSpecificSize(selectedProduct, size); 
-              setSelectedProduct(null); 
-            }}>
-              Adicionar ao Carrinho e Continuar
-            </button>
-
-            <button className={styles.buyButton} onClick={() => { 
-              const availableSizes = selectedProduct.estoques && selectedProduct.estoques.length > 0 
-                ? Array.from(new Set(selectedProduct.estoques.map(e => e.tamanho?.nome).filter(Boolean)))
-                : ['U'];
-              const size = selectedSizes[selectedProduct.id] || availableSizes[0];
-              if (!selectedSizes[selectedProduct.id] && availableSizes.length > 1) {
-                showToast('Por favor, selecione um tamanho antes de comprar!');
-                return;
-              }
-              addToCartWithSpecificSize(selectedProduct, size); 
-              setSelectedProduct(null); 
-              if (!user) {
-                navigate('/login');
-              } else {
-                setIsCheckoutOpen(true);
-              }
-            }}>
-              Comprar
-            </button>
           </div>
         </div>
       )}
@@ -434,7 +845,7 @@ export const Home: React.FC = () => {
           <div className={styles.cartModal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.cartHeader}>
               <h2>Seu Carrinho ({totalItems})</h2>
-              <button className={styles.closeButton} onClick={() => setIsCartOpen(false)}>×</button>
+              <button type="button" className={styles.closeButton} onClick={() => setIsCartOpen(false)}>×</button>
             </div>
 
             <div className={styles.cartList}>
@@ -451,7 +862,7 @@ export const Home: React.FC = () => {
                         {item.selectedSize && (
                           <span className={styles.cartItemSize}>Tamanho: {item.selectedSize}</span>
                         )}
-                        <button className={styles.removeButton} onClick={() => removeFromCart(item.product.id)}>
+                        <button type="button" className={styles.removeButton} onClick={() => removeFromCart(item.product.id)}>
                           Remover
                         </button>
                       </div>
@@ -462,9 +873,9 @@ export const Home: React.FC = () => {
                         </span>
                         
                         <div className={styles.quantityControls}>
-                          <button className={styles.qtyButton} onClick={() => updateQuantity(item.product.id, -1)}>-</button>
+                          <button type="button" className={styles.qtyButton} onClick={() => updateQuantity(item.product.id, -1)}>-</button>
                           <span className={styles.qtyValue}>{item.quantity}</span>
-                          <button className={styles.qtyButton} onClick={() => updateQuantity(item.product.id, 1)}>+</button>
+                          <button type="button" className={styles.qtyButton} onClick={() => updateQuantity(item.product.id, 1)}>+</button>
                         </div>
                       </div>
                     </div>
@@ -479,15 +890,20 @@ export const Home: React.FC = () => {
                   <span>Total do Pedido:</span>
                   <span>R$ {totalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                 </div>
-                <button className={styles.actionButton} style={{ backgroundColor: '#28a745', padding: '0.8rem' }} onClick={() => {
-                  if (!user) {
-                    setIsCartOpen(false);
-                    navigate('/login');
-                  } else {
-                    setIsCartOpen(false);
-                    setIsCheckoutOpen(true);
-                  }
-                }}>
+                <button 
+                  type="button"
+                  className={styles.actionButton} 
+                  style={{ backgroundColor: '#28a745', padding: '0.8rem' }} 
+                  onClick={() => {
+                    if (!user) {
+                      setIsCartOpen(false);
+                      navigate('/login');
+                    } else {
+                      setIsCartOpen(false);
+                      setIsCheckoutOpen(true);
+                    }
+                  }}
+                >
                   Confirmar e Finalizar Compra
                 </button>
               </div>
@@ -504,16 +920,29 @@ export const Home: React.FC = () => {
         />
       )}
 
-      {/* Menu Fixo (apenas Mobile) */}
+      {/* Menu Fixo (visível apenas em celulares e no iPhone 16 Pro Max através da classe bottomNav) */}
       <nav className={styles.bottomNav}>
-        <button className={styles.navBtn} onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+        <button type="button" className={styles.navBtn} onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
           📦 Produtos
         </button>
-        <button className={styles.navBtn} onClick={() => alert('Ofertas!')}>
+        <button type="button" className={styles.navBtn} onClick={() => alert('Ofertas!')}>
           🔥 Ofertas
         </button>
-        <button className={styles.navBtn} onClick={() => setIsCartOpen(true)}>
+        <button type="button" className={styles.navBtn} onClick={() => setIsCartOpen(true)}>
           🛒 ({totalItems})
+        </button>
+        <button 
+          type="button" 
+          className={styles.navBtn} 
+          onClick={() => {
+            if (!user) {
+              navigate('/login');
+            } else {
+              navigate('/perfil');
+            }
+          }}
+        >
+          {user ? `👤 ${user.nome.split(' ')[0]}` : '🔑 Entrar'}
         </button>
       </nav>
       

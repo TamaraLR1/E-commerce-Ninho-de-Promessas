@@ -1969,3 +1969,13 @@
   gap: 8px;
   cursor: pointer;
 }
+
+.modalDescriptionText {
+  line-height: 1.5; /* Altura de linha agradável */
+  word-break: break-word;
+}
+
+.modalDescriptionText li {
+  list-style-type: disc;
+  margin-left: 40px;
+}

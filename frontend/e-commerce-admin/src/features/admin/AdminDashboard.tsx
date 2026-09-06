@@ -1747,7 +1747,7 @@ export const AdminDashboard: React.FC = () => {
 
                 <div className={styles.group}>
                   <label>Descrição</label>
-                  <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} rows={3} placeholder="Detalhes do tecido, composição..." />
+                  <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} rows={5} placeholder="Detalhes do tecido, composição..." />
                 </div>
 
                 <button type="submit" className={styles.btnPrimary}>
@@ -2509,9 +2509,26 @@ export const AdminDashboard: React.FC = () => {
                         )}
                       </div>
 
-                      <p className={styles.modalDescriptionText}>
-                        {selectedProductDetails.description || 'Nenhuma descrição informada.'}
-                      </p>
+                      {/* Descrição com suporte a quebras de linha e formatação */}
+                      <div 
+                        className={styles.modalDescriptionText}
+                        dangerouslySetInnerHTML={{ 
+                          __html: (selectedProductDetails?.description || selectedProductDetails?.description || 'Nenhuma descrição informada.')
+                            .split('\n')
+                            .map(line => {
+                              const trimmed = line.trim();
+                              if (trimmed.startsWith('*')) {
+                                return `<li style="margin-top: 4px; margin-bottom: 4px;">${trimmed.substring(1).trim()}</li>`;
+                              }
+                              // Se a linha estiver vazia, retorna um espaço menor ou vazio para não criar um buraco gigante
+                              if (trimmed === '') {
+                                return '<div style="height: 8px;"></div>';
+                              }
+                              return `<div>${trimmed}</div>`;
+                            })
+                            .join('')
+                        }}
+                      />
 
                       <div className={styles.modalSectionGroup}>
                         <label className={styles.modalSectionLabel}>
