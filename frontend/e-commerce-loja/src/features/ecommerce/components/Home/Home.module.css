@@ -1,8 +1,10 @@
 .container {
+  width: 100%;
   min-height: 100vh;
   background-color: #fafafa;
   font-family: system-ui, -apple-system, sans-serif;
   padding-bottom: 70px;
+  overflow-x: hidden;
 }
 
 .hero {
@@ -52,9 +54,9 @@
 }
 
 /* Vitrine */
-.productsSection { padding: 2rem 5%; }
+.productsSection { padding: 2rem 5%; width: 100%; box-sizing: border-box; }
 .productsSection h2 { margin-bottom: 2rem; color: #222; font-size: 1.5rem; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 2rem; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 2rem; width: 100%; }
 
 .productCard { 
   background: white; 
@@ -64,10 +66,31 @@
   transition: transform 0.2s; 
   display: flex; 
   flex-direction: column; 
+  box-sizing: border-box;
 }
 .productCard:hover { transform: translateY(-4px); }
 
-.productImage { width: 100%; height: 200px; object-fit: cover; border-radius: 6px; margin-bottom: 1rem; cursor: pointer; }
+.imageContainer {
+  position: relative;
+  width: 100%;
+  height: 220px;
+  overflow: hidden;
+  cursor: pointer;
+  background-color: #f9f9f9;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.productImage {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+
 .productInfo h3 { font-size: 1.05rem; color: #333; margin-bottom: 0.25rem; font-weight: 600; cursor: pointer; }
 
 /* Estrelas */
@@ -77,7 +100,7 @@
 
 .price { color: #222; font-size: 1.2rem; font-weight: 700; margin-bottom: 1rem; margin-top: auto; }
 
-/* Botões Gerais (Adicionar ao Carrinho) */
+/* Botões Gerais */
 .actionButton {
   width: 100%;
   padding: 0.6rem;
@@ -101,9 +124,9 @@
   background-color: rgba(0,0,0,0.5);
   display: flex; justify-content: center; align-items: center;
   z-index: 2000;
+  padding: 10px;
 }
 
-/* Modal comum de Detalhes */
 .modal {
   background: white;
   padding: 2rem;
@@ -121,10 +144,6 @@
   color: #333;
 }
 
-.modalImage { width: 100%; height: 250px; object-fit: cover; border-radius: 8px; margin-bottom: 1rem; }
-.modalDescription { margin: 1rem 0; color: #555; line-height: 1.5; }
-
-/* Modal Especial do Carrinho */
 .cartModal {
   background: white;
   padding: 2rem;
@@ -136,12 +155,6 @@
   flex-direction: column;
   position: relative;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-  animation: modalScaleUp 0.25s ease-out;
-}
-
-@keyframes modalScaleUp {
-  from { transform: scale(0.95); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
 }
 
 .cartHeader {
@@ -172,7 +185,7 @@
   border-bottom: 1px solid #f5f5f5;
 }
 
-.cartItemImage { width: 70px; height: 70px; object-fit: cover; border-radius: 6px; }
+.cartItemImage { width: 70px; height: 70px; object-fit: contain; background-color: #f9f9f9; border-radius: 6px; }
 .cartItemInfo { flex: 1; display: flex; justify-content: space-between; align-items: flex-start; }
 .cartItemDetails { display: flex; flex-direction: column; gap: 0.25rem; }
 .cartItemDetails h4 { font-size: 1rem; color: #333; margin: 0; font-weight: 600; }
@@ -185,7 +198,6 @@
 .cartItemRight { display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem; }
 .cartItemPrice { font-size: 1rem; font-weight: 700; color: #222; }
 
-/* Controles de Quantidade */
 .quantityControls {
   display: flex; align-items: center; gap: 0.6rem; background-color: #f8f9fa; padding: 0.25rem 0.5rem; border-radius: 6px; border: 1px solid #e4e6eb;
 }
@@ -196,75 +208,9 @@
 .qtyButton:hover { color: #004080; }
 .qtyValue { font-size: 0.9rem; font-weight: 600; min-width: 16px; text-align: center; }
 
-/* Rodapé do Carrinho */
 .cartFooter { border-top: 1px solid #eee; padding-top: 1.25rem; margin-top: 1rem; }
 .totalRow { display: flex; justify-content: space-between; font-size: 1.3rem; font-weight: 700; color: #222; margin-bottom: 1.25rem; }
 .emptyCart { text-align: center; color: #777; padding: 3rem 0; }
-
-/* --- MENU INFERIOR FIXO --- */
-.bottomNav {
-  display: none; 
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  background: white;
-  border-top: 1px solid #ddd;
-  z-index: 1500;
-  justify-content: space-around;
-  align-items: center;
-  box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-}
-
-.navBtn {
-  background: none;
-  border: none;
-  font-weight: 600;
-  color: #333;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  cursor: pointer;
-}
-
-@media (max-width: 430px) {
-  .bottomNav {
-    display: flex !important;
-    height: 80px;
-  }
-
-  .navBtn {
-    font-size: 1.1rem;
-    gap: 8px;
-  }
-
-  .navBtn span, .navBtn::before {
-    font-size: 1.8rem !important;
-  }
-  
-  .container {
-    padding-bottom: 80px;
-  }
-}
-
-.desktopCategoryWrapper {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-}
-
-@media (max-width: 450px) {
-  .desktopCategoryWrapper {
-    display: none !important;
-  }
-  
-  .filterButton {
-      padding: 0.8rem 1.5rem;
-      font-size: 1.08rem;
-      margin-bottom: 0.5rem;
-  }
-}
 
 .buyButton {
   background-color: #D7B796; 
@@ -302,7 +248,6 @@
   flex-wrap: wrap;
 }
 
-/* Tamanhos maiores e mais confortáveis (Card e Geral) */
 .sizeBadge {
   background-color: #f1f3f5;
   border: 1px solid #ced4da;
@@ -319,7 +264,6 @@
   background-color: #e2e6ea;
 }
 
-/* Tamanho Selecionado (#D7B796) */
 .selectedSizeBadge {
   background-color: #D7B796 !important;
   color: #ffffff !important;
@@ -343,121 +287,94 @@
   align-items: center;
   gap: 0.75rem;
   z-index: 10000;
-  animation: fadeInOut 3s ease;
   font-size: 0.95rem;
   font-weight: 500;
 }
 
-@keyframes fadeInOut {
-  0% { opacity: 0; transform: translate(-50%, 20px); }
-  15% { opacity: 1; transform: translate(-50%, 0); }
-  85% { opacity: 1; transform: translate(-50%, 0); }
-  100% { opacity: 0; transform: translate(-50%, -20px); }
-}
-
-.sizeBadgeStatic {
-  background-color: #f1f3f5;
-  border: 1px solid #ced4da;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.75rem;
-  border-radius: 4px;
-  color: #555;
-  font-weight: 500;
-}
-
-/* Banner da Loja */
+/* Cabeçalho Organizado por Flexbox para evitar sobreposições no celular */
+/* Cabeçalho Responsivo Proporcional */
 .bannerContainer {
   width: 100%;
-  height: 280px;
   background-color: #F4F4F2;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  box-sizing: border-box;
+  border-bottom: 1px solid #e2e8f0;
+  position: relative;
+  min-height: 200px; /* Aumentado para acomodar a logo maior */
+}
+
+.bannerLeftGroup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 10;
+  flex: 1;
+}
+
+.bannerCenterGroup {
+  flex: 2;
   display: flex;
   justify-content: center;
   align-items: center;
-  overflow: hidden;
   position: relative;
-  border-bottom: 1px solid #e2e8f0;
+  height: 100%;
+  pointer-events: none;
 }
 
+/* Imagem maior em telas grandes (aumentada para 170px) */
 .bannerLogo {
-  max-height: 220px;
+  max-height: 170px;
   width: auto;
+  max-width: 100%;
   object-fit: contain;
+  display: block;
+  margin: 0 auto;
 }
 
-@media (max-width: 768px) {
-  .bannerContainer {
-    min-height: 80px;
-    height: auto;
-    padding: 0.4rem 0;
-  }
-  
-  .bannerLogo {
-    max-height: 95px;
-  }
-  
-  .desktopCartButton {
-    display: flex !important;
-  }
+.bannerRightGroup {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  z-index: 10;
+  flex: 1;
 }
 
+/* Botões do topo mantêm o tamanho excelente em telas grandes */
 .desktopTopButton {
   padding: 0.5rem 1rem !important;
   font-size: 0.95rem !important;
+  white-space: nowrap;
 }
 
 .desktopCartTopButton {
   padding: 0.5rem 1rem !important;
   font-size: 0.95rem !important;
   border-radius: 20px !important;
+  white-space: nowrap;
 }
 
+/* Responsividade Automática para Celulares (mantém proporcional e menor) */
 @media (max-width: 768px) {
-  .desktopTopButton {
-    padding: 0.3rem 0.6rem !important;
-    font-size: 0.85rem !important;
+  .bannerContainer {
+    padding: 0.75rem 1rem;
+    min-height: 120px;
   }
-  
+
+  .bannerLogo {
+    max-height: 85px; 
+  }
+
+  .desktopTopButton,
   .desktopCartTopButton {
-    padding: 0.3rem 0.6rem !important;
-    font-size: 0.8rem !important;
+    padding: 0.35rem 0.65rem !important;
+    font-size: 0.75rem !important;
   }
 }
 
-.bannerImagem {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.imageContainer {
-  position: relative;
-  width: 100%;
-  height: 250px;
-  overflow: hidden;
-  cursor: pointer;
-}
-
-.productImage {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.discountBadgeOverlay {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  background-color: #D7B796;
-  color: #ffffff;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  font-weight: bold;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  z-index: 2;
-}
-
-/* Modal Estilo Admin para o Home */
 .modalContentBox {
   background: #ffffff;
   padding: 30px;
@@ -500,18 +417,12 @@
   gap: 30px;
 }
 
-@media (max-width: 768px) {
-  .modalGridContainer {
-    grid-template-columns: 1fr;
-  }
-}
-
 .modalMainImage {
   width: 100%;
   height: 320px;
-  object-fit: cover;
+  object-fit: contain;
+  background-color: #f9f9f9;
   border-radius: 8px;
-  background: #f8fafc;
 }
 
 .modalThumbnailsList {
@@ -525,7 +436,8 @@
 .modalThumbItem {
   width: 60px;
   height: 60px;
-  object-fit: cover;
+  object-fit: contain;
+  background-color: #f9f9f9;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
@@ -619,7 +531,6 @@
   gap: 10px;
 }
 
-/* Botões de cores maiores no Modal de Detalhes */
 .modalColorButton {
   display: flex;
   align-items: center;
@@ -657,7 +568,6 @@
   gap: 10px;
 }
 
-/* Bolinhas de cores maiores nos Cards da Vitrine (Aumentadas para 24px) */
 .cardColorsRow {
   display: flex;
   align-items: center;
@@ -691,7 +601,6 @@
   box-shadow: none;
 }
 
-/* Tamanhos maiores no Modal de Detalhes */
 .modalSizeButtonSelected {
   opacity: 1;
   cursor: pointer;
@@ -715,32 +624,174 @@
   font-size: 0.9rem;
 }
 
-/* --- MENU HAMBÚRGUER FLUTUANTE SOBRE O BANNER --- */
-.hamburgerContainerWrapper {
-  position: absolute;
-  top: 50%;
-  left: 20px;
-  transform: translateY(-50%);
-  z-index: 20;
+/* Painel Lateral de Filtros e Sliders */
+.filterDrawerOverlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 3000;
+  display: flex;
+  justify-content: flex-end;
 }
 
-.hamburgerMenuBtn {
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid #cbd5e1;
+.filterDrawerContent {
+  width: 340px;
+  max-width: 90%;
+  height: 100%;
+  background: #ffffff;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  z-index: 3001;
+  padding: 1.5rem;
+  overflow-y: auto;
+}
+
+.filterDrawerHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.filterDrawerHeader h3 {
+  font-size: 1.25rem;
+  color: #222;
+  font-weight: 700;
+  margin: 0;
+}
+
+.filterGroup {
+  margin-bottom: 1.5rem;
+}
+
+.filterGroupLabel {
+  font-size: 0.9rem;
+  font-weight: 600;
   color: #333;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
+  margin-bottom: 0.6rem;
+  display: block;
+}
+
+.filterSizeGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filterChip {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: #333;
+  transition: all 0.2s;
+}
+
+.filterChipActive {
+  background-color: #D7B796 !important;
+  color: #fff !important;
+  border-color: #D7B796 !important;
+  font-weight: bold;
+}
+
+.filterColorList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.filterColorItem {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 1.2rem;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  transition: all 0.2s ease;
+  font-size: 0.85rem;
 }
 
-.hamburgerMenuBtn:hover {
-  background: #ffffff;
-  transform: translateY(-50%) scale(1.05);
+.filterColorDot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.15);
+}
+
+.filterActionsFooter {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 1rem;
+  border-top: 1px solid #eee;
+}
+
+.dualSliderContainer {
+  position: relative;
+  width: 100%;
+  height: 40px;
+  margin-top: 8px;
+}
+
+.dualSliderTrack {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 100%;
+  height: 6px;
+  background-color: #e2e8f0;
+  border-radius: 3px;
+}
+
+.dualSliderRange {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 6px;
+  background-color: #D7B796;
+  border-radius: 3px;
+  z-index: 1;
+}
+
+.dualSliderInput {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 100%;
+  background: none;
+  pointer-events: none;
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.dualSliderInput::-webkit-slider-thumb {
+  pointer-events: auto;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: #D7B796;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  cursor: pointer;
+}
+
+.dualSliderInput::-moz-range-thumb {
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: #D7B796;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  cursor: pointer;
 }

@@ -27,6 +27,32 @@ const getImageUrl = (url?: string) => {
   return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
 };
 
+const sortSizes = (sizes: string[]) => {
+  const customOrder: { [key: string]: number } = {
+    'RN': 1, 'P': 2, 'M': 3, 'G': 4, 'GG': 5, 'XGG': 6,
+    'PP': 1, 'U': 99, 'ÚNICO': 99
+  };
+
+  return [...sizes].sort((a, b) => {
+    const cleanA = a.toUpperCase().trim();
+    const cleanB = b.toUpperCase().trim();
+
+    if (customOrder[cleanA] !== undefined && customOrder[cleanB] !== undefined) {
+      return customOrder[cleanA] - customOrder[cleanB];
+    }
+    if (customOrder[cleanA] !== undefined) return -1;
+    if (customOrder[cleanB] !== undefined) return 1;
+
+    const numA = parseFloat(cleanA);
+    const numB = parseFloat(cleanB);
+    if (!isNaN(numA) && !isNaN(numB)) {
+      return numA - numB;
+    }
+
+    return cleanA.localeCompare(cleanB);
+  });
+};
+
 interface Category {
   id: string;
   nome: string;
@@ -44,6 +70,7 @@ interface Product {
   isVisible: boolean;
   ativo: boolean;
   ativoGeral?: boolean;
+  genero?: string; // Campo de gênero do produto se houver no banco
   categoria: Category;
   imagens: {
     id: string;
@@ -62,6 +89,7 @@ interface Product {
       id: string;
       nome: string;
       slug: string;
+      ordem?: number;
     };
     cor?: {
       id: string;
@@ -94,8 +122,21 @@ export const Home: React.FC = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCategoryDrawerOpen, setIsCategoryDrawerOpen] = useState(false);
+  
+  // Controle do Modal/Gaveta de Filtros Avançados
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
+
+  // Estados dos Filtros
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  
+  // Filtros solicitados: Preço Mínimo/Máximo (0 a 500), Tamanho, Gênero e Cor
+  const [precoMin, setPrecoMin] = useState<number>(0);
+  const [precoMax, setPrecoMax] = useState<number>(500);
+  const [filtroTamanho, setFiltroTamanho] = useState<string>('Todos');
+  const [filtroGenero, setFiltroGenero] = useState<string>('Todos');
+  const [filtroCor, setFiltroCor] = useState<string>('Todos');
+
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedSizes, setSelectedSizes] = useState<{ [productId: string]: string }>({});
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -235,23 +276,73 @@ export const Home: React.FC = () => {
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
   const totalPrice = cart.reduce((sum, item) => sum + item.numericPrice * item.quantity, 0);
 
+  // Coleta dados dinâmicos do banco para os filtros
+  const dbSizesList = Array.from(new Set(products.flatMap(p => p.estoques?.map(e => e.tamanho?.nome).filter(Boolean) || []))) as string[];
+  const sortedDbSizes = sortSizes(dbSizesList);
+
+  const dbColorsMap = new Map();
+  products.forEach(p => {
+    p.estoques?.forEach((e: any) => {
+      if (e.cor && e.cor.id) {
+        dbColorsMap.set(e.cor.id, e.cor);
+      }
+    });
+  });
+  const dbColorsList = Array.from(dbColorsMap.values());
+
+  // Lógica de Filtragem Geral
   const filteredProducts = products.filter(p => {
     if (p.isVisible !== true) return false;
     if (p.ativoGeral === false) return false;
 
+    // Busca por texto
     const matchesSearch = p.nome.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           (p.descricao && p.descricao.toLowerCase().includes(searchTerm.toLowerCase()));
     if (!matchesSearch) return false;
 
-    if (selectedCategory === 'Todos') return true;
-    return p.categoria && p.categoria.nome.toLowerCase().trim() === selectedCategory.toLowerCase().trim();
+    // Categoria via menu lateral
+    if (selectedCategory !== 'Todos') {
+      const matchCat = p.categoria && p.categoria.nome.toLowerCase().trim() === selectedCategory.toLowerCase().trim();
+      if (!matchCat) return false;
+    }
+
+    // 1. Filtro de Preço (Mínimo e Máximo)
+    const precoEfetivo = p.temOferta && p.precoPromocional && Number(p.precoPromocional) > 0 
+      ? Number(p.precoPromocional) 
+      : (parseFloat(p.preco) || 0);
+    if (precoEfetivo < precoMin || precoEfetivo > precoMax) return false;
+
+    // 2. Filtro de Tamanho
+    if (filtroTamanho !== 'Todos') {
+      const temTamanho = p.estoques?.some(e => e.tamanho?.nome?.toLowerCase() === filtroTamanho.toLowerCase());
+      if (!temTamanho) return false;
+    }
+
+    // 3. Filtro de Gênero (Busca na propriedade gênero ou na categoria/descrição)
+    if (filtroGenero !== 'Todos') {
+      const generoProd = (p.genero || '').toLowerCase();
+      const catProd = (p.categoria?.nome || '').toLowerCase();
+      const descProd = (p.descricao || '').toLowerCase();
+      const termo = filtroGenero.toLowerCase();
+      
+      const matchGenero = generoProd.includes(termo) || catProd.includes(termo) || descProd.includes(termo);
+      if (!matchGenero) return false;
+    }
+
+    // 4. Filtro de Cor
+    if (filtroCor !== 'Todos') {
+      const temCor = p.estoques?.some(e => e.cor?.id === filtroCor || e.cor?.nome?.toLowerCase() === filtroCor.toLowerCase());
+      if (!temCor) return false;
+    }
+
+    return true;
   });
 
   return (
     <div className={styles.container}>
       {/* Banner da Loja */}
       <div className={styles.bannerContainer}>
-        <div style={{ position: 'absolute', top: '50%', left: '20px', transform: 'translateY(-50%)', zIndex: 10 }}>
+        <div style={{ position: 'absolute', top: '50%', left: '20px', transform: 'translateY(-50%)', zIndex: 10, display: 'flex', gap: '8px' }}>
           <button 
             type="button"
             className={`${styles.desktopCartButton} ${styles.desktopTopButton}`}
@@ -268,9 +359,8 @@ export const Home: React.FC = () => {
               gap: '6px'
             }}
             onClick={() => setIsCategoryDrawerOpen(true)}
-            title="Menu de Categorias"
           >
-            ☰ <span style={{ fontWeight: 500 }}>Menu</span>
+            ☰ Menu
           </button>
         </div>
 
@@ -342,7 +432,7 @@ export const Home: React.FC = () => {
         </div>
       </div>
 
-      {/* Área de Pesquisa */}
+      {/* Área de Pesquisa e Indicador de Filtros Ativos */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem', padding: '1.2rem 5%', backgroundColor: '#fcfcfc', borderBottom: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#ffffff', border: '1px solid #ced4da', borderRadius: '20px', padding: '0.5rem 1.2rem', width: '100%', maxWidth: '450px', boxShadow: '0 2px 6px rgba(0,0,0,0.03)' }}>
           <span style={{ marginRight: '8px', color: '#D7B796' }}>🔍</span>
@@ -355,27 +445,197 @@ export const Home: React.FC = () => {
           />
         </div>
 
-        {selectedCategory !== 'Todos' && (
-          <div style={{ fontSize: '0.9rem', color: '#666', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span>Categoria selecionada: <strong style={{ color: '#D7B796' }}>{selectedCategory}</strong></span>
+        {(filtroTamanho !== 'Todos' || filtroGenero !== 'Todos' || filtroCor !== 'Todos' || precoMin > 0 || precoMax < 500) && (
+          <div style={{ fontSize: '0.85rem', color: '#666', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <span>Filtros ativos aplicados.</span>
             <button 
               type="button" 
-              onClick={() => setSelectedCategory('Todos')}
-              style={{ background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', fontSize: '0.85rem', textDecoration: 'underline' }}
+              onClick={() => {
+                setPrecoMin(0);
+                setPrecoMax(500);
+                setFiltroTamanho('Todos');
+                setFiltroGenero('Todos');
+                setFiltroCor('Todos');
+              }}
+              style={{ background: 'none', border: 'none', color: '#D7B796', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold', textDecoration: 'underline' }}
             >
-              (Ver todos)
+              Limpar Todos os Filtros
             </button>
           </div>
         )}
       </div>
 
+      {/* Gaveta / Modal de Filtros Avançados */}
+      {isFilterDrawerOpen && (
+        <div className={styles.filterDrawerOverlay} onClick={() => setIsFilterDrawerOpen(false)}>
+          <div className={styles.filterDrawerContent} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.filterDrawerHeader}>
+              <h3>Filtros de Busca</h3>
+              <button type="button" onClick={() => setIsFilterDrawerOpen(false)} style={{ background: 'none', border: 'none', fontSize: '1.3rem', cursor: 'pointer' }}>×</button>
+            </div>
+
+            {/* 1. FILTRO DE PREÇO (Faixa dupla com trilha colorida no meio) */}
+            <div className={styles.filterGroup}>
+              <label className={styles.filterGroupLabel}>
+                Faixa de Preço: <strong>R$ {precoMin.toFixed(2)}</strong> até <strong>R$ {precoMax.toFixed(2)}</strong>
+              </label>
+              
+              <div className={styles.dualSliderContainer}>
+                <div className={styles.dualSliderTrack}></div>
+                
+                {/* Faixa colorida que preenche o espaço entre as duas bolinhas */}
+                <div 
+                  className={styles.dualSliderRange} 
+                  style={{ 
+                    left: `${(precoMin / 500) * 100}%`, 
+                    right: `${100 - (precoMax / 500) * 100}%` 
+                  }}
+                ></div>
+                
+                {/* Slider do Preço Mínimo */}
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="500" 
+                  step="10"
+                  value={precoMin} 
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (val <= precoMax - 10) setPrecoMin(val);
+                  }}
+                  className={styles.dualSliderInput}
+                  style={{ zIndex: precoMin > 400 ? 3 : 2 }}
+                />
+
+                {/* Slider do Preço Máximo */}
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="500" 
+                  step="10"
+                  value={precoMax} 
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (val >= precoMin + 10) setPrecoMax(val);
+                  }}
+                  className={styles.dualSliderInput}
+                  style={{ zIndex: 2 }}
+                />
+              </div>
+            </div>
+
+            {/* 2. FILTRO DE TAMANHO (Todos cadastrados no banco) */}
+            <div className={styles.filterGroup}>
+              <label className={styles.filterGroupLabel}>Tamanho</label>
+              <div className={styles.filterSizeGrid}>
+                <button 
+                  type="button" 
+                  className={`${styles.filterChip} ${filtroTamanho === 'Todos' ? styles.filterChipActive : ''}`}
+                  onClick={() => setFiltroTamanho('Todos')}
+                >
+                  Todos
+                </button>
+                {sortedDbSizes.map(tamanho => (
+                  <button 
+                    key={tamanho}
+                    type="button" 
+                    className={`${styles.filterChip} ${filtroTamanho === tamanho ? styles.filterChipActive : ''}`}
+                    onClick={() => setFiltroTamanho(tamanho)}
+                  >
+                    {tamanho}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 3. FILTRO DE GÊNERO (Masculino, Feminino, Unissex) */}
+            <div className={styles.filterGroup}>
+              <label className={styles.filterGroupLabel}>Gênero</label>
+              <div className={styles.filterSizeGrid}>
+                {['Todos', 'Masculino', 'Feminino', 'Unissex'].map(genero => (
+                  <button 
+                    key={genero}
+                    type="button" 
+                    className={`${styles.filterChip} ${filtroGenero === genero ? styles.filterChipActive : ''}`}
+                    onClick={() => setFiltroGenero(genero)}
+                  >
+                    {genero}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 4. FILTRO DE COR (Todas cadastradas no banco) */}
+            <div className={styles.filterGroup}>
+              <label className={styles.filterGroupLabel}>Cor</label>
+              <div className={styles.filterColorList}>
+                <button 
+                  type="button" 
+                  className={`${styles.filterChip} ${filtroCor === 'Todos' ? styles.filterChipActive : ''}`}
+                  onClick={() => setFiltroCor('Todos')}
+                >
+                  Todas
+                </button>
+                {dbColorsList.map((cor: any) => {
+                  const isSelected = filtroCor === cor.id;
+                  return (
+                    <button 
+                      key={cor.id}
+                      type="button" 
+                      className={`${styles.filterColorItem} ${isSelected ? styles.filterChipActive : ''}`}
+                      onClick={() => setFiltroCor(cor.id)}
+                    >
+                      <span className={styles.filterColorDot} style={{ backgroundColor: cor.hex || '#000' }}></span>
+                      {cor.nome}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className={styles.filterActionsFooter}>
+              <button 
+                type="button" 
+                className={styles.actionButton}
+                onClick={() => setIsFilterDrawerOpen(false)}
+              >
+                Ver Produtos ({filteredProducts.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Vitrine de Produtos */}
       <main className={styles.productsSection}>
+        {/* Botão de Filtros alinhado à esquerda acima de Produtos em Destaque */}
+        <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'flex-start' }}>
+          <button 
+            type="button"
+            style={{ 
+              background: 'rgba(255, 255, 255, 0.95)', 
+              border: '1px solid #cbd5e1', 
+              color: '#C29E7A', 
+              borderRadius: '6px', 
+              fontWeight: 600, 
+              cursor: 'pointer', 
+              padding: '0.5rem 1.2rem',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+            onClick={() => setIsFilterDrawerOpen(true)}
+          >
+            Filtros
+          </button>
+        </div>
+
         <h2>Produtos em Destaque</h2>
         <div className={styles.grid}>
           {filteredProducts.length === 0 ? (
             <p style={{ color: '#666', gridColumn: '1 / -1', textAlign: 'center', padding: '2rem 0' }}>
-              Nenhum produto encontrado.
+              Nenhum produto encontrado com os filtros selecionados.
             </p>
           ) : (
             filteredProducts.map(product => {
@@ -406,12 +666,14 @@ export const Home: React.FC = () => {
                 return !currentCardColor || item.cor?.id === currentCardColor;
               }) || [];
               
-              const availableSizes = tamanhosDoCard.length > 0 
+              const rawAvailableSizes = tamanhosDoCard.length > 0 
                 ? Array.from(new Set(tamanhosDoCard.map((e: any) => e.tamanho?.nome).filter(Boolean)))
                 : (product.estoques && product.estoques.length > 0 
                     ? Array.from(new Set(product.estoques.map((e: any) => e.tamanho?.nome).filter(Boolean)))
                     : ['U']);
               
+              const availableSizes = sortSizes(rawAvailableSizes as string[]);
+
               const chosenSize = selectedSizes[product.id] || availableSizes[0];
               const numericPrice = parseFloat(product.preco) || 0;
               const precoPromocional = product.precoPromocional ? parseFloat(product.precoPromocional) : 0;
@@ -834,7 +1096,9 @@ export const Home: React.FC = () => {
                         return <span className={styles.emptyNotice}>Selecione uma cor para ver os tamanhos.</span>;
                       }
 
-                      const availableSizes = Array.from(new Set(tamanhosDaCor.map((e: any) => e.tamanho?.nome).filter(Boolean)));
+                      const rawAvailableSizes = Array.from(new Set(tamanhosDaCor.map((e: any) => e.tamanho?.nome).filter(Boolean)));
+                      const availableSizes = sortSizes(rawAvailableSizes as string[]);
+
                       const currentSelectedSize = selectedSizes[selectedProduct.id] || availableSizes[0];
 
                       return availableSizes.map((sizeName: any, idx: number) => {
@@ -869,9 +1133,10 @@ export const Home: React.FC = () => {
                     className={styles.actionButton} 
                     type="button"
                     onClick={() => {
-                      const availableSizes = selectedProduct.estoques && selectedProduct.estoques.length > 0 
+                      const rawAvailableSizes = selectedProduct.estoques && selectedProduct.estoques.length > 0 
                         ? Array.from(new Set(selectedProduct.estoques.map((e: any) => e.tamanho?.nome).filter(Boolean)))
                         : ['U'];
+                      const availableSizes = sortSizes(rawAvailableSizes as string[]);
                       
                       const sizeSelected = selectedSizes[selectedProduct.id] || availableSizes[0];
                       if (!selectedSizes[selectedProduct.id] && availableSizes.length > 1) {
@@ -891,9 +1156,10 @@ export const Home: React.FC = () => {
                     className={styles.buyButton} 
                     type="button"
                     onClick={() => { 
-                      const availableSizes = selectedProduct.estoques && selectedProduct.estoques.length > 0 
+                      const rawAvailableSizes = selectedProduct.estoques && selectedProduct.estoques.length > 0 
                         ? Array.from(new Set(selectedProduct.estoques.map((e: any) => e.tamanho?.nome).filter(Boolean)))
                         : ['U'];
+                      const availableSizes = sortSizes(rawAvailableSizes as string[]);
 
                       const sizeSelected = selectedSizes[selectedProduct.id] || availableSizes[0];
                       if (!selectedSizes[selectedProduct.id] && availableSizes.length > 1) {

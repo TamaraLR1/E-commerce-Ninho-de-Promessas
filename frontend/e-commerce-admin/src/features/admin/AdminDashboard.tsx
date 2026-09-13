@@ -15,7 +15,7 @@ interface ProductMaster {
   offerPrice: number;
   sizes: string[];
   colors: any[];
-  rawSizes?: { tamanhoId: string; corId?: string; estoque?: number; ativo?: boolean; tamanho?: { nome: string; ativo?: boolean }; cor?: { nome: string; ativo?: boolean } }[];
+  rawSizes?: { tamanhoId: string; corId?: string; estoque?: number; ativo?: boolean; tamanho?: { nome: string; ativo?: boolean; ordem?: number }; cor?: { nome: string; ativo?: boolean } }[];
   rawColors?: { corId: string; id?: string; cor?: { nome: string }; nome?: string }[];
   ativo?: boolean | number;
   criadoPor?: { nome: string };     
@@ -151,7 +151,6 @@ export const AdminDashboard: React.FC = () => {
   const [newDesc, setNewDesc] = useState('');
   const [newPrice, setNewPrice] = useState('');
   
-  // Estado estruturado por Cor ID para gerenciar até 6 imagens por cor com suporte a objetos unificados para Drag and Drop
   const [colorImages, setColorImages] = useState<{ [corId: string]: Array<{ type: 'file' | 'url'; file?: File; url: string }> }>({});
   
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
@@ -306,6 +305,7 @@ export const AdminDashboard: React.FC = () => {
       const response = await fetch(`${API_URL}/tamanhos`, { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
+        data.sort((a: Tamanho, b: Tamanho) => (a.ordem ?? 0) - (b.ordem ?? 0));
         setTamanhosList(data);
       }
     } catch (err) {
@@ -805,7 +805,6 @@ export const AdminDashboard: React.FC = () => {
     return prod.rawSizes.reduce((total, item) => total + (item.estoque ?? 0), 0);
   };
 
-  // Manipulação unificada de arquivos e URLs mantidas para permitir Drag and Drop livre entre imagens novas e existentes
   const handleColorFileChange = (corId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const filesArray = Array.from(e.target.files);
@@ -840,7 +839,6 @@ export const AdminDashboard: React.FC = () => {
     });
   };
 
-  // Funções de Drag and Drop para ordenação de imagens
   const handleImageDragStart = (e: React.DragEvent, index: number) => {
     e.dataTransfer.setData('text/plain', String(index));
   };
@@ -969,7 +967,6 @@ export const AdminDashboard: React.FC = () => {
     const uniqueColors = Array.from(new Set(coresIds));
     setSelectedColors(uniqueColors);
 
-    // Mapear imagens por cor para edição de forma isolada, ordenadas pela coluna 'ordem'
     const initialColorImagesMap: { [corId: string]: Array<{ type: 'file' | 'url'; url: string }> } = {};
     uniqueColors.forEach(cId => {
       const imgsDaCor = (prod as any).rawImages
@@ -1040,7 +1037,6 @@ export const AdminDashboard: React.FC = () => {
       return;
     }
 
-    // Validar se cada cor possui pelo menos 1 imagem (máximo 6)
     for (const cId of selectedColors) {
       const itensCor = colorImages[cId] || [];
 
@@ -1728,7 +1724,6 @@ export const AdminDashboard: React.FC = () => {
                               </div>
                             </div>
 
-                            {/* Campo de Upload de Imagens específico desta Cor com Drag and Drop */}
                             <div className={styles.group} style={{ margin: '12px 0' }}>
                               <label className={styles.fileLabel}>
                                 📷 Fotos da Cor {corObj?.nome} ({qtdFotosCor}/6) — Arraste para reordenar
@@ -1779,55 +1774,58 @@ export const AdminDashboard: React.FC = () => {
                               <p className={styles.emptyNotice}>Nenhum tamanho ativo cadastrado no sistema.</p>
                             ) : (
                               <div className={styles.sizeConfigGrid}>
-                                {tamanhosList.filter(t => t.ativo !== false).map(tam => {
-                                  const isChecked = configCurrent.tamanhosIds.includes(tam.id);
-                                  const estoqueValor = configCurrent.estoques?.[tam.id] || '';
+                                {tamanhosList
+                                  .filter(t => t.ativo !== false)
+                                  .sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0))
+                                  .map(tam => {
+                                    const isChecked = configCurrent.tamanhosIds.includes(tam.id);
+                                    const estoqueValor = configCurrent.estoques?.[tam.id] || '';
 
-                                  const produtoOriginal = editingProductId ? products.find(p => p.id === editingProductId) : null;
-                                  const itemJaExistia = produtoOriginal?.rawSizes?.some(
-                                    s => s.corId === cId && s.tamanhoId === tam.id
-                                  );
+                                    const produtoOriginal = editingProductId ? products.find(p => p.id === editingProductId) : null;
+                                    const itemJaExistia = produtoOriginal?.rawSizes?.some(
+                                      s => s.corId === cId && s.tamanhoId === tam.id
+                                    );
 
-                                  return (
-                                    <div 
-                                      key={tam.id} 
-                                      className={`${styles.sizeConfigBox} ${isChecked ? styles.sizeBoxChecked : styles.sizeBoxUnchecked}`}
-                                    >
-                                      <div className={styles.sizeCheckboxRow}>
-                                        <label className={styles.sizeInnerLabel}>
-                                          <input 
-                                            type="checkbox" 
-                                            checked={isChecked}
-                                            onChange={() => handleToggleSizeForColor(cId, tam.id)}
-                                          />
-                                          📐 Tamanho: {tam.nome}
-                                        </label>
-                                      </div>
-
-                                      {isChecked && (!editingProductId || !itemJaExistia) && (
-                                        <div className={styles.initialStockBoxGroup}>
-                                          <label className={styles.initialStockLabel}>
-                                            Estoque Inicial (Novo Item):
+                                    return (
+                                      <div 
+                                        key={tam.id} 
+                                        className={`${styles.sizeConfigBox} ${isChecked ? styles.sizeBoxChecked : styles.sizeBoxUnchecked}`}
+                                      >
+                                        <div className={styles.sizeCheckboxRow}>
+                                          <label className={styles.sizeInnerLabel}>
+                                            <input 
+                                              type="checkbox" 
+                                              checked={isChecked}
+                                              onChange={() => handleToggleSizeForColor(cId, tam.id)}
+                                            />
+                                            📐 Tamanho: {tam.nome}
                                           </label>
-                                          <input 
-                                            type="number" 
-                                            min="0"
-                                            placeholder="0"
-                                            value={estoqueValor}
-                                            onChange={(e) => handleStockChangeForSize(cId, tam.id, e.target.value)}
-                                            className={styles.initialStockInput}
-                                          />
                                         </div>
-                                      )}
 
-                                      {isChecked && editingProductId && itemJaExistia && (
-                                        <div className={styles.existingItemNotice}>
-                                          ✓ Item existente (Estoque preservado)
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
+                                        {isChecked && (!editingProductId || !itemJaExistia) && (
+                                          <div className={styles.initialStockBoxGroup}>
+                                            <label className={styles.initialStockLabel}>
+                                              Estoque Inicial (Novo Item):
+                                            </label>
+                                            <input 
+                                              type="number" 
+                                              min="0"
+                                              placeholder="0"
+                                              value={estoqueValor}
+                                              onChange={(e) => handleStockChangeForSize(cId, tam.id, e.target.value)}
+                                              className={styles.initialStockInput}
+                                            />
+                                          </div>
+                                        )}
+
+                                        {isChecked && editingProductId && itemJaExistia && (
+                                          <div className={styles.existingItemNotice}>
+                                            ✓ Item existente (Estoque preservado)
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
                               </div>
                             )}
                           </div>
@@ -2687,6 +2685,10 @@ export const AdminDashboard: React.FC = () => {
                             const tamanhosDaCor = selectedProductDetails.rawSizes.filter((item: any) => {
                               const itemCorId = item.corId || item.cor?.id;
                               return !selectedColorForDetails || itemCorId === selectedColorForDetails;
+                            }).sort((a: any, b: any) => {
+                              const tamA = tamanhosList.find(t => t.id === a.tamanhoId);
+                              const tamB = tamanhosList.find(t => t.id === b.tamanhoId);
+                              return (tamA?.ordem ?? 0) - (tamB?.ordem ?? 0);
                             });
 
                             if (tamanhosDaCor.length === 0) {
@@ -2818,6 +2820,13 @@ export const AdminDashboard: React.FC = () => {
                     }
 
                     const colorStockData = Array.from(colorMap.values()).map(colorItem => {
+                      // Ordena os tamanhos dentro da cor com base na propriedade 'ordem' cadastrada globalmente
+                      colorItem.sizes.sort((s1, s2) => {
+                        const tamObj1 = tamanhosList.find(t => t.nome === s1.size);
+                        const tamObj2 = tamanhosList.find(t => t.nome === s2.size);
+                        return (tamObj1?.ordem ?? 0) - (tamObj2?.ordem ?? 0);
+                      });
+
                       const filteredSizes = colorItem.sizes.filter(sizeItem => {
                         if (stockFilter === 'esgotado') return sizeItem.stock === 0;
                         if (stockFilter === 'baixo') return sizeItem.stock > 0 && sizeItem.stock <= 3;
