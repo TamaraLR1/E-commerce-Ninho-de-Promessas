@@ -247,7 +247,6 @@
   }
 }
 
-/* Esconde o botão de categorias abaixo da pesquisa em telas pequenas */
 .desktopCategoryWrapper {
   display: flex;
   flex-direction: column;
@@ -267,7 +266,6 @@
   }
 }
 
-/* Botão Comprar */
 .buyButton {
   background-color: #D7B796; 
   color: #ffffff;            
@@ -300,16 +298,17 @@
 
 .sizeList {
   display: flex;
-  gap: 0.3rem;
+  gap: 0.4rem;
   flex-wrap: wrap;
 }
 
+/* Tamanhos maiores e mais confortáveis (Card e Geral) */
 .sizeBadge {
   background-color: #f1f3f5;
   border: 1px solid #ced4da;
-  padding: 0.3rem 0.6rem;
-  font-size: 0.75rem;
-  border-radius: 4px;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.85rem;
+  border-radius: 6px;
   color: #333;
   font-weight: 600;
   cursor: pointer;
@@ -320,11 +319,14 @@
   background-color: #e2e6ea;
 }
 
+/* Tamanho Selecionado (#D7B796) */
 .selectedSizeBadge {
-  background-color: #007bff !important;
-  color: white !important;
-  border-color: #007bff !important;
+  background-color: #D7B796 !important;
+  color: #ffffff !important;
+  border-color: #D7B796 !important;
   font-weight: bold;
+  padding: 0.45rem 0.8rem !important;
+  font-size: 0.85rem !important;
 }
 
 .toastContainer {
@@ -366,12 +368,59 @@
 /* Banner da Loja */
 .bannerContainer {
   width: 100%;
-  height: 300px; 
+  height: 280px;
   background-color: #F4F4F2;
   display: flex;
   justify-content: center;
   align-items: center;
   overflow: hidden;
+  position: relative;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.bannerLogo {
+  max-height: 220px;
+  width: auto;
+  object-fit: contain;
+}
+
+@media (max-width: 768px) {
+  .bannerContainer {
+    min-height: 80px;
+    height: auto;
+    padding: 0.4rem 0;
+  }
+  
+  .bannerLogo {
+    max-height: 95px;
+  }
+  
+  .desktopCartButton {
+    display: flex !important;
+  }
+}
+
+.desktopTopButton {
+  padding: 0.5rem 1rem !important;
+  font-size: 0.95rem !important;
+}
+
+.desktopCartTopButton {
+  padding: 0.5rem 1rem !important;
+  font-size: 0.95rem !important;
+  border-radius: 20px !important;
+}
+
+@media (max-width: 768px) {
+  .desktopTopButton {
+    padding: 0.3rem 0.6rem !important;
+    font-size: 0.85rem !important;
+  }
+  
+  .desktopCartTopButton {
+    padding: 0.3rem 0.6rem !important;
+    font-size: 0.8rem !important;
+  }
 }
 
 .bannerImagem {
@@ -408,7 +457,7 @@
   z-index: 2;
 }
 
-/* --- Estilos do Modal Estilo Admin para o Home --- */
+/* Modal Estilo Admin para o Home */
 .modalContentBox {
   background: #ffffff;
   padding: 30px;
@@ -483,7 +532,7 @@
 }
 
 .modalThumbActive {
-  border: 2px solid #2563eb;
+  border: 2px solid #D7B796;
   opacity: 1;
 }
 
@@ -494,8 +543,8 @@
 
 .modalCategoryBadge {
   display: inline-block;
-  background: #e0f2fe;
-  color: #0369a1;
+  background: #faf4ef;
+  color: #D7B796;
   padding: 4px 10px;
   border-radius: 6px;
   font-size: 0.75rem;
@@ -567,24 +616,25 @@
 .modalColorsList {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
 }
 
+/* Botões de cores maiores no Modal de Detalhes */
 .modalColorButton {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 0.85rem;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.95rem;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .modalColorButtonSelected {
-  border: 2px solid #2563eb;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border: 2px solid #D7B796;
+  background: #D7B796;
+  color: #ffffff;
   font-weight: 600;
 }
 
@@ -595,29 +645,30 @@
 }
 
 .modalColorDot {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   border: 1px solid rgba(0,0,0,0.1);
 }
 
 .modalSizesGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(95px, 1fr));
+  gap: 10px;
 }
 
+/* Bolinhas de cores maiores nos Cards da Vitrine (Aumentadas para 24px) */
 .cardColorsRow {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin: 10px 0;
   flex-wrap: wrap;
 }
 
 .cardColorButton {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   cursor: pointer;
   padding: 0;
@@ -628,47 +679,68 @@
   transform: scale(1.1);
 }
 
-.cardColorsRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 10px 0;
-  flex-wrap: wrap;
+.cardColorButtonSelected {
+  border: 2px solid #D7B796 !important;
+  transform: scale(1.15);
+  box-shadow: 0 0 0 2px rgba(215, 183, 150, 0.3);
 }
 
-.cardColorButton {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
+.cardColorButtonUnselected {
+  border: 1px solid #cbd5e1;
+  transform: scale(1);
+  box-shadow: none;
+}
+
+/* Tamanhos maiores no Modal de Detalhes */
+.modalSizeButtonSelected {
+  opacity: 1;
   cursor: pointer;
-  padding: 0;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border: 2px solid #D7B796;
+  background: #D7B796;
+  color: #ffffff;
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+.modalSizeButtonUnselected {
+  opacity: 1;
+  cursor: pointer;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #333333;
+  font-size: 0.9rem;
+}
+
+/* --- MENU HAMBÚRGUER FLUTUANTE SOBRE O BANNER --- */
+.hamburgerContainerWrapper {
+  position: absolute;
+  top: 50%;
+  left: 20px;
+  transform: translateY(-50%);
+  z-index: 20;
+}
+
+.hamburgerMenuBtn {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #cbd5e1;
+  color: #333;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   transition: all 0.2s ease;
 }
 
-.cardColorButton:hover {
-  transform: scale(1.1);
-}
-
-@media (max-width: 450px) {
-  .bottomNav {
-    display: flex !important;
-    height: 80px;
-  }
-
-  .navBtn {
-    font-size: 1.1rem;
-    gap: 8px;
-  }
-
-  .navBtn span, .navBtn::before {
-    font-size: 1.8rem !important;
-  }
-  
-  .container {
-    padding-bottom: 80px;
-  }
-
-  .desktopCartButton {
-    display: none !important;
-  }
+.hamburgerMenuBtn:hover {
+  background: #ffffff;
+  transform: translateY(-50%) scale(1.05);
 }

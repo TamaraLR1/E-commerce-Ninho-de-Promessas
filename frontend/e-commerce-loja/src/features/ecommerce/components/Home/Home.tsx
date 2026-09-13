@@ -7,13 +7,11 @@ import { CheckoutModal } from '../CheckoutModal/CheckoutModal';
 
 axios.defaults.withCredentials = true;
 
-// Definição dinâmica da URL da API (Local vs Produção)
 const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const API_URL = isLocal 
   ? 'http://localhost:3333' 
   : 'https://ninhoback.tamaralr.com.br';
 
-// Função auxiliar inteligente para tratar links com localhost gravados no banco
 const getImageUrl = (url?: string) => {
   if (!url) return '';
   
@@ -50,6 +48,7 @@ interface Product {
   imagens: {
     id: string;
     url: string;
+    ordem?: number;
     corId?: string;
     cor?: {
       id: string;
@@ -101,7 +100,6 @@ export const Home: React.FC = () => {
   const [selectedSizes, setSelectedSizes] = useState<{ [productId: string]: string }>({});
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   
-  // Estados para o Modal estilo Admin e Carrossel do Card
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const [selectedColorForDetails, setSelectedColorForDetails] = useState<string | null>(null);
   const [cardImageIndexes, setCardImageIndexes] = useState<{ [productId: string]: number }>({});
@@ -252,27 +250,46 @@ export const Home: React.FC = () => {
   return (
     <div className={styles.container}>
       {/* Banner da Loja */}
-      <div className={styles.bannerContainer} style={{ position: 'relative' }}>
-        <img 
-          src="/banner.png" 
-          alt="Banner Promocional" 
-          className={styles.bannerImagem} 
-        />
-
-        {/* Botões flutuantes no canto direito */}
-        <div style={{ position: 'absolute', top: '20px', right: '25px', display: 'flex', alignItems: 'center', gap: '10px', zIndex: 10 }}>
+      <div className={styles.bannerContainer}>
+        <div style={{ position: 'absolute', top: '50%', left: '20px', transform: 'translateY(-50%)', zIndex: 10 }}>
           <button 
             type="button"
-            className={styles.desktopCartButton}
+            className={`${styles.desktopCartButton} ${styles.desktopTopButton}`}
             style={{ 
-              background: 'rgba(255, 255, 255, 0.9)', 
-              color: '#0066cc', 
+              background: 'rgba(255, 255, 255, 0.95)', 
               border: '1px solid #cbd5e1', 
-              padding: '0.4rem 0.8rem', 
-              borderRadius: '20px', 
+              color: '#C29E7A', 
+              borderRadius: '6px', 
               fontWeight: 600, 
               cursor: 'pointer', 
-              fontSize: '0.9rem',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+            onClick={() => setIsCategoryDrawerOpen(true)}
+            title="Menu de Categorias"
+          >
+            ☰ <span style={{ fontWeight: 500 }}>Menu</span>
+          </button>
+        </div>
+
+        <img 
+          src="/banner.png" 
+          alt="Ninho de Promessas" 
+          className={styles.bannerLogo}
+        />
+
+        <div style={{ position: 'absolute', top: '50%', right: '20px', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: '10px', zIndex: 10 }}>
+          <button 
+            type="button"
+            className={`${styles.desktopCartButton} ${styles.desktopCartTopButton}`}
+            style={{ 
+              background: 'rgba(255, 255, 255, 0.95)', 
+              color: '#C29E7A', 
+              border: '1px solid #cbd5e1', 
+              fontWeight: 600, 
+              cursor: 'pointer', 
               boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
             }}
             onClick={() => setIsCartOpen(true)}
@@ -283,14 +300,13 @@ export const Home: React.FC = () => {
           {user ? (
             <button 
               type="button"
-              className={styles.desktopCartButton}
+              className={`${styles.desktopCartButton} ${styles.desktopTopButton}`}
               style={{ 
-                background: 'rgba(255, 255, 255, 0.9)', 
+                background: 'rgba(255, 255, 255, 0.95)', 
                 border: '1px solid #cbd5e1', 
                 cursor: 'pointer', 
                 fontWeight: 600, 
                 color: '#4a5568', 
-                padding: '0.4rem 1rem', 
                 borderRadius: '6px',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
               }}
@@ -303,57 +319,54 @@ export const Home: React.FC = () => {
               type="button"
               className={styles.desktopCartButton}
               style={{ 
-                backgroundColor: '#D7B796', 
-                color: 'white', 
-                border: 'none', 
-                padding: '0.4rem 1rem', 
-                borderRadius: '6px', 
-                fontWeight: 600, 
+                backgroundColor: '#d6bfa8', 
+                border: '1px solid #cbd5e1', 
+                width: '38px',
+                height: '38px',
+                borderRadius: '50%', 
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 cursor: 'pointer', 
-                fontSize: '0.9rem',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
               }}
               onClick={() => navigate('/login')}
+              title="Entrar na sua conta"
             >
-              Entrar
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#171718" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
             </button>
           )}
         </div>
       </div>
 
-      {/* Área de Pesquisa e Botão de Categorias */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', padding: '1.2rem 5%', backgroundColor: '#fcfcfc', borderBottom: '1px solid #e2e8f0' }}>
+      {/* Área de Pesquisa */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem', padding: '1.2rem 5%', backgroundColor: '#fcfcfc', borderBottom: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#ffffff', border: '1px solid #ced4da', borderRadius: '20px', padding: '0.5rem 1.2rem', width: '100%', maxWidth: '450px', boxShadow: '0 2px 6px rgba(0,0,0,0.03)' }}>
           <span style={{ marginRight: '8px', color: '#D7B796' }}>🔍</span>
           <input
             type="text"
-            placeholder="O que você está procurando para o seu bebê?"
+            placeholder="O que você está procurando ?"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: '0.95rem', color: '#333' }}
           />
         </div>
 
-        <div className={styles.desktopCategoryWrapper}>
-          <button 
-            type="button"
-            onClick={() => setIsCategoryDrawerOpen(true)}
-            style={{ 
-              backgroundColor: '#D7B796', 
-              color: 'white', 
-              border: 'none', 
-              padding: '0.5rem 1.2rem', 
-              borderRadius: '6px', 
-              fontWeight: 600, 
-              cursor: 'pointer', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '8px' 
-            }}
-          >
-            📂 Categorias: {selectedCategory} ▼
-          </button>
-        </div>
+        {selectedCategory !== 'Todos' && (
+          <div style={{ fontSize: '0.9rem', color: '#666', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span>Categoria selecionada: <strong style={{ color: '#D7B796' }}>{selectedCategory}</strong></span>
+            <button 
+              type="button" 
+              onClick={() => setSelectedCategory('Todos')}
+              style={{ background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', fontSize: '0.85rem', textDecoration: 'underline' }}
+            >
+              (Ver todos)
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Vitrine de Produtos */}
@@ -366,7 +379,6 @@ export const Home: React.FC = () => {
             </p>
           ) : (
             filteredProducts.map(product => {
-              // Mapeia as cores únicas disponíveis para este produto
               const coresCardMap = new Map();
               product.estoques?.forEach((item: any) => {
                 if (item.cor) {
@@ -376,13 +388,15 @@ export const Home: React.FC = () => {
               const coresCardList = Array.from(coresCardMap.values()) as any[];
               const currentCardColor = selectedSizes[`color-${product.id}`] || coresCardList[0]?.id;
 
-              // Filtra as imagens estritamente pertencentes à cor selecionada no card
               const imagensDaCorSelecionada = product.imagens?.filter((img: any) => {
                 const imgCorId = img.corId || img.cor?.id;
                 return !currentCardColor || imgCorId === currentCardColor;
               }) || [];
 
-              const listaImagensCard = imagensDaCorSelecionada.length > 0 ? imagensDaCorSelecionada : product.imagens;
+              const listaImagensOrdenadas = [...imagensDaCorSelecionada].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
+              const listaImagensCard = listaImagensOrdenadas.length > 0 
+                ? listaImagensOrdenadas 
+                : [...(product.imagens || [])].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
               
               const cardImgIndex = cardImageIndexes[product.id] || 0;
               const imagemAtualCardUrl = listaImagensCard[cardImgIndex]?.url || listaImagensCard[0]?.url || '';
@@ -417,7 +431,6 @@ export const Home: React.FC = () => {
                       }}
                     />
 
-                    {/* Botões do Carrossel no Card */}
                     {listaImagensCard.length > 1 && (
                       <>
                         <button
@@ -513,12 +526,9 @@ export const Home: React.FC = () => {
                                     [product.id]: 0
                                   }));
                                 }}
-                                className={styles.cardColorButton}
+                                className={`${styles.cardColorButton} ${isSelected ? styles.cardColorButtonSelected : styles.cardColorButtonUnselected}`}
                                 style={{
-                                  backgroundColor: c.hex || '#000',
-                                  border: isSelected ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                                  transform: isSelected ? 'scale(1.15)' : 'scale(1)',
-                                  boxShadow: isSelected ? '0 0 0 2px rgba(37, 99, 235, 0.2)' : 'none'
+                                  backgroundColor: c.hex || '#000'
                                 }}
                               />
                             );
@@ -685,7 +695,11 @@ export const Home: React.FC = () => {
                     return !selectedColorForDetails || imgCorId === selectedColorForDetails;
                   }) || [];
 
-                  const listaImagensModal = imagensModalDaCor.length > 0 ? imagensModalDaCor : selectedProduct.imagens;
+                  const listaImagensOrdenadasModal = [...imagensModalDaCor].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
+                  const listaImagensModal = listaImagensOrdenadasModal.length > 0 
+                    ? listaImagensOrdenadasModal 
+                    : [...(selectedProduct.imagens || [])].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
+
                   const imagemAtualModalUrl = listaImagensModal[activeImageIndex]?.url || listaImagensModal[0]?.url || '';
 
                   return (
@@ -833,15 +847,8 @@ export const Home: React.FC = () => {
                             key={idx}
                             type="button"
                             disabled={estoqueDisp === 0}
-                            className={`${styles.sizeBadge} ${isSelected ? styles.selectedSizeBadge : ''}`}
-                            style={{
-                              opacity: estoqueDisp === 0 ? 0.4 : 1,
-                              cursor: estoqueDisp === 0 ? 'not-allowed' : 'pointer',
-                              padding: '8px 12px',
-                              borderRadius: '6px',
-                              border: isSelected ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                              background: isSelected ? '#eff6ff' : '#fff'
-                            }}
+                            className={isSelected ? styles.modalSizeButtonSelected : styles.modalSizeButtonUnselected}
+                            style={{ opacity: estoqueDisp === 0 ? 0.4 : 1, cursor: estoqueDisp === 0 ? 'not-allowed' : 'pointer' }}
                             onClick={() => {
                               setSelectedSizes(prev => ({
                                 ...prev,
@@ -996,32 +1003,6 @@ export const Home: React.FC = () => {
         />
       )}
 
-      {/* Menu Fixo Inferior */}
-      <nav className={styles.bottomNav}>
-        <button type="button" className={styles.navBtn} onClick={() => setIsCategoryDrawerOpen(true)}>
-          📂 Categorias
-        </button>
-        <button type="button" className={styles.navBtn} onClick={() => alert('Ofertas!')}>
-          🔥 Ofertas
-        </button>
-        <button type="button" className={styles.navBtn} onClick={() => setIsCartOpen(true)}>
-          🛒 ({totalItems})
-        </button>
-        <button 
-          type="button" 
-          className={styles.navBtn} 
-          onClick={() => {
-            if (!user) {
-              navigate('/login');
-            } else {
-              navigate('/perfil');
-            }
-          }}
-        >
-          {user ? `👤 ${user.nome.split(' ')[0]}` : '🔑 Entrar'}
-        </button>
-      </nav>
-      
       {/* Mensagem Flutuante (Toast) */}
       {toastMessage && (
         <div className={styles.toastContainer}>
