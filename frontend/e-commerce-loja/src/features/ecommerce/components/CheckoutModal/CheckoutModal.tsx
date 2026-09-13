@@ -1,54 +1,59 @@
 import React, { useState } from 'react';
 import styles from './Checkout.module.css'; 
 
-export const CheckoutModal: React.FC<{ onClose: () => void, total: number }> = ({ onClose, total }) => {
-  const [step, setStep] = useState(1);
-  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'card' | null>(null);
+interface CheckoutModalProps {
+  onClose: () => void;
+  total: number;
+}
+
+export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) => {
+  const [step, setStep] = useState<number>(1);
+  const [paymentMethod, setPaymentMethod] = useState<string>('pix');
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.cartModal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.cartHeader}>
+      <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.modalHeader}>
           <h2>Finalizar Compra - Etapa {step} de 3</h2>
-          <button className={styles.closeButton} onClick={onClose}>×</button>
+          <button type="button" className={styles.closeButton} onClick={onClose}>×</button>
         </div>
 
-        {step === 1 && (
-          <div className={styles.cartList}>
-            <h3>Endereço de Entrega</h3>
-            <input type="text" placeholder="Rua" className={styles.inputField} />
-            <input type="text" placeholder="Número" className={styles.inputField} />
-            <input type="text" placeholder="CEP" className={styles.inputField} />
-            <input type="text" placeholder="Bairro" className={styles.inputField} />
-            <input type="text" placeholder="Cidade" className={styles.inputField} />
-            <button className={styles.actionButton} onClick={() => setStep(2)}>Continuar</button>
-          </div>
-        )}
+        <div className={styles.modalBody}>
+          <p className={styles.totalInfo}>Total a pagar: <strong>R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></p>
 
-        {step === 2 && (
-          <div className={styles.cartList}>
-            <h3>Informações de Entrega</h3>
-            <p>Data prevista para entrega: <strong>{new Date(Date.now() + 86400000 * 3).toLocaleDateString()}</strong></p>
-            <button className={styles.actionButton} onClick={() => setStep(3)}>Avançar para Pagamento</button>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className={styles.cartList}>
-            <h3>Escolha o Pagamento</h3>
-            <div className={styles.paymentOptions}>
-              <button onClick={() => setPaymentMethod('pix')}>PIX</button>
-              <button onClick={() => setPaymentMethod('card')}>Cartão</button>
+          {step === 1 && (
+            <div>
+              <h3>Endereço de Entrega</h3>
+              <p>Confirme seus dados para envio.</p>
+              <button type="button" className={styles.actionButton} onClick={() => setStep(2)}>Continuar</button>
             </div>
-            
-            {paymentMethod === 'pix' && <p>Chave Pix: <strong>123.456.789-00</strong></p>}
-            {paymentMethod === 'card' && <input type="text" placeholder="Número do Cartão" className={styles.inputField} />}
-            
-            <button className={styles.actionButton} style={{marginTop: '1rem'}} onClick={() => alert('Pedido realizado!')}>
-              Confirmar Pagamento
-            </button>
-          </div>
-        )}
+          )}
+
+          {step === 2 && (
+            <div>
+              <h3>Método de Envio</h3>
+              <p>Frete padrão calculado para sua região.</p>
+              <button type="button" className={styles.actionButton} onClick={() => setStep(3)}>Avançar para Pagamento</button>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div>
+              <h3>Escolha a forma de pagamento</h3>
+              <div style={{ display: 'flex', gap: '10px', margin: '15px 0' }}>
+                <button type="button" onClick={() => setPaymentMethod('pix')} style={{ padding: '8px 16px', background: paymentMethod === 'pix' ? '#D7B796' : '#eee', color: paymentMethod === 'pix' ? '#fff' : '#333', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>PIX</button>
+                <button type="button" onClick={() => setPaymentMethod('card')} style={{ padding: '8px 16px', background: paymentMethod === 'card' ? '#D7B796' : '#eee', color: paymentMethod === 'card' ? '#fff' : '#333', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cartão</button>
+              </div>
+
+              {paymentMethod === 'pix' && <p>Chave Pix: <strong>123.456.789-00</strong></p>}
+              {paymentMethod === 'card' && <input type="text" placeholder="Número do Cartão" className={styles.inputField} />}
+
+              <button type="button" className={styles.actionButton} style={{ marginTop: '15px', backgroundColor: '#28a745' }} onClick={() => { alert('Pedido realizado com sucesso!'); onClose(); }}>
+                Finalizar Pedido
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

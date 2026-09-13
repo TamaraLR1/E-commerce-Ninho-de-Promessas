@@ -71,7 +71,7 @@ model Cor {
   ativo Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt 
-
+  imagens   ProdutoImagem[]
   estoques  ProdutoEstoque[] // Relação com o estoque
 
   @@map("cores")
@@ -131,9 +131,9 @@ model ProdutoImagem {
   id        String   @id @default(uuid())
   url       String
   produtoId String
-
+  corId     String
   produto   Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
-
+  cor       Cor      @relation(fields: [corId], references: [id], onDelete: Cascade)
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 

@@ -34,9 +34,9 @@ const upload = multer({
     limits: { fileSize: 5 * 1024 * 1024 } 
 });
 
-// NOVA FUNÇÃO EXPORTADA: Encapsula a responsabilidade do tratamento de erro
-export const parseUpload = (fieldName: string, maxFiles: number) => {
-    const uploadAction = upload.array(fieldName, maxFiles);
+// NOVA VERSÃO: Usa upload.any() para aceitar os campos dinâmicos por cor (`imagens_${corId}`)
+export const parseUpload = () => {
+    const uploadAction = upload.any();
 
     return (req: Request, res: Response, next: NextFunction) => {
         uploadAction(req, res, (err: any) => {

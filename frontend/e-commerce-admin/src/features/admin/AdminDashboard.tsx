@@ -8,6 +8,7 @@ interface ProductMaster {
   category: string;
   description: string;
   images: string[];
+  rawImages?: any[];
   originalPrice: number;
   isVisible: boolean;
   hasOffer: boolean;
@@ -150,8 +151,8 @@ export const AdminDashboard: React.FC = () => {
   const [newDesc, setNewDesc] = useState('');
   const [newPrice, setNewPrice] = useState('');
   
-  const [tempImages, setTempImages] = useState<string[]>([]);
-  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  // Estado estruturado por Cor ID para gerenciar até 6 imagens por cor
+  const [colorImages, setColorImages] = useState<{ [corId: string]: { files: File[]; previews: string[]; mantidas?: string[] } }>({});
   
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [colorSizeConfigs, setColorSizeConfigs] = useState<ColorSizeConfig[]>([]);
@@ -364,6 +365,7 @@ export const AdminDashboard: React.FC = () => {
             category: p.categoria?.nome || 'Geral',
             description: p.descricao || '',
             images: p.imagens && p.imagens.length > 0 ? p.imagens.map((img: any) => img.url) : ['https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?q=80&w=200'],
+            rawImages: p.imagens || [],
             originalPrice: Number(p.preco),
             isVisible: p.isVisible !== undefined ? Boolean(p.isVisible) : true,
             hasOffer: Boolean(p.temOferta),
@@ -803,28 +805,65 @@ export const AdminDashboard: React.FC = () => {
     return prod.rawSizes.reduce((total, item) => total + (item.estoque ?? 0), 0);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Funções atualizadas de manipulação de imagens por cor (máximo de 6 fotos por cor)
+  const handleColorFileChange = (corId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const filesArray = Array.from(e.target.files);
     
-    if (imageFiles.length + filesArray.length > 10) {
-      alert('Máximo de 10 imagens por produto!');
+    const currentCorData = colorImages[corId] || { files: [], previews: [], mantidas: [] };
+    const totalAtual = currentCorData.files.length + (currentCorData.mantidas?.length || 0);
+
+    if (totalAtual + filesArray.length > 6) {
+      alert('Cada cor pode ter no máximo 6 imagens!');
       return;
     }
 
-    setImageFiles(prev => [...prev, ...filesArray]);
-    const newImageUrls = filesArray.map(file => URL.createObjectURL(file));
-    setTempImages(prev => [...prev, ...newImageUrls]);
+    const newPreviews = filesArray.map(file => URL.createObjectURL(file));
+
+    setColorImages(prev => ({
+      ...prev,
+      [corId]: {
+        ...currentCorData,
+        files: [...currentCorData.files, ...filesArray],
+        previews: [...currentCorData.previews, ...newPreviews]
+      }
+    }));
   };
 
-  const removeImage = (index: number) => {
-    setTempImages(tempImages.filter((_, i) => i !== index));
-    setImageFiles(imageFiles.filter((_, i) => i !== index));
+  const removeColorImage = (corId: string, index: number, isMantida: boolean = false) => {
+    setColorImages(prev => {
+      const corData = prev[corId];
+      if (!corData) return prev;
+
+      if (isMantida) {
+        const newMantidas = (corData.mantidas || []).filter((_, i) => i !== index);
+        const newPreviews = corData.previews.filter((_, i) => i !== index);
+        return {
+          ...prev,
+          [corId]: { ...corData, previews: newPreviews, mantidas: newMantidas }
+        };
+      } else {
+        const mantidasCount = corData.mantidas?.length || 0;
+        const offsetIndex = index - mantidasCount;
+        const newFiles = corData.files.filter((_, i) => i !== offsetIndex);
+        const newPreviews = corData.previews.filter((_, i) => i !== index);
+
+        return {
+          ...prev,
+          [corId]: { ...corData, files: newFiles, previews: newPreviews }
+        };
+      }
+    });
   };
 
   const handleColorToggle = (corId: string) => {
     if (selectedColors.includes(corId)) {
       setSelectedColors(selectedColors.filter(c => c !== corId));
+      setColorImages(prev => {
+        const copia = { ...prev };
+        delete copia[corId];
+        return copia;
+      });
     } else {
       setSelectedColors([...selectedColors, corId]);
     }
@@ -893,6 +932,11 @@ export const AdminDashboard: React.FC = () => {
   const handleExcluirCorConfig = (corId: string) => {
     setSelectedColors(selectedColors.filter(cId => cId !== corId));
     setColorSizeConfigs(colorSizeConfigs.filter(cfg => cfg.corId !== corId));
+    setColorImages(prev => {
+      const copia = { ...prev };
+      delete copia[corId];
+      return copia;
+    });
   };
 
   const handleStartEdit = (prod: ProductMaster) => {
@@ -913,6 +957,20 @@ export const AdminDashboard: React.FC = () => {
       : (prod.colors || []).map((c: any) => c.id).filter((id): id is string => Boolean(id));
     const uniqueColors = Array.from(new Set(coresIds));
     setSelectedColors(uniqueColors);
+
+    // Mapear imagens por cor para edição de forma isolada
+    const initialColorImagesMap: { [corId: string]: { files: File[]; previews: string[]; mantidas: string[] } } = {};
+    uniqueColors.forEach(cId => {
+      // Filtra apenas as imagens que pertencem estritamente a este corId (sem misturar com as outras cores)
+      const imgsDaCor = (prod as any).rawImages?.filter((img: any) => img.corId === cId || img.cor?.id === cId)?.map((img: any) => img.url) || [];
+      
+      initialColorImagesMap[cId] = {
+        files: [],
+        previews: [...imgsDaCor],
+        mantidas: [...imgsDaCor]
+      };
+    });
+    setColorImages(initialColorImagesMap);
 
     if (rawSizesAtivos.length > 0) {
       const mapaConfig = new Map<string, string[]>();
@@ -941,8 +999,6 @@ export const AdminDashboard: React.FC = () => {
       setColorSizeConfigs([]);
     }
 
-    setTempImages(prod.images);
-    setImageFiles([]);
     setActiveTab('cadastro');
   };
 
@@ -950,8 +1006,7 @@ export const AdminDashboard: React.FC = () => {
     setEditingProductId(null);
     setSelectedColors([]);
     setColorSizeConfigs([]);
-    setTempImages([]);
-    setImageFiles([]);
+    setColorImages({});
     setActiveTab('lista'); 
   };
 
@@ -973,26 +1028,27 @@ export const AdminDashboard: React.FC = () => {
       return;
     }
 
-    const imagensAntigasMantidas = tempImages.filter(img => img.startsWith('http') || img.startsWith('/uploads/'));
-    const totalImagensFinais = imagensAntigasMantidas.length + imageFiles.length;
-    
-    if (totalImagensFinais === 0) {
-      alert('É necessário pelo menos 1 imagem para o produto.');
-      return;
-    }
+    // Validar se cada cor possui pelo menos 1 imagem (máximo 6)
+    for (const cId of selectedColors) {
+      const corData = colorImages[cId];
+      const qtdTotalCor = (corData?.files?.length || 0) + (corData?.mantidas?.length || 0);
 
-    if (totalImagensFinais > 10) {
-      alert('Um produto pode ter no máximo 10 imagens.');
-      return;
+      if (qtdTotalCor === 0) {
+        const corObj = coresList.find(c => c.id === cId);
+        alert(`A cor "${corObj?.nome || 'Selecionada'}" precisa ter pelo menos 1 imagem.`);
+        return;
+      }
+      if (qtdTotalCor > 6) {
+        const corObj = coresList.find(c => c.id === cId);
+        alert(`A cor "${corObj?.nome || 'Selecionada'}" excede o limite de 6 imagens.`);
+        return;
+      }
     }
 
     const arrayPlanoTamanhos: { tamanhoId: string; corId?: string; estoque: number }[] = [];
-    const setCoresGeraisGeral = new Set<string>();
-
     const produtoAntigo = editingProductId ? products.find(p => p.id === editingProductId) : null;
 
     colorSizeConfigs.forEach(config => {
-      setCoresGeraisGeral.add(config.corId);
       const tamanhosIds = config.tamanhosIds || [];
       const estoquesMap = config.estoques || {};
       
@@ -1005,7 +1061,6 @@ export const AdminDashboard: React.FC = () => {
           const itemExistente = produtoAntigo.rawSizes?.find(
             s => s.corId === config.corId && (!s.tamanhoId || s.tamanhoId === '')
           );
-          
           if (itemExistente) {
             qtdEstoque = itemExistente.estoque ?? 0;
           }
@@ -1026,7 +1081,6 @@ export const AdminDashboard: React.FC = () => {
             const itemExistente = produtoAntigo.rawSizes?.find(
               s => s.corId === config.corId && s.tamanhoId === tamanhoId
             );
-            
             if (itemExistente) {
               qtdEstoque = itemExistente.estoque ?? 0;
             }
@@ -1048,21 +1102,16 @@ export const AdminDashboard: React.FC = () => {
       formData.append('descricao', newDesc);
       formData.append('categoryId', newCategoryId);
       
-      if (editingProductId) {
-        formData.append('imagensMantidas', JSON.stringify(imagensAntigasMantidas));
-      }
-      
       formData.append('tamanhos', JSON.stringify(arrayPlanoTamanhos));
 
-      formData.append('cores', JSON.stringify(
-        Array.from(setCoresGeraisGeral).map(cId => ({
-          corId: cId
-        }))
-      ));
-
-      imageFiles.forEach(file => {
-        formData.append('imagens', file);
+      const mapeamentoImagensMantidas: { [corId: string]: string[] } = {};
+      selectedColors.forEach(cId => {
+        mapeamentoImagensMantidas[cId] = colorImages[cId]?.mantidas || [];
+        colorImages[cId]?.files?.forEach(file => {
+          formData.append(`imagens_${cId}`, file);
+        });
       });
+      formData.append('coresMapeamentoImagens', JSON.stringify(mapeamentoImagensMantidas));
 
       const url = editingProductId ? `${API_URL}/produtos/${editingProductId}` : `${API_URL}/produtos`;
       const method = editingProductId ? 'PUT' : 'POST';
@@ -1246,8 +1295,7 @@ export const AdminDashboard: React.FC = () => {
                 setEditingProductId(null);
                 setSelectedColors([]);
                 setColorSizeConfigs([]);
-                setTempImages([]);
-                setImageFiles([]);
+                setColorImages({});
                 setNewName('');
                 setNewDesc('');
                 setNewPrice('');
@@ -1321,7 +1369,6 @@ export const AdminDashboard: React.FC = () => {
 
                   <div className={styles.listSectionWrapper} style={{ marginTop: '30px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                     
-                    {/* Gráfico 1: Fluxo de Movimentações (Linha) */}
                     <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', gridColumn: '1 / -1' }}>
                       <h4 className={styles.listSubheading}>📈 Evolução Diária de Entradas vs Saídas</h4>
                       <div style={{ width: '100%', height: 280 }}>
@@ -1338,7 +1385,6 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Gráfico Novo: Volume Total por Mês (Barras) */}
                     <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', gridColumn: '1 / -1' }}>
                       <h4 className={styles.listSubheading}>📅 Volume Total por Mês (Entradas vs Saídas)</h4>
                       <div style={{ width: '100%', height: 280 }}>
@@ -1355,7 +1401,6 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Gráfico 2: Distribuição por Categoria (Pizza) */}
                     <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
                       <h4 className={styles.listSubheading}>🥧 Estoque por Categoria</h4>
                       <div style={{ width: '100%', height: 260 }}>
@@ -1372,7 +1417,6 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Gráfico 3: Produtos Mais Críticos / Menor Estoque (Barras) */}
                     <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
                       <h4 className={styles.listSubheading}>⚠️ Top Produtos com Menor Estoque</h4>
                       <div style={{ width: '100%', height: 260 }}>
@@ -1387,7 +1431,6 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Gráfico 4: Saídas por Motivo (Barras Verticais) */}
                     <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', gridColumn: '1 / -1' }}>
                       <h4 className={styles.listSubheading}>📤 Volume de Saídas por Motivo (Mês Atual)</h4>
                       <div style={{ width: '100%', height: 260 }}>
@@ -1559,7 +1602,7 @@ export const AdminDashboard: React.FC = () => {
                   </button>
                 )}
               </div>
-              <p className={styles.infoText}>* Preencha os campos abaixo para salvar o produto diretamente no banco de dados.</p>
+              <p className={styles.infoText}>* Preencha os campos abaixo. Cada cor selecionada deve possuir de 1 a 6 fotos específicas.</p>
               
               <form onSubmit={handleCreateOrUpdateProduct} className={styles.form}>
                 <div className={styles.gridContainerPrice}>
@@ -1610,16 +1653,18 @@ export const AdminDashboard: React.FC = () => {
                 {selectedColors.length > 0 && (
                   <div className={styles.colorStockConfigCard}>
                     <label className={styles.colorStockTitle}>
-                      2. Marcar Tamanhos por Cor/Estampa
+                      2. Configuração de Tamanhos e Imagens por Cor
                     </label>
                     <p className={styles.colorStockSubtitle}>
-                      Para cada cor escolhida acima, selecione os tamanhos disponíveis.
+                      Insira de 1 a 6 fotos para cada cor selecionada e marque os tamanhos correspondentes.
                     </p>
                     
                     <div className={styles.colorStockList}>
                       {selectedColors.map(cId => {
                         const corObj = coresList.find(c => c.id === cId);
                         const configCurrent = colorSizeConfigs.find(c => c.corId === cId) || { corId: cId, tamanhosIds: [], estoques: {} };
+                        const corData = colorImages[cId] || { files: [], previews: [], mantidas: [] };
+                        const qtdFotosCor = corData.previews.length;
                         const nenhumTamanhoSelecionado = configCurrent.tamanhosIds.length === 0;
                         
                         return (
@@ -1664,6 +1709,40 @@ export const AdminDashboard: React.FC = () => {
                                   </button>
                                 )}
                               </div>
+                            </div>
+
+                            {/* Campo de Upload de Imagens específico desta Cor */}
+                            <div className={styles.group} style={{ margin: '12px 0' }}>
+                              <label className={styles.fileLabel}>
+                                📷 Fotos da Cor {corObj?.nome} ({qtdFotosCor}/6)
+                                <input 
+                                  type="file" 
+                                  multiple 
+                                  accept="image/*" 
+                                  onChange={(e) => handleColorFileChange(cId, e)} 
+                                  className={styles.fileInput} 
+                                />
+                              </label>
+
+                              {corData.previews.length > 0 && (
+                                <div className={styles.imagesPreviewList}>
+                                  {corData.previews.map((imgUrl, idx) => {
+                                    const isMantida = corData.mantidas?.includes(imgUrl);
+                                    return (
+                                      <div key={idx} className={styles.previewThumbContainer}>
+                                        <img src={imgUrl} alt="" className={styles.imageThumb} />
+                                        <button 
+                                          type="button" 
+                                          onClick={() => removeColorImage(cId, idx, !!isMantida)} 
+                                          className={styles.btnRemoveThumb}
+                                        >
+                                          ×
+                                        </button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
 
                             {tamanhosList.filter(t => t.ativo !== false).length === 0 ? (
@@ -1727,23 +1806,6 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
                 )}
-
-                <div className={styles.group}>
-                  <label className={styles.fileLabel}>
-                    📂 Escolher Fotos Locais ({tempImages.length}/10)
-                    <input type="file" multiple accept="image/*" onChange={handleFileChange} className={styles.fileInput} />
-                  </label>
-                  {tempImages.length > 0 && (
-                    <div className={styles.imagesPreviewList}>
-                      {tempImages.map((img, index) => (
-                        <div key={index} className={styles.previewThumbContainer}>
-                          <img src={img} alt="" className={styles.imageThumb} />
-                          <button type="button" onClick={() => removeImage(index)} className={styles.btnRemoveThumb}>×</button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
 
                 <div className={styles.group}>
                   <label>Descrição</label>
@@ -2469,27 +2531,41 @@ export const AdminDashboard: React.FC = () => {
 
                   <div className={styles.modalGridContainer}>
                     <div>
-                      <img 
-                        src={selectedProductDetails.images[activeImageIndex] || selectedProductDetails.images[0]} 
-                        alt={selectedProductDetails.name} 
-                        className={styles.modalMainImage} 
-                      />
-                      {selectedProductDetails.images.length > 1 && (
-                        <div className={styles.modalThumbnailsList}>
-                          {selectedProductDetails.images.map((img, idx) => {
-                            const isSelectedThumb = activeImageIndex === idx;
-                            return (
-                              <img 
-                                key={idx} 
-                                src={img} 
-                                alt="" 
-                                onClick={() => setActiveImageIndex(idx)}
-                                className={`${styles.modalThumbItem} ${isSelectedThumb ? styles.modalThumbActive : styles.modalThumbInactive}`} 
-                              />
-                            );
-                          })}
-                        </div>
-                      )}
+                      {(() => {
+                        const imagensDaCor = selectedProductDetails.rawImages?.filter((img: any) => {
+                          const imgCorId = img.corId || img.cor?.id;
+                          return !selectedColorForDetails || imgCorId === selectedColorForDetails;
+                        }) || [];
+
+                        const listaImagensParaExibir = imagensDaCor.length > 0 ? imagensDaCor.map((img: any) => img.url) : selectedProductDetails.images;
+                        const imagemAtualUrl = listaImagensParaExibir[activeImageIndex] || listaImagensParaExibir[0] || selectedProductDetails.images[0];
+
+                        return (
+                          <div>
+                            <img 
+                              src={imagemAtualUrl} 
+                              alt={selectedProductDetails.name} 
+                              className={styles.modalMainImage} 
+                            />
+                            {listaImagensParaExibir.length > 1 && (
+                              <div className={styles.modalThumbnailsList}>
+                                {listaImagensParaExibir.map((imgUrl: string, idx: number) => {
+                                  const isSelectedThumb = activeImageIndex === idx;
+                                  return (
+                                    <img 
+                                      key={idx} 
+                                      src={imgUrl} 
+                                      alt="" 
+                                      onClick={() => setActiveImageIndex(idx)}
+                                      className={`${styles.modalThumbItem} ${isSelectedThumb ? styles.modalThumbActive : styles.modalThumbInactive}`} 
+                                    />
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     <div>
@@ -2509,18 +2585,16 @@ export const AdminDashboard: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Descrição com suporte a quebras de linha e formatação */}
                       <div 
                         className={styles.modalDescriptionText}
                         dangerouslySetInnerHTML={{ 
-                          __html: (selectedProductDetails?.description || selectedProductDetails?.description || 'Nenhuma descrição informada.')
+                          __html: (selectedProductDetails?.description || 'Nenhuma descrição informada.')
                             .split('\n')
                             .map(line => {
                               const trimmed = line.trim();
                               if (trimmed.startsWith('*')) {
                                 return `<li style="margin-top: 4px; margin-bottom: 4px;">${trimmed.substring(1).trim()}</li>`;
                               }
-                              // Se a linha estiver vazia, retorna um espaço menor ou vazio para não criar um buraco gigante
                               if (trimmed === '') {
                                 return '<div style="height: 8px;"></div>';
                               }
@@ -2547,7 +2621,10 @@ export const AdminDashboard: React.FC = () => {
                                 <button
                                   key={cId}
                                   type="button"
-                                  onClick={() => setSelectedColorForDetails(cId)}
+                                  onClick={() => {
+                                    setSelectedColorForDetails(cId);
+                                    setActiveImageIndex(0);
+                                  }}
                                   className={`${styles.modalColorButton} ${isSelected ? styles.modalColorButtonSelected : styles.modalColorButtonUnselected} ${isCorInativa ? styles.corInativada : ''}`}
                                   title={isCorInativa ? 'Cor Desativada' : c.nome}
                                 >

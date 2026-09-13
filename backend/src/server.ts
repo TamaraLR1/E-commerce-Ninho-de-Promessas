@@ -3,7 +3,6 @@ import express from 'express';
 import http from 'http';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import { authRoutes } from './routes/authRoutes';
 import adminRoutes from './routes/adminRoutes';
 import categoriaRoutes from './routes/categoriaRoutes';
@@ -16,8 +15,6 @@ import motivoRoutes from './routes/motivoRoutes';
 import path from 'path';
 import { initSocket, socketMiddleware } from './socket';
 
-dotenv.config();
-
 const app = express();
 const server = http.createServer(app);
 
@@ -29,14 +26,23 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'https://ninho.tamaralr.com.br',
+  'https://painelninho.tamaralr.com.br'
+];
+
 app.use(cors({
-  origin: ['http://localhost:5173','http://localhost:5174'], // A URL exata onde o seu frontend está rodando
-  credentials: true                // Permite o envio e recebimento de cookies HTTP-only
+  origin: allowedOrigins,
+  credentials: true
 }));
 
 app.use(socketMiddleware);
 
-app.use('/uploads', express.static(UPLOADS_PATH));
+// Garante que o CORS seja aplicado nas imagens estáticas da pasta uploads
+app.use('/uploads', cors({ origin: allowedOrigins, credentials: true }), express.static(UPLOADS_PATH));
+
 app.use('/api', authRoutes);
 app.use('/api', adminRoutes);
 app.use('/api', categoriaRoutes);

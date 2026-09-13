@@ -7,6 +7,28 @@ import { CheckoutModal } from '../CheckoutModal/CheckoutModal';
 
 axios.defaults.withCredentials = true;
 
+// Definição dinâmica da URL da API (Local vs Produção)
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const API_URL = isLocal 
+  ? 'http://localhost:3333' 
+  : 'https://ninhoback.tamaralr.com.br';
+
+// Função auxiliar inteligente para tratar links com localhost gravados no banco
+const getImageUrl = (url?: string) => {
+  if (!url) return '';
+  
+  if (url.includes('localhost:3333') || url.includes('127.0.0.1:3333')) {
+    const relativePath = url.replace(/https?:\/\/(localhost|127\.0\.0\.1):3333/, '');
+    return `${API_URL}${relativePath}`;
+  }
+
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  
+  return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+};
+
 interface Category {
   id: string;
   nome: string;
@@ -28,6 +50,11 @@ interface Product {
   imagens: {
     id: string;
     url: string;
+    corId?: string;
+    cor?: {
+      id: string;
+      nome: string;
+    };
   }[];
   estoques: {
     id: string;
@@ -61,119 +88,23 @@ interface User {
   email: string;
 }
 
-// Componente auxiliar para o Dropdown de Categorias com efeito hover em tempo real
-const CategoryDropdown: React.FC<{ 
-  categories: Category[], 
-  selectedCategory: string, 
-  onSelectCategory: (cat: string) => void 
-}> = ({ categories, selectedCategory, onSelectCategory }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [hoveredIndex, setHoveredIndex] = useState<string | null>(null);
-
-  return (
-    <div style={{ position: 'relative', display: 'inline-block' }}>
-      <button 
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        style={{ 
-          backgroundColor: '#7A9974', 
-          color: 'white', 
-          border: 'none', 
-          padding: '0.5rem 1.2rem', 
-          borderRadius: '6px', 
-          fontWeight: 600, 
-          cursor: 'pointer', 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '8px' 
-        }}
-      >
-        📂 Categorias: {selectedCategory} ▼
-      </button>
-
-      {isOpen && (
-        <div style={{ 
-          position: 'absolute', 
-          top: '100%', 
-          left: 0, 
-          backgroundColor: 'white', 
-          minWidth: '180px', 
-          boxShadow: '0px 8px 16px rgba(0,0,0,0.1)', 
-          borderRadius: '6px', 
-          zIndex: 1050, 
-          marginTop: '4px', 
-          border: '1px solid #e2e8f0', 
-          overflow: 'hidden' 
-        }}>
-          <button 
-            type="button"
-            onMouseEnter={() => setHoveredIndex('todos')}
-            onMouseLeave={() => setHoveredIndex(null)}
-            style={{ 
-              width: '100%', 
-              padding: '10px 16px', 
-              textAlign: 'left', 
-              background: hoveredIndex === 'todos' || selectedCategory === 'Todos' ? '#f0f4ef' : 'none', 
-              border: 'none', 
-              cursor: 'pointer', 
-              fontSize: '0.9rem', 
-              color: selectedCategory === 'Todos' || hoveredIndex === 'todos' ? '#7A9974' : '#333',
-              fontWeight: selectedCategory === 'Todos' ? 600 : 400,
-              transition: 'background 0.15s ease, color 0.15s ease'
-            }}
-            onClick={() => { onSelectCategory('Todos'); setIsOpen(false); }}
-          >
-            {selectedCategory === 'Todos' ? '✓ Todos' : 'Todos'}
-          </button>
-
-          {categories.map((cat) => {
-            const isSelected = selectedCategory === cat.nome;
-            const isHovered = hoveredIndex === cat.id;
-            return (
-              <button
-                key={cat.id}
-                type="button"
-                onMouseEnter={() => setHoveredIndex(cat.id)}
-                onMouseLeave={() => setHoveredIndex(null)}
-                style={{ 
-                  width: '100%', 
-                  padding: '10px 16px', 
-                  textAlign: 'left', 
-                  background: isHovered || isSelected ? '#f0f4ef' : 'none', 
-                  border: 'none', 
-                  cursor: 'pointer', 
-                  fontSize: '0.9rem', 
-                  color: isSelected || isHovered ? '#7A9974' : '#333',
-                  fontWeight: isSelected ? 600 : 400,
-                  transition: 'background 0.15s ease, color 0.15s ease'
-                }}
-                onClick={() => { onSelectCategory(cat.nome); setIsOpen(false); }}
-              >
-                {isSelected ? `✓ ${cat.nome}` : cat.nome}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-};
-
 export const Home: React.FC = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isCategoryDrawerOpen, setIsCategoryDrawerOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedSizes, setSelectedSizes] = useState<{ [productId: string]: string }>({});
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   
-  // Estados para o Modal estilo Admin
+  // Estados para o Modal estilo Admin e Carrossel do Card
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const [selectedColorForDetails, setSelectedColorForDetails] = useState<string | null>(null);
+  const [cardImageIndexes, setCardImageIndexes] = useState<{ [productId: string]: number }>({});
   
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -181,7 +112,7 @@ export const Home: React.FC = () => {
   useEffect(() => {
     const checkUserSession = async () => {
       try {
-        const response = await axios.get('http://localhost:3333/api/perfil');
+        const response = await axios.get<any>(`${API_URL}/api/perfil`);
         if (response.data && response.data.user) {
           setUser(response.data.user);
         }
@@ -192,12 +123,12 @@ export const Home: React.FC = () => {
 
     const fetchStoreData = async () => {
       try {
-        const productsResponse = await axios.get('http://localhost:3333/api/produtos');
+        const productsResponse = await axios.get(`${API_URL}/api/produtos`);
         if (productsResponse.data && Array.isArray(productsResponse.data)) {
           setProducts(productsResponse.data);
         }
 
-        const categoriesResponse = await axios.get('http://localhost:3333/api/categorias');
+        const categoriesResponse = await axios.get(`${API_URL}/api/categorias`);
         if (categoriesResponse.data && Array.isArray(categoriesResponse.data)) {
           setCategories(categoriesResponse.data);
         }
@@ -209,9 +140,11 @@ export const Home: React.FC = () => {
     checkUserSession();
     fetchStoreData();
 
-    const socket = io('http://localhost:3333', {
+    const socket = io(API_URL, {
       withCredentials: true,
-      transports: ['polling', 'websocket']
+      transports: ['websocket', 'polling'],
+      secure: true,
+      rejectUnauthorized: false
     });
 
     socket.on('produtoAtualizado', (produtoAlterado: Product) => {
@@ -251,7 +184,7 @@ export const Home: React.FC = () => {
       ? Number(product.precoPromocional) 
       : (parseFloat(product.preco) || 0);
 
-    const imageUrl = product.imagens && product.imagens.length > 0 ? product.imagens[0].url : '';
+    const imageUrl = product.imagens && product.imagens.length > 0 ? getImageUrl(product.imagens[0].url) : '';
 
     setCart((prevCart) => {
       const safeCart = Array.isArray(prevCart) ? prevCart : [];
@@ -308,19 +241,17 @@ export const Home: React.FC = () => {
     if (p.isVisible !== true) return false;
     if (p.ativoGeral === false) return false;
 
-    // Filtro por termo de pesquisa
     const matchesSearch = p.nome.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           (p.descricao && p.descricao.toLowerCase().includes(searchTerm.toLowerCase()));
     if (!matchesSearch) return false;
 
-    // Filtro por categoria
     if (selectedCategory === 'Todos') return true;
     return p.categoria && p.categoria.nome.toLowerCase().trim() === selectedCategory.toLowerCase().trim();
   });
 
   return (
     <div className={styles.container}>
-      {/* Banner da Loja com os botões de Carrinho e Entrar visíveis nas telas grandes e omitidos apenas no mobile via classe do módulo */}
+      {/* Banner da Loja */}
       <div className={styles.bannerContainer} style={{ position: 'relative' }}>
         <img 
           src="/banner.png" 
@@ -330,7 +261,6 @@ export const Home: React.FC = () => {
 
         {/* Botões flutuantes no canto direito */}
         <div style={{ position: 'absolute', top: '20px', right: '25px', display: 'flex', alignItems: 'center', gap: '10px', zIndex: 10 }}>
-          {/* Botão Carrinho controlado pela classe desktopCartButton do CSS */}
           <button 
             type="button"
             className={styles.desktopCartButton}
@@ -350,7 +280,6 @@ export const Home: React.FC = () => {
             🛒 ({totalItems})
           </button>
 
-          {/* Botão Entrar / Perfil controlado pela classe desktopCartButton do CSS */}
           {user ? (
             <button 
               type="button"
@@ -374,7 +303,7 @@ export const Home: React.FC = () => {
               type="button"
               className={styles.desktopCartButton}
               style={{ 
-                backgroundColor: '#7A9974', 
+                backgroundColor: '#D7B796', 
                 color: 'white', 
                 border: 'none', 
                 padding: '0.4rem 1rem', 
@@ -392,11 +321,10 @@ export const Home: React.FC = () => {
         </div>
       </div>
 
-      {/* Área Centralizada logo abaixo do Banner: Barra de Pesquisa e Logo abaixo dela as Categorias Centralizadas */}
+      {/* Área de Pesquisa e Botão de Categorias */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', padding: '1.2rem 5%', backgroundColor: '#fcfcfc', borderBottom: '1px solid #e2e8f0' }}>
-        {/* Campo de Pesquisa Centralizado */}
         <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#ffffff', border: '1px solid #ced4da', borderRadius: '20px', padding: '0.5rem 1.2rem', width: '100%', maxWidth: '450px', boxShadow: '0 2px 6px rgba(0,0,0,0.03)' }}>
-          <span style={{ marginRight: '8px', color: '#7A9974' }}>🔍</span>
+          <span style={{ marginRight: '8px', color: '#D7B796' }}>🔍</span>
           <input
             type="text"
             placeholder="O que você está procurando para o seu bebê?"
@@ -406,13 +334,25 @@ export const Home: React.FC = () => {
           />
         </div>
 
-        {/* Botão de Categorias Centralizado Abaixo da Pesquisa */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-          <CategoryDropdown 
-            categories={categories} 
-            selectedCategory={selectedCategory} 
-            onSelectCategory={setSelectedCategory} 
-          />
+        <div className={styles.desktopCategoryWrapper}>
+          <button 
+            type="button"
+            onClick={() => setIsCategoryDrawerOpen(true)}
+            style={{ 
+              backgroundColor: '#D7B796', 
+              color: 'white', 
+              border: 'none', 
+              padding: '0.5rem 1.2rem', 
+              borderRadius: '6px', 
+              fontWeight: 600, 
+              cursor: 'pointer', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px' 
+            }}
+          >
+            📂 Categorias: {selectedCategory} ▼
+          </button>
         </div>
       </div>
 
@@ -426,9 +366,7 @@ export const Home: React.FC = () => {
             </p>
           ) : (
             filteredProducts.map(product => {
-              const imageUrl = product.imagens && product.imagens.length > 0 ? product.imagens[0].url : '';
-              
-              // Cores disponíveis no card
+              // Mapeia as cores únicas disponíveis para este produto
               const coresCardMap = new Map();
               product.estoques?.forEach((item: any) => {
                 if (item.cor) {
@@ -438,7 +376,18 @@ export const Home: React.FC = () => {
               const coresCardList = Array.from(coresCardMap.values()) as any[];
               const currentCardColor = selectedSizes[`color-${product.id}`] || coresCardList[0]?.id;
 
-              // Tamanhos filtrados pela cor selecionada no card (ou todos se não houver cor)
+              // Filtra as imagens estritamente pertencentes à cor selecionada no card
+              const imagensDaCorSelecionada = product.imagens?.filter((img: any) => {
+                const imgCorId = img.corId || img.cor?.id;
+                return !currentCardColor || imgCorId === currentCardColor;
+              }) || [];
+
+              const listaImagensCard = imagensDaCorSelecionada.length > 0 ? imagensDaCorSelecionada : product.imagens;
+              
+              const cardImgIndex = cardImageIndexes[product.id] || 0;
+              const imagemAtualCardUrl = listaImagensCard[cardImgIndex]?.url || listaImagensCard[0]?.url || '';
+              const imageUrl = getImageUrl(imagemAtualCardUrl);
+
               const tamanhosDoCard = product.estoques?.filter((item: any) => {
                 return !currentCardColor || item.cor?.id === currentCardColor;
               }) || [];
@@ -456,13 +405,58 @@ export const Home: React.FC = () => {
 
               return (
                 <div key={product.id} className={styles.productCard}>
-                  {/* Container da imagem com o selo absoluto em cima */}
-                  <div className={styles.imageContainer} onClick={() => {
-                    setSelectedProduct(product);
-                    setActiveImageIndex(0);
-                    setSelectedColorForDetails(currentCardColor || product.estoques?.find(e => e.cor)?.cor?.id || null);
-                  }}>
-                    <img src={imageUrl} alt={product.nome} className={styles.productImage} />
+                  <div className={styles.imageContainer} style={{ position: 'relative' }}>
+                    <img 
+                      src={imageUrl} 
+                      alt={product.nome} 
+                      className={styles.productImage} 
+                      onClick={() => {
+                        setSelectedProduct(product);
+                        setActiveImageIndex(0);
+                        setSelectedColorForDetails(currentCardColor || product.estoques?.find(e => e.cor)?.cor?.id || null);
+                      }}
+                    />
+
+                    {/* Botões do Carrossel no Card */}
+                    {listaImagensCard.length > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCardImageIndexes(prev => ({
+                              ...prev,
+                              [product.id]: cardImgIndex === 0 ? listaImagensCard.length - 1 : cardImgIndex - 1
+                            }));
+                          }}
+                          style={{
+                            position: 'absolute', top: '50%', left: '8px', transform: 'translateY(-50%)',
+                            background: 'rgba(0,0,0,0.5)', color: '#fff', border: 'none', borderRadius: '50%',
+                            width: '28px', height: '28px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', zIndex: 5
+                          }}
+                        >
+                          ‹
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCardImageIndexes(prev => ({
+                              ...prev,
+                              [product.id]: cardImgIndex === listaImagensCard.length - 1 ? 0 : cardImgIndex + 1
+                            }));
+                          }}
+                          style={{
+                            position: 'absolute', top: '50%', right: '8px', transform: 'translateY(-50%)',
+                            background: 'rgba(0,0,0,0.5)', color: '#fff', border: 'none', borderRadius: '50%',
+                            width: '28px', height: '28px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', zIndex: 5
+                          }}
+                        >
+                          ›
+                        </button>
+                      </>
+                    )}
+
                     {emOferta && product.percentualDesconto && product.percentualDesconto > 0 && (
                       <span className={styles.discountBadgeOverlay}>
                         {product.percentualDesconto}% OFF
@@ -482,13 +476,12 @@ export const Home: React.FC = () => {
                       <span className={styles.ratingText}> (5.0)</span>
                     </div>
 
-                    {/* Exibição de Preço / Oferta */}
                     {emOferta ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', margin: '8px 0' }}>
                         <span style={{ textDecoration: 'line-through', color: '#888', fontSize: '0.85rem' }}>
                           R$ {numericPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </span>
-                        <span className={styles.price} style={{ color: '#7A9974', fontWeight: 'bold' }}>
+                        <span className={styles.price} style={{ color: '#D7B796', fontWeight: 'bold' }}>
                           R$ {precoPromocional.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </span>
                       </div>
@@ -498,7 +491,6 @@ export const Home: React.FC = () => {
                       </p>
                     )}
 
-                    {/* Exibição das Cores Disponíveis no Card (Selecionáveis) */}
                     {coresCardList.length > 0 && (
                       <div className={styles.sizeContainer} style={{ marginTop: '8px', marginBottom: '8px' }}>
                         <span className={styles.sizeLabel}>Selecione a cor:</span>
@@ -515,6 +507,10 @@ export const Home: React.FC = () => {
                                   setSelectedSizes(prev => ({
                                     ...prev,
                                     [`color-${product.id}`]: c.id
+                                  }));
+                                  setCardImageIndexes(prev => ({
+                                    ...prev,
+                                    [product.id]: 0
                                   }));
                                 }}
                                 className={styles.cardColorButton}
@@ -595,11 +591,84 @@ export const Home: React.FC = () => {
         </div>
       </main>
 
+      {/* Gaveta Lateral de Categorias */}
+      {isCategoryDrawerOpen && (
+        <div 
+          onClick={() => setIsCategoryDrawerOpen(false)}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3000, display: 'flex', justifyContent: 'flex-start'
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '280px', maxWidth: '80%', height: '100%', backgroundColor: '#ffffff',
+              boxShadow: '4px 0 15px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', zIndex: 3001
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.2rem 1.5rem', borderBottom: '1px solid #eee' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#222', fontWeight: 700 }}>Categorias</h3>
+              <button 
+                type="button" 
+                onClick={() => setIsCategoryDrawerOpen(false)}
+                style={{ background: 'none', border: 'none', fontSize: '1.4rem', cursor: 'pointer', color: '#666' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '1rem 0' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCategory('Todos');
+                  setIsCategoryDrawerOpen(false);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                style={{
+                  width: '100%', padding: '12px 20px', textAlign: 'left',
+                  background: selectedCategory === 'Todos' ? '#FAF7F2' : 'transparent',
+                  border: 'none', borderLeft: selectedCategory === 'Todos' ? '4px solid #D7B796' : '4px solid transparent',
+                  cursor: 'pointer', fontSize: '1rem', color: selectedCategory === 'Todos' ? '#D7B796' : '#333',
+                  fontWeight: selectedCategory === 'Todos' ? 600 : 400
+                }}
+              >
+                Todos os Produtos
+              </button>
+
+              {categories.map((cat) => {
+                const isSelected = selectedCategory === cat.nome;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCategory(cat.nome);
+                      setIsCategoryDrawerOpen(false);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    style={{
+                      width: '100%', padding: '12px 20px', textAlign: 'left',
+                      background: isSelected ? '#FAF7F2' : 'transparent',
+                      border: 'none', borderLeft: isSelected ? '4px solid #D7B796' : '4px solid transparent',
+                      cursor: 'pointer', fontSize: '1rem', color: isSelected ? '#D7B796' : '#333',
+                      fontWeight: isSelected ? 600 : 400
+                    }}
+                  >
+                    {cat.nome}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de Detalhes do Produto */}
       {selectedProduct && (
         <div className={styles.modalOverlay} onClick={() => setSelectedProduct(null)}>
           <div className={styles.modalContentBox} onClick={(e) => e.stopPropagation()}>
-            
             <button 
               type="button"
               onClick={() => setSelectedProduct(null)}
@@ -609,37 +678,45 @@ export const Home: React.FC = () => {
             </button>
 
             <div className={styles.modalGridContainer}>
-              {/* Coluna de Imagens e Miniaturas */}
               <div>
-                <img 
-                  src={
-                    selectedProduct.imagens && selectedProduct.imagens.length > 0 
-                      ? (selectedProduct.imagens[activeImageIndex]?.url || selectedProduct.imagens[0].url)
-                      : ''
-                  } 
-                  alt={selectedProduct.nome} 
-                  className={styles.modalMainImage} 
-                />
-                
-                {selectedProduct.imagens && selectedProduct.imagens.length > 1 && (
-                  <div className={styles.modalThumbnailsList}>
-                    {selectedProduct.imagens.map((img, idx) => {
-                      const isSelectedThumb = activeImageIndex === idx;
-                      return (
-                        <img 
-                          key={img.id || idx} 
-                          src={img.url} 
-                          alt="" 
-                          onClick={() => setActiveImageIndex(idx)}
-                          className={`${styles.modalThumbItem} ${isSelectedThumb ? styles.modalThumbActive : styles.modalThumbInactive}`} 
-                        />
-                      );
-                    })}
-                  </div>
-                )}
+                {(() => {
+                  const imagensModalDaCor = selectedProduct.imagens?.filter((img: any) => {
+                    const imgCorId = img.corId || img.cor?.id;
+                    return !selectedColorForDetails || imgCorId === selectedColorForDetails;
+                  }) || [];
+
+                  const listaImagensModal = imagensModalDaCor.length > 0 ? imagensModalDaCor : selectedProduct.imagens;
+                  const imagemAtualModalUrl = listaImagensModal[activeImageIndex]?.url || listaImagensModal[0]?.url || '';
+
+                  return (
+                    <div>
+                      <img 
+                        src={getImageUrl(imagemAtualModalUrl)} 
+                        alt={selectedProduct.nome} 
+                        className={styles.modalMainImage} 
+                      />
+                      
+                      {listaImagensModal.length > 1 && (
+                        <div className={styles.modalThumbnailsList}>
+                          {listaImagensModal.map((img: any, idx: number) => {
+                            const isSelectedThumb = activeImageIndex === idx;
+                            return (
+                              <img 
+                                key={img.id || idx} 
+                                src={getImageUrl(img.url)} 
+                                alt="" 
+                                onClick={() => setActiveImageIndex(idx)}
+                                className={`${styles.modalThumbItem} ${isSelectedThumb ? styles.modalThumbActive : styles.modalThumbInactive}`} 
+                              />
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
-              {/* Coluna de Informações, Cores, Tamanhos e Botões */}
               <div>
                 <span className={styles.modalCategoryBadge}>
                   {selectedProduct.categoria?.nome || 'Geral'}
@@ -663,7 +740,6 @@ export const Home: React.FC = () => {
                   )}
                 </div>
 
-                {/* Descrição formatada com suporte a negrito e tópicos */}
                 <div 
                   className={styles.modalDescriptionText}
                   dangerouslySetInnerHTML={{ 
@@ -683,7 +759,6 @@ export const Home: React.FC = () => {
                   }}
                 />
 
-                {/* Seletor de Cores */}
                 <div className={styles.modalSectionGroup}>
                   <label className={styles.modalSectionLabel}>
                     🎨 Escolha a Cor / Estampa:
@@ -705,7 +780,10 @@ export const Home: React.FC = () => {
                             <button
                               key={c.id}
                               type="button"
-                              onClick={() => setSelectedColorForDetails(c.id)}
+                              onClick={() => {
+                                setSelectedColorForDetails(c.id);
+                                setActiveImageIndex(0);
+                              }}
                               className={`${styles.modalColorButton} ${isSelected ? styles.modalColorButtonSelected : styles.modalColorButtonUnselected}`}
                             >
                               {c.hex && (
@@ -724,7 +802,6 @@ export const Home: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Seletor de Tamanhos */}
                 <div className={styles.modalSectionGroup}>
                   <label className={styles.modalSectionLabel}>
                     📏 Selecione o Tamanho:
@@ -780,7 +857,6 @@ export const Home: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Botões de Ação */}
                 <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <button 
                     className={styles.actionButton} 
@@ -839,7 +915,7 @@ export const Home: React.FC = () => {
         </div>
       )}
 
-      {/* Modal do Carrinho de Compras */}
+      {/* Modal do Carrinho */}
       {isCartOpen && (
         <div className={styles.modalOverlay} onClick={() => setIsCartOpen(false)}>
           <div className={styles.cartModal} onClick={(e) => e.stopPropagation()}>
@@ -920,10 +996,10 @@ export const Home: React.FC = () => {
         />
       )}
 
-      {/* Menu Fixo (visível apenas em celulares e no iPhone 16 Pro Max através da classe bottomNav) */}
+      {/* Menu Fixo Inferior */}
       <nav className={styles.bottomNav}>
-        <button type="button" className={styles.navBtn} onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-          📦 Produtos
+        <button type="button" className={styles.navBtn} onClick={() => setIsCategoryDrawerOpen(true)}>
+          📂 Categorias
         </button>
         <button type="button" className={styles.navBtn} onClick={() => alert('Ofertas!')}>
           🔥 Ofertas

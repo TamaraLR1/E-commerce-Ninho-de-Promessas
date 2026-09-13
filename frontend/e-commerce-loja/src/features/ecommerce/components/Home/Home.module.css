@@ -1,7 +1,8 @@
 .container {
   min-height: 100vh;
-  background-color: #f8f9fa;
+  background-color: #fafafa;
   font-family: system-ui, -apple-system, sans-serif;
+  padding-bottom: 70px;
 }
 
 .hero {
@@ -17,22 +18,21 @@
 }
 
 .hero h1 { font-size: 2.2rem; margin-bottom: 0.5rem; font-weight: 700; }
-.hero p { font-size: 1rem; opacity: 0.9; }
+.hero p { font-size: 1.0rem; opacity: 0.9; }
 
-/* Barra de Filtros */
 /* Barra de Filtros */
 .filterBar {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 0.8rem; /* Espaço entre botões */
+  gap: 0.8rem;
   padding: 1.5rem 5% 1rem;
 }
 
 .filterButton {
   background-color: transparent;
-  color: #7a9974;          /* Cor do texto alterada para #7a9974 */
-  border: 1px solid #7a9974; /* Borda alterada para #7a9974 */
+  color: #D7B796;          
+  border: 1px solid #D7B796; 
   padding: 8px 16px;
   border-radius: 20px;
   cursor: pointer;
@@ -41,14 +41,14 @@
 }
 
 .filterButton:hover {
-  border-color: #6e9a83;
+  border-color: #C29E7A;
   color: #B0A982;
 }
 
 .activeFilter {
-  background-color:  #7a9974 !important;
+  background-color: #D7B796 !important;
   color: #ffffff !important;
-  border-color: #7a9974 !important;
+  border-color: #D7B796 !important;
 }
 
 /* Vitrine */
@@ -77,11 +77,11 @@
 
 .price { color: #222; font-size: 1.2rem; font-weight: 700; margin-bottom: 1rem; margin-top: auto; }
 
-/* Botões Gerais */
+/* Botões Gerais (Adicionar ao Carrinho) */
 .actionButton {
   width: 100%;
   padding: 0.6rem;
-  background-color: #7a9974;
+  background-color: #D7B796;
   color: white;
   border: none;
   border-radius: 6px;
@@ -91,7 +91,7 @@
 }
 
 .actionButton:hover {
-  background-color: #637d5f; /* Mesmo tom de hover do botão comprar */
+  background-color: #C29E7A;
 }
 
 /* Overlay dos Modais */
@@ -201,15 +201,7 @@
 .totalRow { display: flex; justify-content: space-between; font-size: 1.3rem; font-weight: 700; color: #222; margin-bottom: 1.25rem; }
 .emptyCart { text-align: center; color: #777; padding: 3rem 0; }
 
-
-/* Espaçamento para o rodapé não cobrir o conteúdo */
-.container {
-  padding-bottom: 70px;
-}
-
 /* --- MENU INFERIOR FIXO --- */
-
-/* 1. Regra base: Oculto por padrão em qualquer tela */
 .bottomNav {
   display: none; 
   position: fixed;
@@ -235,10 +227,9 @@
   cursor: pointer;
 }
 
-/* 2. Tratamento para telas até 430px (inclui os 414px) */
 @media (max-width: 430px) {
   .bottomNav {
-    display: flex !important; /* Só aqui ele aparece */
+    display: flex !important;
     height: 80px;
   }
 
@@ -252,25 +243,34 @@
   }
   
   .container {
-    padding-bottom: 80px; /* Ajuste para o menu maior */
+    padding-bottom: 80px;
   }
 }
 
+/* Esconde o botão de categorias abaixo da pesquisa em telas pequenas */
+.desktopCategoryWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
 
-/* Tratamento específico para telas bem pequenas (mobile) */
-@media (max-width: 430px) {
-
+@media (max-width: 450px) {
+  .desktopCategoryWrapper {
+    display: none !important;
+  }
+  
   .filterButton {
       padding: 0.8rem 1.5rem;
-      font-size: 1.08rem; /* Ajustado levemente para não quebrar o layout */
-      margin-bottom: 0.5rem; /* Adiciona um espaço extra entre linhas quando quebrar */
+      font-size: 1.08rem;
+      margin-bottom: 0.5rem;
   }
 }
 
-
+/* Botão Comprar */
 .buyButton {
-  background-color: #7a9974; /* Nova cor solicitada */
-  color: #ffffff;            /* Texto branco para contraste */
+  background-color: #D7B796; 
+  color: #ffffff;            
   border: none;
   padding: 10px;
   margin-top: 10px;
@@ -282,7 +282,7 @@
 }
 
 .buyButton:hover {
-  background-color: #637d5f; /* Um tom ligeiramente mais escuro para o efeito hover */
+  background-color: #C29E7A; 
 }
 
 .sizeContainer {
@@ -307,25 +307,6 @@
 .sizeBadge {
   background-color: #f1f3f5;
   border: 1px solid #ced4da;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.75rem;
-  border-radius: 4px;
-  color: #333;
-  font-weight: 600;
-}
-
-/* Estilo para quando o tamanho estiver selecionado */
-.selectedSizeBadge {
-  background-color: #007bff !important;
-  color: white !important;
-  border-color: #007bff !important;
-  font-weight: bold;
-}
-
-/* Transforma o badge de tamanho em um botão clicável visualmente */
-.sizeBadge {
-  background-color: #f1f3f5;
-  border: 1px solid #ced4da;
   padding: 0.3rem 0.6rem;
   font-size: 0.75rem;
   border-radius: 4px;
@@ -339,11 +320,18 @@
   background-color: #e2e6ea;
 }
 
+.selectedSizeBadge {
+  background-color: #007bff !important;
+  color: white !important;
+  border-color: #007bff !important;
+  font-weight: bold;
+}
+
 .toastContainer {
   position: fixed;
   bottom: 30px;
   left: 50%;
-  transform: translateX(-50%); /* Garante a centralização perfeita */
+  transform: translateX(-50%);
   background-color: #212529;
   color: #ffffff;
   padding: 1rem 1.5rem;
@@ -359,22 +347,10 @@
 }
 
 @keyframes fadeInOut {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, 20px);
-  }
-  15% {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-  85% {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(-50%, -20px);
-  }
+  0% { opacity: 0; transform: translate(-50%, 20px); }
+  15% { opacity: 1; transform: translate(-50%, 0); }
+  85% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -20px); }
 }
 
 .sizeBadgeStatic {
@@ -387,10 +363,11 @@
   font-weight: 500;
 }
 
+/* Banner da Loja */
 .bannerContainer {
   width: 100%;
-  height: 300px; /* Altura do banner */
-  background-color: #FCF3EE; /* Ex: #1a1a1a ou o código HEX da sua imagem */
+  height: 300px; 
+  background-color: #F4F4F2;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -403,11 +380,10 @@
   object-fit: contain;
 }
 
-/* Posiciona o container da imagem para servir de âncora para o selo absoluto */
 .imageContainer {
   position: relative;
   width: 100%;
-  height: 250px; /* Ajuste conforme a altura que você já usa na imagem */
+  height: 250px;
   overflow: hidden;
   cursor: pointer;
 }
@@ -418,12 +394,11 @@
   object-fit: cover;
 }
 
-/* Selo de desconto em cima da imagem */
 .discountBadgeOverlay {
   position: absolute;
   top: 10px;
   right: 10px;
-  background-color: #7A9974;
+  background-color: #D7B796;
   color: #ffffff;
   padding: 4px 8px;
   border-radius: 6px;
@@ -569,6 +544,12 @@
   font-size: 0.95rem;
   line-height: 1.5;
   margin-bottom: 20px;
+  word-break: break-word;
+}
+
+.modalDescriptionText li {
+  list-style-type: disc;
+  margin-left: 40px;
 }
 
 .modalSectionGroup {
@@ -626,48 +607,25 @@
   gap: 8px;
 }
 
-.modalSizeItemBox {
-  padding: 8px;
-  border-radius: 6px;
-  text-align: center;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-  transition: all 0.2s;
+.cardColorsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  flex-wrap: wrap;
 }
 
-.modalSizeItemBox:hover {
-  border-color: #cbd5e1;
+.cardColorButton {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s ease;
 }
 
-.modalSizeName {
-  font-weight: 600;
-  font-size: 0.85rem;
-  color: #1e293b;
-}
-
-.modalSizeStockQty {
-  font-size: 0.75rem;
-  margin-top: 2px;
-}
-
-.textGreen {
-  color: #16a34a;
-  font-weight: 600;
-}
-
-.textRed {
-  color: #dc2626;
-  font-weight: 600;
-}
-
-.modalDescriptionText {
-  line-height: 1.5; /* Altura de linha agradável */
-  word-break: break-word;
-}
-
-.modalDescriptionText li {
-  list-style-type: disc;
-  margin-left: 40px;
+.cardColorButton:hover {
+  transform: scale(1.1);
 }
 
 .cardColorsRow {
@@ -691,25 +649,9 @@
   transform: scale(1.1);
 }
 
-.cardColorDot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 1px solid #cbd5e1;
-  display: inline-block;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-}
-
-.cardColorMore {
-  font-size: 0.75rem;
-  color: #64748b;
-  font-weight: 500;
-}
-
-/* 2. Tratamento para telas até 450px (agora inclui o iPhone 16 Pro Max com 440px) */
 @media (max-width: 450px) {
   .bottomNav {
-    display: flex !important; /* Exibe a barra inferior no celular e iPhone 16 Pro Max */
+    display: flex !important;
     height: 80px;
   }
 
@@ -725,10 +667,7 @@
   .container {
     padding-bottom: 80px;
   }
-}
 
-/* Oculta o carrinho flutuante do banner apenas em telas menores ou iguais a 450px */
-@media (max-width: 450px) {
   .desktopCartButton {
     display: none !important;
   }

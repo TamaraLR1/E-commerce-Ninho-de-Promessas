@@ -5,6 +5,9 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5174, // Força o painel admin a rodar na 5174
+    port: 5174,
+    allowedHosts: [
+      'painelninho.tamaralr.com.br'
+    ]
   }
 })
