@@ -130,6 +130,7 @@ model ProdutoEstoque {
 model ProdutoImagem {
   id        String   @id @default(uuid())
   url       String
+  ordem     Int      @default(0)
   produtoId String
   corId     String
   produto   Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)

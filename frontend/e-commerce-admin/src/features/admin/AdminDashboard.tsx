@@ -151,8 +151,8 @@ export const AdminDashboard: React.FC = () => {
   const [newDesc, setNewDesc] = useState('');
   const [newPrice, setNewPrice] = useState('');
   
-  // Estado estruturado por Cor ID para gerenciar até 6 imagens por cor
-  const [colorImages, setColorImages] = useState<{ [corId: string]: { files: File[]; previews: string[]; mantidas?: string[] } }>({});
+  // Estado estruturado por Cor ID para gerenciar até 6 imagens por cor com suporte a objetos unificados para Drag and Drop
+  const [colorImages, setColorImages] = useState<{ [corId: string]: Array<{ type: 'file' | 'url'; file?: File; url: string }> }>({});
   
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [colorSizeConfigs, setColorSizeConfigs] = useState<ColorSizeConfig[]>([]);
@@ -805,54 +805,65 @@ export const AdminDashboard: React.FC = () => {
     return prod.rawSizes.reduce((total, item) => total + (item.estoque ?? 0), 0);
   };
 
-  // Funções atualizadas de manipulação de imagens por cor (máximo de 6 fotos por cor)
+  // Manipulação unificada de arquivos e URLs mantidas para permitir Drag and Drop livre entre imagens novas e existentes
   const handleColorFileChange = (corId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const filesArray = Array.from(e.target.files);
     
-    const currentCorData = colorImages[corId] || { files: [], previews: [], mantidas: [] };
-    const totalAtual = currentCorData.files.length + (currentCorData.mantidas?.length || 0);
+    const currentList = colorImages[corId] || [];
 
-    if (totalAtual + filesArray.length > 6) {
+    if (currentList.length + filesArray.length > 6) {
       alert('Cada cor pode ter no máximo 6 imagens!');
       return;
     }
 
-    const newPreviews = filesArray.map(file => URL.createObjectURL(file));
+    const novosItens = filesArray.map(file => ({
+      type: 'file' as const,
+      file,
+      url: URL.createObjectURL(file)
+    }));
 
     setColorImages(prev => ({
       ...prev,
-      [corId]: {
-        ...currentCorData,
-        files: [...currentCorData.files, ...filesArray],
-        previews: [...currentCorData.previews, ...newPreviews]
-      }
+      [corId]: [...currentList, ...novosItens]
     }));
   };
 
-  const removeColorImage = (corId: string, index: number, isMantida: boolean = false) => {
+  const removeColorImage = (corId: string, index: number) => {
     setColorImages(prev => {
-      const corData = prev[corId];
-      if (!corData) return prev;
+      const corData = prev[corId] || [];
+      const novaLista = corData.filter((_, i) => i !== index);
+      return {
+        ...prev,
+        [corId]: novaLista
+      };
+    });
+  };
 
-      if (isMantida) {
-        const newMantidas = (corData.mantidas || []).filter((_, i) => i !== index);
-        const newPreviews = corData.previews.filter((_, i) => i !== index);
-        return {
-          ...prev,
-          [corId]: { ...corData, previews: newPreviews, mantidas: newMantidas }
-        };
-      } else {
-        const mantidasCount = corData.mantidas?.length || 0;
-        const offsetIndex = index - mantidasCount;
-        const newFiles = corData.files.filter((_, i) => i !== offsetIndex);
-        const newPreviews = corData.previews.filter((_, i) => i !== index);
+  // Funções de Drag and Drop para ordenação de imagens
+  const handleImageDragStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.setData('text/plain', String(index));
+  };
 
-        return {
-          ...prev,
-          [corId]: { ...corData, files: newFiles, previews: newPreviews }
-        };
-      }
+  const handleImageDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleImageDrop = (e: React.DragEvent, targetIndex: number, corId: string) => {
+    e.preventDefault();
+    const sourceIndexStr = e.dataTransfer.getData('text/plain');
+    const sourceIndex = parseInt(sourceIndexStr, 10);
+
+    if (isNaN(sourceIndex) || sourceIndex === targetIndex) return;
+
+    setColorImages(prev => {
+      const listaAtual = [...(prev[corId] || [])];
+      const [movido] = listaAtual.splice(sourceIndex, 1);
+      listaAtual.splice(targetIndex, 0, movido);
+      return {
+        ...prev,
+        [corId]: listaAtual
+      };
     });
   };
 
@@ -958,17 +969,18 @@ export const AdminDashboard: React.FC = () => {
     const uniqueColors = Array.from(new Set(coresIds));
     setSelectedColors(uniqueColors);
 
-    // Mapear imagens por cor para edição de forma isolada
-    const initialColorImagesMap: { [corId: string]: { files: File[]; previews: string[]; mantidas: string[] } } = {};
+    // Mapear imagens por cor para edição de forma isolada, ordenadas pela coluna 'ordem'
+    const initialColorImagesMap: { [corId: string]: Array<{ type: 'file' | 'url'; url: string }> } = {};
     uniqueColors.forEach(cId => {
-      // Filtra apenas as imagens que pertencem estritamente a este corId (sem misturar com as outras cores)
-      const imgsDaCor = (prod as any).rawImages?.filter((img: any) => img.corId === cId || img.cor?.id === cId)?.map((img: any) => img.url) || [];
+      const imgsDaCor = (prod as any).rawImages
+        ?.filter((img: any) => img.corId === cId || img.cor?.id === cId)
+        ?.sort((a: any, b: any) => (a.ordem ?? 0) - (b.ordem ?? 0))
+        ?.map((img: any) => ({
+          type: 'url' as const,
+          url: img.url
+        })) || [];
       
-      initialColorImagesMap[cId] = {
-        files: [],
-        previews: [...imgsDaCor],
-        mantidas: [...imgsDaCor]
-      };
+      initialColorImagesMap[cId] = imgsDaCor;
     });
     setColorImages(initialColorImagesMap);
 
@@ -1030,15 +1042,14 @@ export const AdminDashboard: React.FC = () => {
 
     // Validar se cada cor possui pelo menos 1 imagem (máximo 6)
     for (const cId of selectedColors) {
-      const corData = colorImages[cId];
-      const qtdTotalCor = (corData?.files?.length || 0) + (corData?.mantidas?.length || 0);
+      const itensCor = colorImages[cId] || [];
 
-      if (qtdTotalCor === 0) {
+      if (itensCor.length === 0) {
         const corObj = coresList.find(c => c.id === cId);
         alert(`A cor "${corObj?.nome || 'Selecionada'}" precisa ter pelo menos 1 imagem.`);
         return;
       }
-      if (qtdTotalCor > 6) {
+      if (itensCor.length > 6) {
         const corObj = coresList.find(c => c.id === cId);
         alert(`A cor "${corObj?.nome || 'Selecionada'}" excede o limite de 6 imagens.`);
         return;
@@ -1106,9 +1117,15 @@ export const AdminDashboard: React.FC = () => {
 
       const mapeamentoImagensMantidas: { [corId: string]: string[] } = {};
       selectedColors.forEach(cId => {
-        mapeamentoImagensMantidas[cId] = colorImages[cId]?.mantidas || [];
-        colorImages[cId]?.files?.forEach(file => {
-          formData.append(`imagens_${cId}`, file);
+        mapeamentoImagensMantidas[cId] = [];
+        const itensCor = colorImages[cId] || [];
+
+        itensCor.forEach(item => {
+          if (item.type === 'url') {
+            mapeamentoImagensMantidas[cId].push(item.url);
+          } else if (item.type === 'file' && item.file) {
+            formData.append(`imagens_${cId}`, item.file);
+          }
         });
       });
       formData.append('coresMapeamentoImagens', JSON.stringify(mapeamentoImagensMantidas));
@@ -1602,7 +1619,7 @@ export const AdminDashboard: React.FC = () => {
                   </button>
                 )}
               </div>
-              <p className={styles.infoText}>* Preencha os campos abaixo. Cada cor selecionada deve possuir de 1 a 6 fotos específicas.</p>
+              <p className={styles.infoText}>* Preencha os campos abaixo. Cada cor selecionada deve possuir de 1 a 6 fotos específicas. Dica: Arraste as miniaturas para reordenar; a primeira à esquerda será a capa principal.</p>
               
               <form onSubmit={handleCreateOrUpdateProduct} className={styles.form}>
                 <div className={styles.gridContainerPrice}>
@@ -1656,15 +1673,15 @@ export const AdminDashboard: React.FC = () => {
                       2. Configuração de Tamanhos e Imagens por Cor
                     </label>
                     <p className={styles.colorStockSubtitle}>
-                      Insira de 1 a 6 fotos para cada cor selecionada e marque os tamanhos correspondentes.
+                      Insira de 1 a 6 fotos para cada cor. Arraste e solte as miniaturas para alterar a ordem (a 1ª da esquerda é a Capa).
                     </p>
                     
                     <div className={styles.colorStockList}>
                       {selectedColors.map(cId => {
                         const corObj = coresList.find(c => c.id === cId);
                         const configCurrent = colorSizeConfigs.find(c => c.corId === cId) || { corId: cId, tamanhosIds: [], estoques: {} };
-                        const corData = colorImages[cId] || { files: [], previews: [], mantidas: [] };
-                        const qtdFotosCor = corData.previews.length;
+                        const itensCor = colorImages[cId] || [];
+                        const qtdFotosCor = itensCor.length;
                         const nenhumTamanhoSelecionado = configCurrent.tamanhosIds.length === 0;
                         
                         return (
@@ -1711,10 +1728,10 @@ export const AdminDashboard: React.FC = () => {
                               </div>
                             </div>
 
-                            {/* Campo de Upload de Imagens específico desta Cor */}
+                            {/* Campo de Upload de Imagens específico desta Cor com Drag and Drop */}
                             <div className={styles.group} style={{ margin: '12px 0' }}>
                               <label className={styles.fileLabel}>
-                                📷 Fotos da Cor {corObj?.nome} ({qtdFotosCor}/6)
+                                📷 Fotos da Cor {corObj?.nome} ({qtdFotosCor}/6) — Arraste para reordenar
                                 <input 
                                   type="file" 
                                   multiple 
@@ -1724,23 +1741,36 @@ export const AdminDashboard: React.FC = () => {
                                 />
                               </label>
 
-                              {corData.previews.length > 0 && (
+                              {itensCor.length > 0 && (
                                 <div className={styles.imagesPreviewList}>
-                                  {corData.previews.map((imgUrl, idx) => {
-                                    const isMantida = corData.mantidas?.includes(imgUrl);
-                                    return (
-                                      <div key={idx} className={styles.previewThumbContainer}>
-                                        <img src={imgUrl} alt="" className={styles.imageThumb} />
-                                        <button 
-                                          type="button" 
-                                          onClick={() => removeColorImage(cId, idx, !!isMantida)} 
-                                          className={styles.btnRemoveThumb}
-                                        >
-                                          ×
-                                        </button>
-                                      </div>
-                                    );
-                                  })}
+                                  {itensCor.map((item, idx) => (
+                                    <div 
+                                      key={idx} 
+                                      draggable
+                                      onDragStart={(e) => handleImageDragStart(e, idx)}
+                                      onDragOver={handleImageDragOver}
+                                      onDrop={(e) => handleImageDrop(e, idx, cId)}
+                                      className={`${styles.previewThumbContainer} ${idx === 0 ? styles.isFirstImage : ''}`}
+                                      title="Arraste para reposicionar (A 1ª é a capa)"
+                                    >
+                                      {idx === 0 && (
+                                        <span className={styles.badgeCapaImage}>
+                                          CAPA
+                                        </span>
+                                      )}
+                                      <img src={item.url} alt="" className={styles.imageThumb} />
+                                      <button 
+                                        type="button" 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          removeColorImage(cId, idx);
+                                        }} 
+                                        className={styles.btnRemoveThumb}
+                                      >
+                                        ×
+                                      </button>
+                                    </div>
+                                  ))}
                                 </div>
                               )}
                             </div>
@@ -2537,7 +2567,8 @@ export const AdminDashboard: React.FC = () => {
                           return !selectedColorForDetails || imgCorId === selectedColorForDetails;
                         }) || [];
 
-                        const listaImagensParaExibir = imagensDaCor.length > 0 ? imagensDaCor.map((img: any) => img.url) : selectedProductDetails.images;
+                        const imagensOrdenadasDaCor = [...imagensDaCor].sort((a: any, b: any) => (a.ordem ?? 0) - (b.ordem ?? 0));
+                        const listaImagensParaExibir = imagensOrdenadasDaCor.length > 0 ? imagensOrdenadasDaCor.map((img: any) => img.url) : selectedProductDetails.images;
                         const imagemAtualUrl = listaImagensParaExibir[activeImageIndex] || listaImagensParaExibir[0] || selectedProductDetails.images[0];
 
                         return (

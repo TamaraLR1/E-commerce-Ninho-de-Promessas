@@ -2002,3 +2002,38 @@
   border: 1px solid #cbd5e1;
   margin-bottom: 12px;
 }
+
+/* --- ESTILOS PARA DRAG AND DROP DE IMAGENS --- */
+.previewThumbContainer {
+  position: relative;
+  width: 70px;
+  height: 70px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  cursor: grab;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+  background-color: #fff;
+}
+
+.previewThumbContainer:active {
+  cursor: grabbing;
+}
+
+.previewThumbContainer.isFirstImage {
+  border: 2px solid #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+.badgeCapaImage {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 8px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  z-index: 2;
+  font-weight: bold;
+}

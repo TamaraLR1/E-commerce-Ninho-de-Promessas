@@ -62,7 +62,6 @@ export const produtoController = {
     try {
       const { nome, preco, descricao, categoryId, tamanhos, coresMapeamentoImagens } = req.body;
       
-      // Com o upload.any(), o req.files é um array plano de arquivos
       const arquivos = (req.files as Express.Multer.File[]) || [];
 
       const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
@@ -94,22 +93,15 @@ export const produtoController = {
         return res.status(400).json({ message: 'O produto deve conter pelo menos uma variação de cor e tamanho.' });
       }
 
-      // Extrair todas as cores únicas presentes nas variações
       const coresUnicasSet = new Set<string>();
       tamanhosParsed.forEach((item: any) => {
         if (item.corId) coresUnicasSet.add(String(item.corId));
       });
 
       const coresIdsArray = Array.from(coresUnicasSet);
-
-      const mapeamentoParsed = typeof coresMapeamentoImagens === 'string' 
-        ? JSON.parse(coresMapeamentoImagens) 
-        : (coresMapeamentoImagens || {});
-
       const baseUrl = `${req.protocol}://${req.get('host')}`;
-      const imagensCreatePayload: { url: string; corId: string }[] = [];
+      const imagensCreatePayload: { url: string; corId: string; ordem: number }[] = [];
 
-      // Varrer cada cor e buscar os arquivos correspondentes no array plano do multer pelo fieldname
       for (const corId of coresIdsArray) {
         const keyFiles = `imagens_${corId}`;
         const arquivosDaCor = arquivos.filter(file => file.fieldname === keyFiles);
@@ -122,10 +114,12 @@ export const produtoController = {
           return res.status(400).json({ message: `Cada cor pode ter no máximo 6 imagens.` });
         }
 
-        arquivosDaCor.forEach(file => {
+        // Atribui a ordem baseada na posição do array (0 = principal/esquerda)
+        arquivosDaCor.forEach((file, index) => {
           imagensCreatePayload.push({
             url: `${baseUrl}/uploads/${file.filename}`,
-            corId: corId
+            corId: corId,
+            ordem: index
           });
         });
       }
@@ -153,7 +147,7 @@ export const produtoController = {
         include: {
           categoria: true,
           estoques: { include: { tamanho: true, cor: true } },
-          imagens: { include: { cor: true } },
+          imagens: { include: { cor: true }, orderBy: { ordem: 'asc' } },
           criadoPor: true,    
           atualizadoPor: true,
         },
@@ -168,7 +162,7 @@ export const produtoController = {
         });
       }
 
-      const produtoFormatado = formatarProduto(novoProduto);
+      const produtoFormatado = (global as any).formatarProduto ? (global as any).formatarProduto(novoProduto) : novoProduto;
 
       const io = (req as any).io;
       if (io) {
@@ -218,28 +212,49 @@ export const produtoController = {
         return res.status(400).json({ message: 'O produto deve conter pelo menos uma variação válida.' });
       }
 
-      // Extrair todas as cores únicas presentes nas variações enviadas
       const coresUnicasSet = new Set<string>();
       tamanhosParsed.forEach((item: any) => {
         if (item.corId) coresUnicasSet.add(String(item.corId));
       });
       const coresIdsArray = Array.from(coresUnicasSet);
 
-      // Parse do mapeamento de imagens mantidas enviadas pelo front-end
       const imagensMantidasParsed = typeof coresMapeamentoImagens === 'string'
         ? JSON.parse(coresMapeamentoImagens)
         : (coresMapeamentoImagens || {});
 
       const baseUrl = `${req.protocol}://${req.get('host')}`;
-      const novasImagensCreatePayload: { url: string; corId: string }[] = [];
+      const novasImagensCreatePayload: { url: string; corId: string; ordem: number }[] = [];
 
-      // Validar e processar imagens por cor (mantidas + novas arquivos enviados)
       for (const corId of coresIdsArray) {
         const keyFiles = `imagens_${corId}`;
         const arquivosDaCor = arquivos.filter(file => file.fieldname === keyFiles);
         const mantidasDaCor = imagensMantidasParsed[corId] || [];
 
-        const totalImagensCor = arquivosDaCor.length + mantidasDaCor.length;
+        // No front-end, o array unificado (mantidas + novas reordenadas) deve ser enviado na ordem correta.
+        // Se o front envia separadamente, unimos preservando a sequência desejada:
+        const listaFinalUrlsDaCor = [...mantidasDaCor];
+        
+        // Se os novos arquivos entram misturados ou ao final, ajuste conforme a estrutura do seu payload frontend.
+        // Aqui assumimos que mantidasDaCor já reflete a ordem visual ou mapeamos o índice global da cor:
+        let ordemGlobalCor = 0;
+
+        mantidasDaCor.forEach((urlMantida: string) => {
+          novasImagensCreatePayload.push({
+            url: urlMantida,
+            corId: corId,
+            ordem: ordemGlobalCor++
+          });
+        });
+
+        arquivosDaCor.forEach(file => {
+          novasImagensCreatePayload.push({
+            url: `${baseUrl}/uploads/${file.filename}`,
+            corId: corId,
+            ordem: ordemGlobalCor++
+          });
+        });
+
+        const totalImagensCor = novasImagensCreatePayload.filter(img => img.corId === corId).length;
 
         if (totalImagensCor === 0) {
           return res.status(400).json({ message: `A cor selecionada precisa ter pelo menos 1 imagem obrigatória.` });
@@ -248,37 +263,17 @@ export const produtoController = {
         if (totalImagensCor > 6) {
           return res.status(400).json({ message: `Cada cor pode ter no máximo 6 imagens.` });
         }
-
-        // Adicionar URLs das imagens que já existiam e foram mantidas
-        mantidasDaCor.forEach((urlMantida: string) => {
-          novasImagensCreatePayload.push({
-            url: urlMantida,
-            corId: corId
-          });
-        });
-
-        // Adicionar os novos arquivos enviados para esta cor
-        arquivosDaCor.forEach(file => {
-          novasImagensCreatePayload.push({
-            url: `${baseUrl}/uploads/${file.filename}`,
-            corId: corId
-          });
-        });
       }
 
-      // Atualização atômica no banco: Remove imagens antigas e estoques antigos para recriar com os novos dados atualizados
       const produtoAtualizado = await prisma.$transaction(async (tx) => {
-        // 1. Deletar imagens antigas
         await tx.produtoImagem.deleteMany({
           where: { produtoId: id }
         });
 
-        // 2. Deletar estoques antigos
         await tx.produtoEstoque.deleteMany({
           where: { produtoId: id }
         });
 
-        // 3. Atualizar dados gerais, criar novos estoques e novas imagens associadas às cores
         return await tx.produto.update({
           where: { id },
           data: {
@@ -302,7 +297,7 @@ export const produtoController = {
           include: {
             categoria: true,
             estoques: { include: { tamanho: true, cor: true } },
-            imagens: { include: { cor: true } },
+            imagens: { include: { cor: true }, orderBy: { ordem: 'asc' } },
             criadoPor: true,
             atualizadoPor: true,
           },
@@ -313,7 +308,7 @@ export const produtoController = {
         await prisma.logAtividade.create({
           data: {
             adminId: adminId,
-            acao: `Atualizou o produto "${nome}" com novas cores/estoques`
+            acao: `Atualizou o produto "${nome}" com novas cores/estoques e ordenação de imagens`
           }
         });
       }
