@@ -60,7 +60,8 @@ export const produtoController = {
 
   async criar(req: Request, res: Response) {
     try {
-      const { nome, preco, descricao, categoryId, tamanhos, coresMapeamentoImagens } = req.body;
+      // 1. Extrair o campo genero do req.body
+      const { nome, preco, descricao, categoryId, genero, tamanhos, coresMapeamentoImagens } = req.body;
       
       const arquivos = (req.files as Express.Multer.File[]) || [];
 
@@ -114,7 +115,6 @@ export const produtoController = {
           return res.status(400).json({ message: `Cada cor pode ter no máximo 6 imagens.` });
         }
 
-        // Atribui a ordem baseada na posição do array (0 = principal/esquerda)
         arquivosDaCor.forEach((file, index) => {
           imagensCreatePayload.push({
             url: `${baseUrl}/uploads/${file.filename}`,
@@ -130,6 +130,7 @@ export const produtoController = {
           preco: precoNumerico,
           descricao: descricao || null,
           categoryId: String(categoryId),
+          genero: genero || 'Unissex', // 2. Adicionado o campo genero com fallback
           isVisible: false,
           criadoPorId: adminId,
           atualizadoPorId: adminId,
@@ -179,7 +180,8 @@ export const produtoController = {
   async atualizar(req: Request, res: Response) {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : String(req.params.id);
-      const { nome, preco, descricao, categoryId, tamanhos, coresMapeamentoImagens, isVisible } = req.body;
+      // 3. Extrair o campo genero no update
+      const { nome, preco, descricao, categoryId, genero, tamanhos, coresMapeamentoImagens, isVisible } = req.body;
       const arquivos = (req.files as Express.Multer.File[]) || [];
 
       const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
@@ -230,12 +232,7 @@ export const produtoController = {
         const arquivosDaCor = arquivos.filter(file => file.fieldname === keyFiles);
         const mantidasDaCor = imagensMantidasParsed[corId] || [];
 
-        // No front-end, o array unificado (mantidas + novas reordenadas) deve ser enviado na ordem correta.
-        // Se o front envia separadamente, unimos preservando a sequência desejada:
         const listaFinalUrlsDaCor = [...mantidasDaCor];
-        
-        // Se os novos arquivos entram misturados ou ao final, ajuste conforme a estrutura do seu payload frontend.
-        // Aqui assumimos que mantidasDaCor já reflete a ordem visual ou mapeamos o índice global da cor:
         let ordemGlobalCor = 0;
 
         mantidasDaCor.forEach((urlMantida: string) => {
@@ -281,6 +278,7 @@ export const produtoController = {
             preco: precoNumerico,
             descricao: descricao || null,
             categoryId: String(categoryId),
+            genero: genero || produtoExistente.genero || 'Unissex', // 4. Atualizar o campo genero mantendo o existente se omitido
             isVisible: isVisible !== undefined ? Boolean(isVisible) : produtoExistente.isVisible,
             atualizadoPorId: adminId,
             estoques: {

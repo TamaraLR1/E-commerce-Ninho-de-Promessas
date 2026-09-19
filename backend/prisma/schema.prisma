@@ -82,6 +82,7 @@ model Produto {
   nome        String           @db.VarChar(100) // Máximo 100 caracteres
   preco       Decimal          @db.Decimal(10, 2) // Preço monetário
   descricao   String?          @db.Text
+  genero      String           @default("Unissex")
   ativo       Boolean          @default(true) // <--- Adicione esta linha aqui
   categoryId  String
   categoria   Categoria        @relation(fields: [categoryId], references: [id])

@@ -6,6 +6,7 @@ interface ProductMaster {
   id: string;
   name: string;
   category: string;
+  gender?: string; // <--- Adicionado para suportar o gênero
   description: string;
   images: string[];
   rawImages?: any[];
@@ -139,6 +140,7 @@ export const AdminDashboard: React.FC = () => {
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'todos' | 'esgotado' | 'baixo'>('todos');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'ativos' | 'desativados'>('todos');
+  const [genderFilter, setGenderFilter] = useState<string>('todos'); // <--- Filtro de gênero na vitrine
   const [sortBy, setSortBy] = useState<'nome-asc' | 'nome-desc' | 'preco-asc' | 'preco-desc' | 'estoque-desc' | 'estoque-asc'>('nome-asc');
 
   const [selectedProductDetails, setSelectedProductDetails] = useState<ProductMaster | null>(null);
@@ -148,6 +150,7 @@ export const AdminDashboard: React.FC = () => {
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [newCategoryId, setNewCategoryId] = useState('');
+  const [newGender, setNewGender] = useState<string>('Unissex'); // <--- Estado para o campo de gênero no formulário
   const [newDesc, setNewDesc] = useState('');
   const [newPrice, setNewPrice] = useState('');
   
@@ -363,6 +366,7 @@ export const AdminDashboard: React.FC = () => {
             id: p.id,
             name: p.nome,
             category: p.categoria?.nome || 'Geral',
+            gender: p.genero || 'Unissex', // Mapeando o gênero vindo do backend
             description: p.descricao || '',
             images: p.imagens && p.imagens.length > 0 ? p.imagens.map((img: any) => img.url) : ['https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?q=80&w=200'],
             rawImages: p.imagens || [],
@@ -953,6 +957,7 @@ export const AdminDashboard: React.FC = () => {
     setNewName(prod.name);
     setNewDesc(prod.description);
     setNewPrice(prod.originalPrice.toString());
+    setNewGender(prod.gender || 'Unissex'); // <--- Carrega o gênero do produto na edição
     
     const catMatch = categoriasList.find(c => c.nome === prod.category);
     if (catMatch) {
@@ -1016,6 +1021,7 @@ export const AdminDashboard: React.FC = () => {
     setSelectedColors([]);
     setColorSizeConfigs([]);
     setColorImages({});
+    setNewGender('Unissex');
     setActiveTab('lista'); 
   };
 
@@ -1108,6 +1114,7 @@ export const AdminDashboard: React.FC = () => {
       formData.append('preco', newPrice);
       formData.append('descricao', newDesc);
       formData.append('categoryId', newCategoryId);
+      formData.append('genero', newGender); // <--- Enviando o gênero para o backend
       
       formData.append('tamanhos', JSON.stringify(arrayPlanoTamanhos));
 
@@ -1158,6 +1165,11 @@ export const AdminDashboard: React.FC = () => {
       prod.id.toLowerCase().includes(searchTerm.toLowerCase());
 
     if (!matchesSearch) return false;
+
+    // Filtro por Gênero
+    if (genderFilter !== 'todos' && prod.gender !== genderFilter) {
+      return false;
+    }
 
     const categoriaEncontrada = categoriasList.find(c => c.nome === prod.category);
     const categoriaInativa = categoriaEncontrada?.ativo === false;
@@ -1312,6 +1324,7 @@ export const AdminDashboard: React.FC = () => {
                 setNewName('');
                 setNewDesc('');
                 setNewPrice('');
+                setNewGender('Unissex');
                 setActiveTab('cadastro'); 
                 setIsMenuOpen(false); 
               }}
@@ -1629,12 +1642,24 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
 
-                <div className={styles.group}>
-                  <label>Categoria</label>
-                  <select value={newCategoryId} onChange={e => setNewCategoryId(e.target.value)} required>
-                    <option value="">Selecione uma categoria...</option>
-                    {categoriasList.filter(cat => cat.ativo !== false).map(cat => <option key={cat.id} value={cat.id}>{cat.nome}</option>)}
-                  </select>
+                <div className={styles.gridContainerPrice}>
+                  <div className={styles.group}>
+                    <label>Categoria</label>
+                    <select value={newCategoryId} onChange={e => setNewCategoryId(e.target.value)} required>
+                      <option value="">Selecione uma categoria...</option>
+                      {categoriasList.filter(cat => cat.ativo !== false).map(cat => <option key={cat.id} value={cat.id}>{cat.nome}</option>)}
+                    </select>
+                  </div>
+                  
+                  {/* --- CAMPO DE GÊNERO ADICIONADO NO FORMULÁRIO --- */}
+                  <div className={styles.group}>
+                    <label>Gênero</label>
+                    <select value={newGender} onChange={e => setNewGender(e.target.value)} required>
+                      <option value="Unissex">Unissex</option>
+                      <option value="Masculino">Masculino</option>
+                      <option value="Feminino">Feminino</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div className={styles.group}>
@@ -2376,6 +2401,18 @@ export const AdminDashboard: React.FC = () => {
             <div className={`${styles.searchSection} ${styles.listSearchFilterRow}`}>
               <input type="text" className={`${styles.searchInput} ${styles.listSearchInputFlex}`} placeholder="🔍 Buscar por nome, categoria, descrição ou ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
               
+              {/* --- FILTRO POR GÊNERO NA VITRINE --- */}
+              <select 
+                value={genderFilter} 
+                onChange={(e) => setGenderFilter(e.target.value)}
+                className={styles.listSelectDropdown}
+              >
+                <option value="todos">⚧️ Todos os Gêneros</option>
+                <option value="Unissex">Unissex</option>
+                <option value="Masculino">Masculino</option>
+                <option value="Feminino">Feminino</option>
+              </select>
+
               <select 
                 value={statusFilter} 
                 onChange={(e) => setStatusFilter(e.target.value as any)}
@@ -2438,7 +2475,10 @@ export const AdminDashboard: React.FC = () => {
                         )}
                       </div>
                       <div className={styles.catalogCardInfo}>
-                        <span className={styles.badgeCategory}>{prod.category}</span>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          <span className={styles.badgeCategory}>{prod.category}</span>
+                          {prod.gender && <span className={styles.badgeCategory} style={{ backgroundColor: '#f1f5f9', color: '#475569' }}>{prod.gender}</span>}
+                        </div>
                         <h4>{prod.name}</h4>
 
                         <div className={styles.priceDisplayArea}>
@@ -2598,9 +2638,16 @@ export const AdminDashboard: React.FC = () => {
                     </div>
 
                     <div>
-                      <span className={styles.modalCategoryBadge}>
-                        {selectedProductDetails.category}
-                      </span>
+                      <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                        <span className={styles.modalCategoryBadge}>
+                          {selectedProductDetails.category}
+                        </span>
+                        {selectedProductDetails.gender && (
+                          <span className={styles.modalCategoryBadge} style={{ backgroundColor: '#f1f5f9', color: '#334155' }}>
+                            {selectedProductDetails.gender}
+                          </span>
+                        )}
+                      </div>
                       <h2 className={styles.modalProductTitle}>{selectedProductDetails.name}</h2>
                       
                       <div className={styles.modalPriceBlock}>
@@ -2820,7 +2867,6 @@ export const AdminDashboard: React.FC = () => {
                     }
 
                     const colorStockData = Array.from(colorMap.values()).map(colorItem => {
-                      // Ordena os tamanhos dentro da cor com base na propriedade 'ordem' cadastrada globalmente
                       colorItem.sizes.sort((s1, s2) => {
                         const tamObj1 = tamanhosList.find(t => t.nome === s1.size);
                         const tamObj2 = tamanhosList.find(t => t.nome === s2.size);
