@@ -70,7 +70,7 @@ interface Product {
   isVisible: boolean;
   ativo: boolean;
   ativoGeral?: boolean;
-  genero?: string; // Campo de gênero do produto se houver no banco
+  genero?: string; 
   categoria: Category;
   imagens: {
     id: string;
@@ -129,6 +129,9 @@ export const Home: React.FC = () => {
   // Estados dos Filtros
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  
+  // Estado do Filtro de Ordenação
+  const [sortBy, setSortBy] = useState<string>('novidades');
   
   // Filtros solicitados: Preço Mínimo/Máximo (0 a 500), Tamanho, Gênero e Cor
   const [precoMin, setPrecoMin] = useState<number>(0);
@@ -318,7 +321,7 @@ export const Home: React.FC = () => {
       if (!temTamanho) return false;
     }
 
-    // 3. Filtro de Gênero (Busca na propriedade gênero ou na categoria/descrição)
+    // 3. Filtro de Gênero
     if (filtroGenero !== 'Todos') {
       const generoProd = (p.genero || '').toLowerCase();
       const catProd = (p.categoria?.nome || '').toLowerCase();
@@ -336,6 +339,30 @@ export const Home: React.FC = () => {
     }
 
     return true;
+  });
+
+  // Lógica de Ordenação dos Produtos Filtrados
+  const sortedAndFilteredProducts = [...filteredProducts].sort((a, b) => {
+    if (sortBy === 'novidades') {
+      return b.id.localeCompare(a.id);
+    }
+    
+    const precoA = a.temOferta && a.precoPromocional && Number(a.precoPromocional) > 0 ? Number(a.precoPromocional) : (parseFloat(a.preco) || 0);
+    const precoB = b.temOferta && b.precoPromocional && Number(b.precoPromocional) > 0 ? Number(b.precoPromocional) : (parseFloat(b.preco) || 0);
+
+    if (sortBy === 'preco-asc') {
+      return precoA - precoB;
+    }
+    if (sortBy === 'preco-desc') {
+      return precoB - precoA;
+    }
+    if (sortBy === 'nome-asc') {
+      return a.nome.localeCompare(b.nome);
+    }
+    if (sortBy === 'nome-desc') {
+      return b.nome.localeCompare(a.nome);
+    }
+    return 0;
   });
 
   return (
@@ -474,7 +501,7 @@ export const Home: React.FC = () => {
               <button type="button" onClick={() => setIsFilterDrawerOpen(false)} style={{ background: 'none', border: 'none', fontSize: '1.3rem', cursor: 'pointer' }}>×</button>
             </div>
 
-            {/* 1. FILTRO DE PREÇO (Faixa dupla com trilha colorida no meio) */}
+            {/* 1. FILTRO DE PREÇO */}
             <div className={styles.filterGroup}>
               <label className={styles.filterGroupLabel}>
                 Faixa de Preço: <strong>R$ {precoMin.toFixed(2)}</strong> até <strong>R$ {precoMax.toFixed(2)}</strong>
@@ -483,7 +510,6 @@ export const Home: React.FC = () => {
               <div className={styles.dualSliderContainer}>
                 <div className={styles.dualSliderTrack}></div>
                 
-                {/* Faixa colorida que preenche o espaço entre as duas bolinhas */}
                 <div 
                   className={styles.dualSliderRange} 
                   style={{ 
@@ -492,7 +518,6 @@ export const Home: React.FC = () => {
                   }}
                 ></div>
                 
-                {/* Slider do Preço Mínimo */}
                 <input 
                   type="range" 
                   min="0" 
@@ -507,7 +532,6 @@ export const Home: React.FC = () => {
                   style={{ zIndex: precoMin > 400 ? 3 : 2 }}
                 />
 
-                {/* Slider do Preço Máximo */}
                 <input 
                   type="range" 
                   min="0" 
@@ -524,7 +548,7 @@ export const Home: React.FC = () => {
               </div>
             </div>
 
-            {/* 2. FILTRO DE TAMANHO (Todos cadastrados no banco) */}
+            {/* 2. FILTRO DE TAMANHO */}
             <div className={styles.filterGroup}>
               <label className={styles.filterGroupLabel}>Tamanho</label>
               <div className={styles.filterSizeGrid}>
@@ -548,7 +572,7 @@ export const Home: React.FC = () => {
               </div>
             </div>
 
-            {/* 3. FILTRO DE GÊNERO (Masculino, Feminino, Unissex) */}
+            {/* 3. FILTRO DE GÊNERO */}
             <div className={styles.filterGroup}>
               <label className={styles.filterGroupLabel}>Gênero</label>
               <div className={styles.filterSizeGrid}>
@@ -565,7 +589,7 @@ export const Home: React.FC = () => {
               </div>
             </div>
 
-            {/* 4. FILTRO DE COR (Todas cadastradas no banco) */}
+            {/* 4. FILTRO DE COR */}
             <div className={styles.filterGroup}>
               <label className={styles.filterGroupLabel}>Cor</label>
               <div className={styles.filterColorList}>
@@ -599,7 +623,7 @@ export const Home: React.FC = () => {
                 className={styles.actionButton}
                 onClick={() => setIsFilterDrawerOpen(false)}
               >
-                Ver Produtos ({filteredProducts.length})
+                Ver Produtos ({sortedAndFilteredProducts.length})
               </button>
             </div>
           </div>
@@ -608,8 +632,8 @@ export const Home: React.FC = () => {
 
       {/* Vitrine de Produtos */}
       <main className={styles.productsSection}>
-        {/* Botão de Filtros alinhado à esquerda acima de Produtos em Destaque */}
-        <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'flex-start' }}>
+        {/* Botão de Filtros e Seletor de Ordenação lado a lado (à esquerda) */}
+        <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <button 
             type="button"
             style={{ 
@@ -629,16 +653,29 @@ export const Home: React.FC = () => {
           >
             Filtros
           </button>
+
+          {/* Seletor de Ordenação ao lado direito do botão de Filtros */}
+          <select 
+            value={sortBy} 
+            onChange={(e) => setSortBy(e.target.value)}
+            className={styles.sortSelect}
+          >
+            <option value="novidades">✨ Novidades</option>
+            <option value="preco-asc">💲 Menor preço</option>
+            <option value="preco-desc">💲 Maior preço</option>
+            <option value="nome-asc">🔤 Nome A-Z</option>
+            <option value="nome-desc">🔤 Nome Z-A</option>
+          </select>
         </div>
 
         <h2>Produtos em Destaque</h2>
         <div className={styles.grid}>
-          {filteredProducts.length === 0 ? (
+          {sortedAndFilteredProducts.length === 0 ? (
             <p style={{ color: '#666', gridColumn: '1 / -1', textAlign: 'center', padding: '2rem 0' }}>
               Nenhum produto encontrado com os filtros selecionados.
             </p>
           ) : (
-            filteredProducts.map(product => {
+            sortedAndFilteredProducts.map(product => {
               const coresCardMap = new Map();
               product.estoques?.forEach((item: any) => {
                 if (item.cor) {

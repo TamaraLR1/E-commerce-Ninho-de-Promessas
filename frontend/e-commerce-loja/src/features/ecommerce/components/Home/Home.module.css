@@ -292,7 +292,6 @@
 }
 
 /* Cabeçalho Organizado por Flexbox para evitar sobreposições no celular */
-/* Cabeçalho Responsivo Proporcional */
 .bannerContainer {
   width: 100%;
   background-color: #F4F4F2;
@@ -303,7 +302,7 @@
   box-sizing: border-box;
   border-bottom: 1px solid #e2e8f0;
   position: relative;
-  min-height: 200px; /* Aumentado para acomodar a logo maior */
+  min-height: 200px;
 }
 
 .bannerLeftGroup {
@@ -324,7 +323,6 @@
   pointer-events: none;
 }
 
-/* Imagem maior em telas grandes (aumentada para 170px) */
 .bannerLogo {
   max-height: 170px;
   width: auto;
@@ -343,7 +341,6 @@
   flex: 1;
 }
 
-/* Botões do topo mantêm o tamanho excelente em telas grandes */
 .desktopTopButton {
   padding: 0.5rem 1rem !important;
   font-size: 0.95rem !important;
@@ -357,7 +354,6 @@
   white-space: nowrap;
 }
 
-/* Responsividade Automática para Celulares (mantém proporcional e menor) */
 @media (max-width: 768px) {
   .bannerContainer {
     padding: 0.75rem 1rem;
@@ -794,4 +790,23 @@
   border: 2px solid #ffffff;
   box-shadow: 0 2px 4px rgba(0,0,0,0.2);
   cursor: pointer;
+}
+
+/* Estilo para o seletor de ordenação ao lado do botão de Filtros */
+.sortSelect {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  color: #334155;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.sortSelect:hover {
+  border-color: #C29E7A;
 }
