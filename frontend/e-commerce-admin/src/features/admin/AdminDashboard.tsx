@@ -6,7 +6,7 @@ interface ProductMaster {
   id: string;
   name: string;
   category: string;
-  gender?: string; // <--- Adicionado para suportar o gênero
+  gender?: string;
   description: string;
   images: string[];
   rawImages?: any[];
@@ -140,7 +140,7 @@ export const AdminDashboard: React.FC = () => {
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [stockFilter, setStockFilter] = useState<'todos' | 'esgotado' | 'baixo'>('todos');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'ativos' | 'desativados'>('todos');
-  const [genderFilter, setGenderFilter] = useState<string>('todos'); // <--- Filtro de gênero na vitrine
+  const [genderFilter, setGenderFilter] = useState<string>('todos');
   const [sortBy, setSortBy] = useState<'nome-asc' | 'nome-desc' | 'preco-asc' | 'preco-desc' | 'estoque-desc' | 'estoque-asc'>('nome-asc');
 
   const [selectedProductDetails, setSelectedProductDetails] = useState<ProductMaster | null>(null);
@@ -150,7 +150,7 @@ export const AdminDashboard: React.FC = () => {
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [newCategoryId, setNewCategoryId] = useState('');
-  const [newGender, setNewGender] = useState<string>('Unissex'); // <--- Estado para o campo de gênero no formulário
+  const [newGender, setNewGender] = useState<string>('Unissex');
   const [newDesc, setNewDesc] = useState('');
   const [newPrice, setNewPrice] = useState('');
   
@@ -366,7 +366,7 @@ export const AdminDashboard: React.FC = () => {
             id: p.id,
             name: p.nome,
             category: p.categoria?.nome || 'Geral',
-            gender: p.genero || 'Unissex', // Mapeando o gênero vindo do backend
+            gender: p.genero || 'Unissex',
             description: p.descricao || '',
             images: p.imagens && p.imagens.length > 0 ? p.imagens.map((img: any) => img.url) : ['https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?q=80&w=200'],
             rawImages: p.imagens || [],
@@ -957,7 +957,7 @@ export const AdminDashboard: React.FC = () => {
     setNewName(prod.name);
     setNewDesc(prod.description);
     setNewPrice(prod.originalPrice.toString());
-    setNewGender(prod.gender || 'Unissex'); // <--- Carrega o gênero do produto na edição
+    setNewGender(prod.gender || 'Unissex');
     
     const catMatch = categoriasList.find(c => c.nome === prod.category);
     if (catMatch) {
@@ -1043,6 +1043,32 @@ export const AdminDashboard: React.FC = () => {
       return;
     }
 
+    // --- VALIDAÇÃO DE ESTOQUE INICIAL OBRIGATÓRIO (> 0) ---
+    for (const config of colorSizeConfigs) {
+      const tamanhosIds = config.tamanhosIds || [];
+      const estoquesMap = config.estoques || {};
+      const corObj = coresList.find(c => c.id === config.corId);
+
+      for (const tId of tamanhosIds) {
+        const produtoOriginal = editingProductId ? products.find(p => p.id === editingProductId) : null;
+        const itemJaExistia = produtoOriginal?.rawSizes?.some(
+          s => s.corId === config.corId && s.tamanhoId === tId
+        );
+
+        if (!editingProductId || !itemJaExistia) {
+          const val = estoquesMap[tId];
+          const tamObj = tamanhosList.find(t => t.id === tId);
+          const numVal = Number(val);
+          
+          if (val === undefined || val === '' || isNaN(numVal) || numVal <= 0) {
+            alert(`Obrigatório pelo menos uma unidade na variação especifica! A cor "${corObj?.nome || 'Selecionada'}" no tamanho "${tamObj?.nome || tId}" precisa ter estoque inicial maior que zero.`);
+            return;
+          }
+        }
+      }
+    }
+    // ----------------------------------------------------
+
     for (const cId of selectedColors) {
       const itensCor = colorImages[cId] || [];
 
@@ -1066,16 +1092,16 @@ export const AdminDashboard: React.FC = () => {
       const estoquesMap = config.estoques || {};
       
       if (tamanhosIds.length === 0) {
-        const inputVal = estoquesMap[''] || '0';
+        const inputVal = estoquesMap[''] || '1';
         let qtdEstoque = parseInt(inputVal, 10);
-        if (isNaN(qtdEstoque)) qtdEstoque = 0;
+        if (isNaN(qtdEstoque) || qtdEstoque <= 0) qtdEstoque = 1;
 
         if (editingProductId && produtoAntigo) {
           const itemExistente = produtoAntigo.rawSizes?.find(
             s => s.corId === config.corId && (!s.tamanhoId || s.tamanhoId === '')
           );
           if (itemExistente) {
-            qtdEstoque = itemExistente.estoque ?? 0;
+            qtdEstoque = itemExistente.estoque ?? 1;
           }
         }
 
@@ -1086,16 +1112,16 @@ export const AdminDashboard: React.FC = () => {
         });
       } else {
         tamanhosIds.forEach(tamanhoId => {
-          const inputVal = estoquesMap[tamanhoId] || '0';
+          const inputVal = estoquesMap[tamanhoId] || '1';
           let qtdEstoque = parseInt(inputVal, 10);
-          if (isNaN(qtdEstoque)) qtdEstoque = 0;
+          if (isNaN(qtdEstoque) || qtdEstoque <= 0) qtdEstoque = 1;
 
           if (editingProductId && produtoAntigo) {
             const itemExistente = produtoAntigo.rawSizes?.find(
               s => s.corId === config.corId && s.tamanhoId === tamanhoId
             );
             if (itemExistente) {
-              qtdEstoque = itemExistente.estoque ?? 0;
+              qtdEstoque = itemExistente.estoque ?? 1;
             }
           }
 
@@ -1114,7 +1140,7 @@ export const AdminDashboard: React.FC = () => {
       formData.append('preco', newPrice);
       formData.append('descricao', newDesc);
       formData.append('categoryId', newCategoryId);
-      formData.append('genero', newGender); // <--- Enviando o gênero para o backend
+      formData.append('genero', newGender);
       
       formData.append('tamanhos', JSON.stringify(arrayPlanoTamanhos));
 
@@ -1166,7 +1192,6 @@ export const AdminDashboard: React.FC = () => {
 
     if (!matchesSearch) return false;
 
-    // Filtro por Gênero
     if (genderFilter !== 'todos' && prod.gender !== genderFilter) {
       return false;
     }
@@ -1650,8 +1675,6 @@ export const AdminDashboard: React.FC = () => {
                       {categoriasList.filter(cat => cat.ativo !== false).map(cat => <option key={cat.id} value={cat.id}>{cat.nome}</option>)}
                     </select>
                   </div>
-                  
-                  {/* --- CAMPO DE GÊNERO ADICIONADO NO FORMULÁRIO --- */}
                   <div className={styles.group}>
                     <label>Gênero</label>
                     <select value={newGender} onChange={e => setNewGender(e.target.value)} required>
@@ -1829,16 +1852,17 @@ export const AdminDashboard: React.FC = () => {
 
                                         {isChecked && (!editingProductId || !itemJaExistia) && (
                                           <div className={styles.initialStockBoxGroup}>
-                                            <label className={styles.initialStockLabel}>
-                                              Estoque Inicial (Novo Item):
+                                            <label className={styles.initialStockLabel} style={{ color: '#dc2626', fontWeight: 'bold' }}>
+                                              * Estoque Inicial (Mínimo 1):
                                             </label>
                                             <input 
                                               type="number" 
-                                              min="0"
-                                              placeholder="0"
+                                              min="1"
+                                              placeholder="Ex: 1"
                                               value={estoqueValor}
                                               onChange={(e) => handleStockChangeForSize(cId, tam.id, e.target.value)}
                                               className={styles.initialStockInput}
+                                              required
                                             />
                                           </div>
                                         )}
@@ -2401,7 +2425,6 @@ export const AdminDashboard: React.FC = () => {
             <div className={`${styles.searchSection} ${styles.listSearchFilterRow}`}>
               <input type="text" className={`${styles.searchInput} ${styles.listSearchInputFlex}`} placeholder="🔍 Buscar por nome, categoria, descrição ou ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
               
-              {/* --- FILTRO POR GÊNERO NA VITRINE --- */}
               <select 
                 value={genderFilter} 
                 onChange={(e) => setGenderFilter(e.target.value)}
