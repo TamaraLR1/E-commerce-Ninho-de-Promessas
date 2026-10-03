@@ -1790,7 +1790,7 @@ export const AdminDashboard: React.FC = () => {
                                     style={{ backgroundColor: '#dc2626', color: '#fff' }}
                                     title="Excluir esta cor por não ter tamanhos selecionados"
                                   >
-                                    🗑️️ Excluir Cor
+                                    🗑 Excluir Cor
                                   </button>
                                 )}
                               </div>
@@ -2508,7 +2508,6 @@ export const AdminDashboard: React.FC = () => {
                   const precoOri = Number(prod.originalPrice || (prod as any).preco || 0);
                   const precoPromo = Number(prod.offerPrice || (prod as any).precoPromocional || 0);
 
-                  // Considera em oferta se a flag for verdadeira OU se houver preço promocional válido menor que o original
                   const temOfertaAtiva = Boolean(prod.hasOffer || (prod as any).temOferta || (precoPromo > 0 && precoPromo < precoOri));
 
                   const percentualDesc = precoOri > 0 && precoPromo > 0 && precoPromo < precoOri
@@ -2526,22 +2525,23 @@ export const AdminDashboard: React.FC = () => {
                         setSelectedColorForDetails(primeiraCorId);
                       }}
                     >
+                      {/* BARRA DE SELOS NO TOPO DO CARD (FORA DA IMAGEM) */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '8px 12px 0 12px', minHeight: '28px' }}>
+                        {prod.isNovidade ? (
+                          <span style={{ backgroundColor: '#fef08a', color: '#854d0e', fontSize: '0.75rem', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', textTransform: 'uppercase' }}>
+                            ✨ Novidade
+                          </span>
+                        ) : <span />}
+
+                        {temOfertaAtiva && percentualDesc > 0 && (
+                          <span style={{ backgroundColor: '#fef08a', color: '#854d0e', fontSize: '0.75rem', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', textTransform: 'uppercase' }}>
+                            {percentualDesc}% OFF
+                          </span>
+                        )}
+                      </div>
+
                       <div className={styles.carouselContainer} style={{ position: 'relative' }}>
                         <img src={prod.images[0]} alt="" className={styles.catalogCardImage} />
-
-                        {/* Selo de Novidade (Canto Superior Esquerdo) */}
-                        {prod.isNovidade && (
-                          <div className={styles.badgeNovidadeVitrine}>
-                            ✨ Novidade
-                          </div>
-                        )}
-
-                        {/* Selo de Oferta (Canto Superior Direito) */}
-                        {temOfertaAtiva && precoOri > 0 && (
-                          <div className={styles.badgeOfferBadge}>
-                            {percentualDesc}% OFF
-                          </div>
-                        )}
 
                         {isDesativado && (
                           <span className={styles.badgeDisabledProduct}>

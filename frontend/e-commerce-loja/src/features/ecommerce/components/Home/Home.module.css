@@ -117,36 +117,38 @@
   background-color: #C29E7A;
 }
 
-/* Selo de Novidade (Canto Superior Esquerdo) */
-.badgeNovidadeVitrine {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  background-color: #fef08a; /* Amarelo suave */
-  color: #854d0e;          /* Texto escuro contrastante */
-  font-size: 0.85rem;
-  font-weight: 600;
-  padding: 4px 8px;
-  border-radius: 6px;
-  z-index: 4;
-  text-transform: uppercase;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+/* Barra de selos no topo absoluto do card do produto */
+.badgesTopBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  margin-bottom: 8px; /* Espaço entre os selos e a foto */
+  min-height: 24px;   /* Mantém o espaço reservado mesmo se houver apenas um selo */
 }
 
-/* Selo de Oferta / % OFF (Canto Superior Direito) */
-.badgeOfferBadge {
-  position: absolute;
-  top: 10px;
-  right: 10px;
+/* Selo de Novidade (Fica à esquerda na barra) */
+.badgeNovidadeVitrine {
   background-color: #fef08a; /* Amarelo suave */
-  color: #854d0e;         /* Texto vermelho escuro contrastante */
-  font-size: 0.85rem;
+  color: #854d0e;          /* Texto escuro contrastante */
+  font-size: 0.75rem;
   font-weight: 600;
-  padding: 4px 8px;
+  padding: 3px 8px;
   border-radius: 6px;
-  z-index: 4;
   text-transform: uppercase;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* Selo de Oferta / % OFF (Fica à direita na barra) */
+.badgeOfferBadge {
+  background-color: #fef08a; /* Amarelo suave */
+  color: #854d0e;          /* Texto escuro contrastante */
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 /* Overlay dos Modais */

@@ -689,6 +689,22 @@ export const Home: React.FC = () => {
 
               return (
                 <div key={product.id} className={styles.productCard}>
+                  
+                  {/* BARRA DE SELOS NO TOPO DO CARD (FORA DA IMAGEM) */}
+                  <div className={styles.badgesTopBar}>
+                    {product.isNovidade ? (
+                      <span className={styles.badgeNovidadeVitrine}>
+                        ✨ Novidade
+                      </span>
+                    ) : <span />}
+
+                    {emOferta && product.percentualDesconto && product.percentualDesconto > 0 && (
+                      <span className={styles.badgeOfferBadge}>
+                        {product.percentualDesconto}% OFF
+                      </span>
+                    )}
+                  </div>
+
                   <div className={styles.imageContainer} style={{ position: 'relative' }}>
                     <img 
                       src={imageUrl} 
@@ -700,20 +716,6 @@ export const Home: React.FC = () => {
                         setSelectedColorForDetails(currentCardColor || product.estoques?.find(e => e.cor)?.cor?.id || null);
                       }}
                     />
-
-                    {/* SELO DE NOVIDADE (Canto Superior Esquerdo) */}
-                    {product.isNovidade && (
-                      <span className={styles.badgeNovidadeVitrine}>
-                        ✨ Novidade
-                      </span>
-                    )}
-
-                    {/* SELO DE OFERTA / % OFF (Canto Superior Direito) */}
-                    {emOferta && product.percentualDesconto && product.percentualDesconto > 0 && (
-                      <span className={styles.badgeOfferBadge}>
-                        {product.percentualDesconto}% OFF
-                      </span>
-                    )}
 
                     {listaImagensCard.length > 1 && (
                       <>
