@@ -117,6 +117,38 @@
   background-color: #C29E7A;
 }
 
+/* Selo de Novidade (Canto Superior Esquerdo) */
+.badgeNovidadeVitrine {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background-color: #fef08a; /* Amarelo suave */
+  color: #854d0e;          /* Texto escuro contrastante */
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  z-index: 4;
+  text-transform: uppercase;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Selo de Oferta / % OFF (Canto Superior Direito) */
+.badgeOfferBadge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background-color: #fef08a; /* Amarelo suave */
+  color: #854d0e;         /* Texto vermelho escuro contrastante */
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  z-index: 4;
+  text-transform: uppercase;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
 /* Overlay dos Modais */
 .modalOverlay {
   position: fixed;
@@ -291,7 +323,6 @@
   font-weight: 500;
 }
 
-/* Cabeçalho Organizado por Flexbox para evitar sobreposições no celular */
 .bannerContainer {
   width: 100%;
   background-color: #F4F4F2;
@@ -305,24 +336,6 @@
   min-height: 200px;
 }
 
-.bannerLeftGroup {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  z-index: 10;
-  flex: 1;
-}
-
-.bannerCenterGroup {
-  flex: 2;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  position: relative;
-  height: 100%;
-  pointer-events: none;
-}
-
 .bannerLogo {
   max-height: 170px;
   width: auto;
@@ -330,15 +343,6 @@
   object-fit: contain;
   display: block;
   margin: 0 auto;
-}
-
-.bannerRightGroup {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  z-index: 10;
-  flex: 1;
 }
 
 .desktopTopButton {
@@ -620,7 +624,6 @@
   font-size: 0.9rem;
 }
 
-/* Painel Lateral de Filtros e Sliders */
 .filterDrawerOverlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -792,7 +795,6 @@
   cursor: pointer;
 }
 
-/* Estilo para o seletor de ordenação ao lado do botão de Filtros */
 .sortSelect {
   padding: 0.5rem 1rem;
   border-radius: 6px;

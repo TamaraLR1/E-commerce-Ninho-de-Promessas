@@ -71,6 +71,7 @@ interface Product {
   ativo: boolean;
   ativoGeral?: boolean;
   genero?: string; 
+  isNovidade?: boolean; 
   categoria: Category;
   imagens: {
     id: string;
@@ -123,17 +124,13 @@ export const Home: React.FC = () => {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCategoryDrawerOpen, setIsCategoryDrawerOpen] = useState(false);
   
-  // Controle do Modal/Gaveta de Filtros Avançados
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
 
-  // Estados dos Filtros
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
   const [searchTerm, setSearchTerm] = useState<string>('');
-  
-  // Estado do Filtro de Ordenação
   const [sortBy, setSortBy] = useState<string>('novidades');
-  
-  // Filtros solicitados: Preço Mínimo/Máximo (0 a 500), Tamanho, Gênero e Cor
+  const [filtroNovidade, setFiltroNovidade] = useState<string>('todos');
+
   const [precoMin, setPrecoMin] = useState<number>(0);
   const [precoMax, setPrecoMax] = useState<number>(500);
   const [filtroTamanho, setFiltroTamanho] = useState<string>('Todos');
@@ -279,7 +276,6 @@ export const Home: React.FC = () => {
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
   const totalPrice = cart.reduce((sum, item) => sum + item.numericPrice * item.quantity, 0);
 
-  // Coleta dados dinâmicos do banco para os filtros
   const dbSizesList = Array.from(new Set(products.flatMap(p => p.estoques?.map(e => e.tamanho?.nome).filter(Boolean) || []))) as string[];
   const sortedDbSizes = sortSizes(dbSizesList);
 
@@ -293,35 +289,32 @@ export const Home: React.FC = () => {
   });
   const dbColorsList = Array.from(dbColorsMap.values());
 
-  // Lógica de Filtragem Geral
   const filteredProducts = products.filter(p => {
     if (p.isVisible !== true) return false;
     if (p.ativoGeral === false) return false;
 
-    // Busca por texto
     const matchesSearch = p.nome.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           (p.descricao && p.descricao.toLowerCase().includes(searchTerm.toLowerCase()));
     if (!matchesSearch) return false;
 
-    // Categoria via menu lateral
     if (selectedCategory !== 'Todos') {
       const matchCat = p.categoria && p.categoria.nome.toLowerCase().trim() === selectedCategory.toLowerCase().trim();
       if (!matchCat) return false;
     }
 
-    // 1. Filtro de Preço (Mínimo e Máximo)
+    if (filtroNovidade === 'novidades' && !p.isNovidade) return false;
+    if (filtroNovidade === 'regulares' && p.isNovidade) return false;
+
     const precoEfetivo = p.temOferta && p.precoPromocional && Number(p.precoPromocional) > 0 
       ? Number(p.precoPromocional) 
       : (parseFloat(p.preco) || 0);
     if (precoEfetivo < precoMin || precoEfetivo > precoMax) return false;
 
-    // 2. Filtro de Tamanho
     if (filtroTamanho !== 'Todos') {
       const temTamanho = p.estoques?.some(e => e.tamanho?.nome?.toLowerCase() === filtroTamanho.toLowerCase());
       if (!temTamanho) return false;
     }
 
-    // 3. Filtro de Gênero
     if (filtroGenero !== 'Todos') {
       const generoProd = (p.genero || '').toLowerCase();
       const catProd = (p.categoria?.nome || '').toLowerCase();
@@ -332,7 +325,6 @@ export const Home: React.FC = () => {
       if (!matchGenero) return false;
     }
 
-    // 4. Filtro de Cor
     if (filtroCor !== 'Todos') {
       const temCor = p.estoques?.some(e => e.cor?.id === filtroCor || e.cor?.nome?.toLowerCase() === filtroCor.toLowerCase());
       if (!temCor) return false;
@@ -341,7 +333,6 @@ export const Home: React.FC = () => {
     return true;
   });
 
-  // Lógica de Ordenação dos Produtos Filtrados
   const sortedAndFilteredProducts = [...filteredProducts].sort((a, b) => {
     if (sortBy === 'novidades') {
       return b.id.localeCompare(a.id);
@@ -350,24 +341,15 @@ export const Home: React.FC = () => {
     const precoA = a.temOferta && a.precoPromocional && Number(a.precoPromocional) > 0 ? Number(a.precoPromocional) : (parseFloat(a.preco) || 0);
     const precoB = b.temOferta && b.precoPromocional && Number(b.precoPromocional) > 0 ? Number(b.precoPromocional) : (parseFloat(b.preco) || 0);
 
-    if (sortBy === 'preco-asc') {
-      return precoA - precoB;
-    }
-    if (sortBy === 'preco-desc') {
-      return precoB - precoA;
-    }
-    if (sortBy === 'nome-asc') {
-      return a.nome.localeCompare(b.nome);
-    }
-    if (sortBy === 'nome-desc') {
-      return b.nome.localeCompare(a.nome);
-    }
+    if (sortBy === 'preco-asc') return precoA - precoB;
+    if (sortBy === 'preco-desc') return precoB - precoA;
+    if (sortBy === 'nome-asc') return a.nome.localeCompare(b.nome);
+    if (sortBy === 'nome-desc') return b.nome.localeCompare(a.nome);
     return 0;
   });
 
   return (
     <div className={styles.container}>
-      {/* Banner da Loja */}
       <div className={styles.bannerContainer}>
         <div style={{ position: 'absolute', top: '50%', left: '20px', transform: 'translateY(-50%)', zIndex: 10, display: 'flex', gap: '8px' }}>
           <button 
@@ -391,11 +373,7 @@ export const Home: React.FC = () => {
           </button>
         </div>
 
-        <img 
-          src="/banner.png" 
-          alt="Ninho de Promessas" 
-          className={styles.bannerLogo}
-        />
+        <img src="/banner.png" alt="Ninho de Promessas" className={styles.bannerLogo} />
 
         <div style={{ position: 'absolute', top: '50%', right: '20px', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: '10px', zIndex: 10 }}>
           <button 
@@ -459,7 +437,6 @@ export const Home: React.FC = () => {
         </div>
       </div>
 
-      {/* Área de Pesquisa e Indicador de Filtros Ativos */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem', padding: '1.2rem 5%', backgroundColor: '#fcfcfc', borderBottom: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#ffffff', border: '1px solid #ced4da', borderRadius: '20px', padding: '0.5rem 1.2rem', width: '100%', maxWidth: '450px', boxShadow: '0 2px 6px rgba(0,0,0,0.03)' }}>
           <span style={{ marginRight: '8px', color: '#D7B796' }}>🔍</span>
@@ -472,7 +449,7 @@ export const Home: React.FC = () => {
           />
         </div>
 
-        {(filtroTamanho !== 'Todos' || filtroGenero !== 'Todos' || filtroCor !== 'Todos' || precoMin > 0 || precoMax < 500) && (
+        {(filtroTamanho !== 'Todos' || filtroGenero !== 'Todos' || filtroCor !== 'Todos' || filtroNovidade !== 'todos' || precoMin > 0 || precoMax < 500) && (
           <div style={{ fontSize: '0.85rem', color: '#666', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span>Filtros ativos aplicados.</span>
             <button 
@@ -483,6 +460,7 @@ export const Home: React.FC = () => {
                 setFiltroTamanho('Todos');
                 setFiltroGenero('Todos');
                 setFiltroCor('Todos');
+                setFiltroNovidade('todos');
               }}
               style={{ background: 'none', border: 'none', color: '#D7B796', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold', textDecoration: 'underline' }}
             >
@@ -492,7 +470,6 @@ export const Home: React.FC = () => {
         )}
       </div>
 
-      {/* Gaveta / Modal de Filtros Avançados */}
       {isFilterDrawerOpen && (
         <div className={styles.filterDrawerOverlay} onClick={() => setIsFilterDrawerOpen(false)}>
           <div className={styles.filterDrawerContent} onClick={(e) => e.stopPropagation()}>
@@ -501,7 +478,26 @@ export const Home: React.FC = () => {
               <button type="button" onClick={() => setIsFilterDrawerOpen(false)} style={{ background: 'none', border: 'none', fontSize: '1.3rem', cursor: 'pointer' }}>×</button>
             </div>
 
-            {/* 1. FILTRO DE PREÇO */}
+            <div className={styles.filterGroup}>
+              <label className={styles.filterGroupLabel}>✨ Exibição de Novidades</label>
+              <div className={styles.filterSizeGrid}>
+                {[
+                  { id: 'todos', label: 'Todos' },
+                  { id: 'novidades', label: '⭐ Apenas Novidades' },
+                  { id: 'regulares', label: '📦 Regulares' }
+                ].map(item => (
+                  <button 
+                    key={item.id}
+                    type="button" 
+                    className={`${styles.filterChip} ${filtroNovidade === item.id ? styles.filterChipActive : ''}`}
+                    onClick={() => setFiltroNovidade(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className={styles.filterGroup}>
               <label className={styles.filterGroupLabel}>
                 Faixa de Preço: <strong>R$ {precoMin.toFixed(2)}</strong> até <strong>R$ {precoMax.toFixed(2)}</strong>
@@ -509,7 +505,6 @@ export const Home: React.FC = () => {
               
               <div className={styles.dualSliderContainer}>
                 <div className={styles.dualSliderTrack}></div>
-                
                 <div 
                   className={styles.dualSliderRange} 
                   style={{ 
@@ -517,38 +512,19 @@ export const Home: React.FC = () => {
                     right: `${100 - (precoMax / 500) * 100}%` 
                   }}
                 ></div>
-                
                 <input 
-                  type="range" 
-                  min="0" 
-                  max="500" 
-                  step="10"
-                  value={precoMin} 
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    if (val <= precoMax - 10) setPrecoMin(val);
-                  }}
-                  className={styles.dualSliderInput}
-                  style={{ zIndex: precoMin > 400 ? 3 : 2 }}
+                  type="range" min="0" max="500" step="10" value={precoMin} 
+                  onChange={(e) => { const val = Number(e.target.value); if (val <= precoMax - 10) setPrecoMin(val); }}
+                  className={styles.dualSliderInput} style={{ zIndex: precoMin > 400 ? 3 : 2 }}
                 />
-
                 <input 
-                  type="range" 
-                  min="0" 
-                  max="500" 
-                  step="10"
-                  value={precoMax} 
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    if (val >= precoMin + 10) setPrecoMax(val);
-                  }}
-                  className={styles.dualSliderInput}
-                  style={{ zIndex: 2 }}
+                  type="range" min="0" max="500" step="10" value={precoMax} 
+                  onChange={(e) => { const val = Number(e.target.value); if (val >= precoMin + 10) setPrecoMax(val); }}
+                  className={styles.dualSliderInput} style={{ zIndex: 2 }}
                 />
               </div>
             </div>
 
-            {/* 2. FILTRO DE TAMANHO */}
             <div className={styles.filterGroup}>
               <label className={styles.filterGroupLabel}>Tamanho</label>
               <div className={styles.filterSizeGrid}>
@@ -572,7 +548,6 @@ export const Home: React.FC = () => {
               </div>
             </div>
 
-            {/* 3. FILTRO DE GÊNERO */}
             <div className={styles.filterGroup}>
               <label className={styles.filterGroupLabel}>Gênero</label>
               <div className={styles.filterSizeGrid}>
@@ -589,7 +564,6 @@ export const Home: React.FC = () => {
               </div>
             </div>
 
-            {/* 4. FILTRO DE COR */}
             <div className={styles.filterGroup}>
               <label className={styles.filterGroupLabel}>Cor</label>
               <div className={styles.filterColorList}>
@@ -630,9 +604,7 @@ export const Home: React.FC = () => {
         </div>
       )}
 
-      {/* Vitrine de Produtos */}
       <main className={styles.productsSection}>
-        {/* Botão de Filtros e Seletor de Ordenação lado a lado (à esquerda) */}
         <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <button 
             type="button"
@@ -651,16 +623,15 @@ export const Home: React.FC = () => {
             }}
             onClick={() => setIsFilterDrawerOpen(true)}
           >
-            Filtros
+            Filtros {filtroNovidade !== 'todos' ? '(1 Ativo)' : ''}
           </button>
 
-          {/* Seletor de Ordenação ao lado direito do botão de Filtros */}
           <select 
             value={sortBy} 
             onChange={(e) => setSortBy(e.target.value)}
             className={styles.sortSelect}
           >
-            <option value="novidades">✨ Novidades</option>
+            <option value="novidades">✨ Mais Recentes</option>
             <option value="preco-asc">💲 Menor preço</option>
             <option value="preco-desc">💲 Maior preço</option>
             <option value="nome-asc">🔤 Nome A-Z</option>
@@ -730,6 +701,20 @@ export const Home: React.FC = () => {
                       }}
                     />
 
+                    {/* SELO DE NOVIDADE (Canto Superior Esquerdo) */}
+                    {product.isNovidade && (
+                      <span className={styles.badgeNovidadeVitrine}>
+                        ✨ Novidade
+                      </span>
+                    )}
+
+                    {/* SELO DE OFERTA / % OFF (Canto Superior Direito) */}
+                    {emOferta && product.percentualDesconto && product.percentualDesconto > 0 && (
+                      <span className={styles.badgeOfferBadge}>
+                        {product.percentualDesconto}% OFF
+                      </span>
+                    )}
+
                     {listaImagensCard.length > 1 && (
                       <>
                         <button
@@ -767,12 +752,6 @@ export const Home: React.FC = () => {
                           ›
                         </button>
                       </>
-                    )}
-
-                    {emOferta && product.percentualDesconto && product.percentualDesconto > 0 && (
-                      <span className={styles.discountBadgeOverlay}>
-                        {product.percentualDesconto}% OFF
-                      </span>
                     )}
                   </div>
 
@@ -826,9 +805,7 @@ export const Home: React.FC = () => {
                                   }));
                                 }}
                                 className={`${styles.cardColorButton} ${isSelected ? styles.cardColorButtonSelected : styles.cardColorButtonUnselected}`}
-                                style={{
-                                  backgroundColor: c.hex || '#000'
-                                }}
+                                style={{ backgroundColor: c.hex || '#000' }}
                               />
                             );
                           })}
@@ -900,7 +877,6 @@ export const Home: React.FC = () => {
         </div>
       </main>
 
-      {/* Gaveta Lateral de Categorias */}
       {isCategoryDrawerOpen && (
         <div 
           onClick={() => setIsCategoryDrawerOpen(false)}
@@ -974,7 +950,6 @@ export const Home: React.FC = () => {
         </div>
       )}
 
-      {/* Modal de Detalhes do Produto */}
       {selectedProduct && (
         <div className={styles.modalOverlay} onClick={() => setSelectedProduct(null)}>
           <div className={styles.modalContentBox} onClick={(e) => e.stopPropagation()}>
@@ -1100,17 +1075,14 @@ export const Home: React.FC = () => {
                               className={`${styles.modalColorButton} ${isSelected ? styles.modalColorButtonSelected : styles.modalColorButtonUnselected}`}
                             >
                               {c.hex && (
-                                <span 
-                                  className={styles.modalColorDot}
-                                  style={{ backgroundColor: c.hex }}
-                                ></span>
+                                <span className={styles.modalColorDot} style={{ backgroundColor: c.hex }}></span>
                               )}
                               {c.nome}
                             </button>
                           );
                         });
                       }
-                      return <span className={styles.emptyNotice}>Cor única padrão</span>;
+                      return <span>Cor única padrão</span>;
                     })()}
                   </div>
                 </div>
@@ -1122,7 +1094,7 @@ export const Home: React.FC = () => {
                   <div className={styles.modalSizesGrid}>
                     {(() => {
                       if (!selectedProduct.estoques || selectedProduct.estoques.length === 0) {
-                        return <span className={styles.emptyNotice}>Tamanho único</span>;
+                        return <span>Tamanho único</span>;
                       }
 
                       const tamanhosDaCor = selectedProduct.estoques.filter((item: any) => {
@@ -1130,12 +1102,11 @@ export const Home: React.FC = () => {
                       });
 
                       if (tamanhosDaCor.length === 0) {
-                        return <span className={styles.emptyNotice}>Selecione uma cor para ver os tamanhos.</span>;
+                        return <span>Selecione uma cor para ver os tamanhos.</span>;
                       }
 
                       const rawAvailableSizes = Array.from(new Set(tamanhosDaCor.map((e: any) => e.tamanho?.nome).filter(Boolean)));
                       const availableSizes = sortSizes(rawAvailableSizes as string[]);
-
                       const currentSelectedSize = selectedSizes[selectedProduct.id] || availableSizes[0];
 
                       return availableSizes.map((sizeName: any, idx: number) => {
@@ -1217,15 +1188,12 @@ export const Home: React.FC = () => {
                     Comprar
                   </button>
                 </div>
-
               </div>
             </div>
-
           </div>
         </div>
       )}
 
-      {/* Modal do Carrinho */}
       {isCartOpen && (
         <div className={styles.modalOverlay} onClick={() => setIsCartOpen(false)}>
           <div className={styles.cartModal} onClick={(e) => e.stopPropagation()}>
@@ -1298,7 +1266,6 @@ export const Home: React.FC = () => {
         </div>
       )}
 
-      {/* Modal de Checkout */}
       {isCheckoutOpen && (
         <CheckoutModal 
           onClose={() => setIsCheckoutOpen(false)} 
@@ -1306,7 +1273,6 @@ export const Home: React.FC = () => {
         />
       )}
 
-      {/* Mensagem Flutuante (Toast) */}
       {toastMessage && (
         <div className={styles.toastContainer}>
           <span>🛍️</span>

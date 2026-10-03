@@ -91,7 +91,8 @@ model Produto {
   precoPromocional Decimal         @default(0) @db.Decimal(10, 2)
 
   isVisible    Boolean         @default(true)
-
+  isNovidade      Boolean      @default(false)
+  
   estoques    ProdutoEstoque[]
   imagens     ProdutoImagem[]  // Até 10 imagens do produto
   movimentacoes       MovimentacaoEstoque[]

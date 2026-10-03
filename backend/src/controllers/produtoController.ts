@@ -60,8 +60,8 @@ export const produtoController = {
 
   async criar(req: Request, res: Response) {
     try {
-      // 1. Extrair o campo genero do req.body
-      const { nome, preco, descricao, categoryId, genero, tamanhos, coresMapeamentoImagens } = req.body;
+      // 1. Extrair os campos do req.body, incluindo o isNovidade
+      const { nome, preco, descricao, categoryId, genero, tamanhos, coresMapeamentoImagens, isNovidade } = req.body;
       
       const arquivos = (req.files as Express.Multer.File[]) || [];
 
@@ -93,6 +93,9 @@ export const produtoController = {
       if (!tamanhosParsed || !Array.isArray(tamanhosParsed) || tamanhosParsed.length === 0) {
         return res.status(400).json({ message: 'O produto deve conter pelo menos uma variação de cor e tamanho.' });
       }
+
+      // 2. Conversão segura do isNovidade vindo do FormData
+      const isNovidadeBoolean = isNovidade === 'true' || isNovidade === true;
 
       const coresUnicasSet = new Set<string>();
       tamanhosParsed.forEach((item: any) => {
@@ -130,8 +133,9 @@ export const produtoController = {
           preco: precoNumerico,
           descricao: descricao || null,
           categoryId: String(categoryId),
-          genero: genero || 'Unissex', // 2. Adicionado o campo genero com fallback
+          genero: genero || 'Unissex',
           isVisible: false,
+          isNovidade: isNovidadeBoolean, // 3. Salva a flag de novidade no banco
           criadoPorId: adminId,
           atualizadoPorId: adminId,
           estoques: {
@@ -180,8 +184,9 @@ export const produtoController = {
   async atualizar(req: Request, res: Response) {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : String(req.params.id);
-      // 3. Extrair o campo genero no update
-      const { nome, preco, descricao, categoryId, genero, tamanhos, coresMapeamentoImagens, isVisible } = req.body;
+      
+      // 1. Extraindo os campos, incluindo isNovidade
+      const { nome, preco, descricao, categoryId, genero, tamanhos, coresMapeamentoImagens, isVisible, isNovidade } = req.body;
       const arquivos = (req.files as Express.Multer.File[]) || [];
 
       const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
@@ -262,6 +267,16 @@ export const produtoController = {
         }
       }
 
+      // Tratamento seguro para os booleanos vindos do FormData
+      const isVisibleParsed = isVisible !== undefined 
+        ? (isVisible === 'true' || isVisible === true) 
+        : produtoExistente.isVisible;
+
+      // 2. Garante que se o campo não for enviado, o valor anterior do banco seja mantido
+      const isNovidadeParsed = isNovidade !== undefined 
+        ? (isNovidade === 'true' || isNovidade === true) 
+        : produtoExistente.isNovidade;
+
       const produtoAtualizado = await prisma.$transaction(async (tx) => {
         await tx.produtoImagem.deleteMany({
           where: { produtoId: id }
@@ -278,8 +293,9 @@ export const produtoController = {
             preco: precoNumerico,
             descricao: descricao || null,
             categoryId: String(categoryId),
-            genero: genero || produtoExistente.genero || 'Unissex', // 4. Atualizar o campo genero mantendo o existente se omitido
-            isVisible: isVisible !== undefined ? Boolean(isVisible) : produtoExistente.isVisible,
+            genero: genero || produtoExistente.genero || 'Unissex',
+            isVisible: isVisibleParsed,
+            isNovidade: isNovidadeParsed, // 3. Atualiza no banco
             atualizadoPorId: adminId,
             estoques: {
               create: tamanhosParsed.map((item: any) => ({
@@ -326,12 +342,57 @@ export const produtoController = {
   },
 
   async configurarOferta(req: Request, res: Response) {
-    // Mantido conforme o original
     try {
-      const { id } = req.params;
-      // ... lógica de oferta inalterada
-      return res.status(200).json({ message: 'Oferta configurada com sucesso!' });
+      const id = String(req.params.id);
+      const { discountType, promoValue } = req.body;
+
+      // 1. Busca o produto atual para saber o preço original
+      const produto = await prisma.produto.findUnique({
+        where: { id },
+      });
+
+      if (!produto) {
+        return res.status(404).json({ message: 'Produto não encontrado.' });
+      }
+
+      const precoOriginal = Number(produto.preco);
+      let precoPromocional = 0;
+
+      // 2. Calcula o preço promocional com base no tipo escolhido
+      if (discountType === 'percentual') {
+        // promoValue aqui é a porcentagem, ex: 15 para 15% OFF
+        const percentual = Number(promoValue);
+        if (isNaN(percentual) || percentual < 0 || percentual > 100) {
+          return res.status(400).json({ message: 'Percentual de desconto inválido.' });
+        }
+        precoPromocional = precoOriginal * (1 - percentual / 100);
+      } else if (discountType === 'fixo') {
+        // promoValue aqui é o valor final direto em R$
+        precoPromocional = Number(promoValue);
+        if (isNaN(precoPromocional) || precoPromocional < 0 || precoPromocional >= precoOriginal) {
+          return res.status(400).json({ message: 'Preço promocional fixo inválido.' });
+        }
+      } else {
+        return res.status(400).json({ message: 'Tipo de desconto inválido.' });
+      }
+
+      // 3. Atualiza o produto na base de dados persistindo os campos de oferta
+      const produtoAtualizado = await prisma.produto.update({
+        where: { id },
+        data: {
+          temOferta: true,
+          precoPromocional: precoPromocional.toFixed(2),
+          // Se você tiver o campo percentualDesconto no schema, descomente a linha abaixo:
+          // percentualDesconto: discountType === 'percentual' ? Number(promoValue) : Math.round(((precoOriginal - precoPromocional) / precoOriginal) * 100)
+        },
+      });
+
+      return res.status(200).json({ 
+        message: 'Oferta configurada com sucesso!',
+        produto: produtoAtualizado 
+      });
     } catch (error) {
+      console.error('Erro ao configurar oferta:', error);
       return res.status(500).json({ message: 'Erro interno ao salvar oferta.' });
     }
   },

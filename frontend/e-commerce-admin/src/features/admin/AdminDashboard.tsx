@@ -21,6 +21,7 @@ interface ProductMaster {
   ativo?: boolean | number;
   criadoPor?: { nome: string };     
   atualizadoPor?: { nome: string }; 
+  isNovidade?: boolean;
 }
 
 interface StockMovement {
@@ -141,6 +142,7 @@ export const AdminDashboard: React.FC = () => {
   const [stockFilter, setStockFilter] = useState<'todos' | 'esgotado' | 'baixo'>('todos');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'ativos' | 'desativados'>('todos');
   const [genderFilter, setGenderFilter] = useState<string>('todos');
+  const [novidadeFilter, setNovidadeFilter] = useState<string>('todos');
   const [sortBy, setSortBy] = useState<'nome-asc' | 'nome-desc' | 'preco-asc' | 'preco-desc' | 'estoque-desc' | 'estoque-asc'>('nome-asc');
 
   const [selectedProductDetails, setSelectedProductDetails] = useState<ProductMaster | null>(null);
@@ -153,6 +155,7 @@ export const AdminDashboard: React.FC = () => {
   const [newGender, setNewGender] = useState<string>('Unissex');
   const [newDesc, setNewDesc] = useState('');
   const [newPrice, setNewPrice] = useState('');
+  const [newIsNovidade, setNewIsNovidade] = useState<boolean>(false);
   
   const [colorImages, setColorImages] = useState<{ [corId: string]: Array<{ type: 'file' | 'url'; file?: File; url: string }> }>({});
   
@@ -372,15 +375,16 @@ export const AdminDashboard: React.FC = () => {
             rawImages: p.imagens || [],
             originalPrice: Number(p.preco),
             isVisible: p.isVisible !== undefined ? Boolean(p.isVisible) : true,
-            hasOffer: Boolean(p.temOferta),
-            offerPrice: Number(p.precoPromocional || 0),
+            hasOffer: Boolean(p.temOferta || p.hasOffer),
+            offerPrice: Number(p.precoPromocional || p.offerPrice || 0),
             sizes: estoqueList.map((t: any) => t.tamanho?.nome || t.tamanhoId),
             colors: coresFormatadas.length > 0 ? coresFormatadas : (p.cores ? p.cores.map((c: any) => ({ nome: c.cor?.nome || c.nome, hex: c.cor?.hex || '#000000' })) : []),
             rawSizes: estoqueList,
             rawColors: p.cores || [],
             ativo: p.ativo,
             criadoPor: p.criadoPor,         
-            atualizadoPor: p.atualizadoPor   
+            atualizadoPor: p.atualizadoPor,
+            isNovidade: p.isNovidade !== undefined ? Boolean(p.isNovidade) : false
           };
         });
         setProducts(formattedProducts);
@@ -958,6 +962,7 @@ export const AdminDashboard: React.FC = () => {
     setNewDesc(prod.description);
     setNewPrice(prod.originalPrice.toString());
     setNewGender(prod.gender || 'Unissex');
+    setNewIsNovidade(prod.isNovidade || false);
     
     const catMatch = categoriasList.find(c => c.nome === prod.category);
     if (catMatch) {
@@ -1022,6 +1027,7 @@ export const AdminDashboard: React.FC = () => {
     setColorSizeConfigs([]);
     setColorImages({});
     setNewGender('Unissex');
+    setNewIsNovidade(false);
     setActiveTab('lista'); 
   };
 
@@ -1043,7 +1049,6 @@ export const AdminDashboard: React.FC = () => {
       return;
     }
 
-    // --- VALIDAÇÃO DE ESTOQUE INICIAL OBRIGATÓRIO (> 0) ---
     for (const config of colorSizeConfigs) {
       const tamanhosIds = config.tamanhosIds || [];
       const estoquesMap = config.estoques || {};
@@ -1067,7 +1072,6 @@ export const AdminDashboard: React.FC = () => {
         }
       }
     }
-    // ----------------------------------------------------
 
     for (const cId of selectedColors) {
       const itensCor = colorImages[cId] || [];
@@ -1141,6 +1145,7 @@ export const AdminDashboard: React.FC = () => {
       formData.append('descricao', newDesc);
       formData.append('categoryId', newCategoryId);
       formData.append('genero', newGender);
+      formData.append('isNovidade', String(newIsNovidade));
       
       formData.append('tamanhos', JSON.stringify(arrayPlanoTamanhos));
 
@@ -1193,6 +1198,13 @@ export const AdminDashboard: React.FC = () => {
     if (!matchesSearch) return false;
 
     if (genderFilter !== 'todos' && prod.gender !== genderFilter) {
+      return false;
+    }
+
+    if (novidadeFilter === 'novidades' && !prod.isNovidade) {
+      return false;
+    }
+    if (novidadeFilter === 'normais' && prod.isNovidade) {
       return false;
     }
 
@@ -1350,6 +1362,7 @@ export const AdminDashboard: React.FC = () => {
                 setNewDesc('');
                 setNewPrice('');
                 setNewGender('Unissex');
+                setNewIsNovidade(false);
                 setActiveTab('cadastro'); 
                 setIsMenuOpen(false); 
               }}
@@ -1686,6 +1699,17 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div className={styles.group}>
+                  <label className={styles.sizeCheckboxLabel} style={{ width: 'fit-content', marginTop: '4px' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={newIsNovidade} 
+                      onChange={(e) => setNewIsNovidade(e.target.checked)} 
+                    />
+                    ✨ Marcar este produto como Novidade na loja
+                  </label>
+                </div>
+
+                <div className={styles.group}>
                   <label>1. Selecione as Cores / Estampas Disponíveis</label>
                   <div className={styles.sizesGrid}>
                     {coresList.filter(c => c.ativo !== false).length === 0 ? (
@@ -1766,7 +1790,7 @@ export const AdminDashboard: React.FC = () => {
                                     style={{ backgroundColor: '#dc2626', color: '#fff' }}
                                     title="Excluir esta cor por não ter tamanhos selecionados"
                                   >
-                                    🗑️ Excluir Cor
+                                    🗑️️ Excluir Cor
                                   </button>
                                 )}
                               </div>
@@ -2426,11 +2450,21 @@ export const AdminDashboard: React.FC = () => {
               <input type="text" className={`${styles.searchInput} ${styles.listSearchInputFlex}`} placeholder="🔍 Buscar por nome, categoria, descrição ou ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
               
               <select 
+                value={novidadeFilter} 
+                onChange={(e) => setNovidadeFilter(e.target.value)}
+                className={styles.listSelectDropdown}
+              >
+                <option value="todos">✨ Todos os Lançamentos</option>
+                <option value="novidades">⭐ Apenas Novidades</option>
+                <option value="normais">📦 Produtos Regulares</option>
+              </select>
+
+              <select 
                 value={genderFilter} 
                 onChange={(e) => setGenderFilter(e.target.value)}
                 className={styles.listSelectDropdown}
               >
-                <option value="todos">⚧️ Todos os Gêneros</option>
+                <option value="todos">⚧ Todos os Gêneros</option>
                 <option value="Unissex">Unissex</option>
                 <option value="Masculino">Masculino</option>
                 <option value="Feminino">Feminino</option>
@@ -2471,6 +2505,16 @@ export const AdminDashboard: React.FC = () => {
 
                   const isDesativado = categoriaInativa || prod.ativo === 0 || prod.ativo === false || (prod as any).ativoGeral === false || !temEstoqueAtivoLocal;
 
+                  const precoOri = Number(prod.originalPrice || (prod as any).preco || 0);
+                  const precoPromo = Number(prod.offerPrice || (prod as any).precoPromocional || 0);
+
+                  // Considera em oferta se a flag for verdadeira OU se houver preço promocional válido menor que o original
+                  const temOfertaAtiva = Boolean(prod.hasOffer || (prod as any).temOferta || (precoPromo > 0 && precoPromo < precoOri));
+
+                  const percentualDesc = precoOri > 0 && precoPromo > 0 && precoPromo < precoOri
+                    ? Math.round(((precoOri - precoPromo) / precoOri) * 100)
+                    : Number((prod as any).discountPercent || 10);
+
                   return (
                     <div 
                       key={prod.id} 
@@ -2485,9 +2529,17 @@ export const AdminDashboard: React.FC = () => {
                       <div className={styles.carouselContainer} style={{ position: 'relative' }}>
                         <img src={prod.images[0]} alt="" className={styles.catalogCardImage} />
 
-                        {prod.hasOffer && (
+                        {/* Selo de Novidade (Canto Superior Esquerdo) */}
+                        {prod.isNovidade && (
+                          <div className={styles.badgeNovidadeVitrine}>
+                            ✨ Novidade
+                          </div>
+                        )}
+
+                        {/* Selo de Oferta (Canto Superior Direito) */}
+                        {temOfertaAtiva && precoOri > 0 && (
                           <div className={styles.badgeOfferBadge}>
-                            {Math.round((1 - (prod.offerPrice / prod.originalPrice)) * 100)}% OFF
+                            {percentualDesc}% OFF
                           </div>
                         )}
 
@@ -2504,16 +2556,17 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                         <h4>{prod.name}</h4>
 
+                        {/* Exibição dos preços (Antigo riscado e Novo) */}
                         <div className={styles.priceDisplayArea}>
-                          {prod.hasOffer ? (
+                          {temOfertaAtiva && precoPromo > 0 ? (
                             <div className={styles.priceContainer}>
                               <div>
-                                <span className={styles.oldPrice}>De: R$ {prod.originalPrice.toFixed(2)}</span>
-                                <span className={styles.newPrice}>Por: R$ {prod.offerPrice.toFixed(2)}</span>
+                                <span className={styles.oldPrice}>De: R$ {precoOri.toFixed(2)}</span>
+                                <span className={styles.newPrice}>Por: R$ {precoPromo.toFixed(2)}</span>
                               </div>
                             </div>
                           ) : (
-                            <span className={styles.normalPrice}>R$ {prod.originalPrice.toFixed(2)}</span>
+                            <span className={styles.normalPrice}>R$ {precoOri.toFixed(2)}</span>
                           )}
                         </div>
 
@@ -2670,18 +2723,29 @@ export const AdminDashboard: React.FC = () => {
                             {selectedProductDetails.gender}
                           </span>
                         )}
+                        {selectedProductDetails.isNovidade && (
+                          <span className={styles.modalCategoryBadge} style={{ backgroundColor: '#fef08a', color: '#854d0e' }}>
+                            ✨ Novidade
+                          </span>
+                        )}
                       </div>
                       <h2 className={styles.modalProductTitle}>{selectedProductDetails.name}</h2>
                       
                       <div className={styles.modalPriceBlock}>
-                        {selectedProductDetails.hasOffer ? (
-                          <div className={styles.modalOfferFlex}>
-                            <span className={styles.modalOldPrice}>R$ {selectedProductDetails.originalPrice.toFixed(2)}</span>
-                            <span className={styles.modalNewPrice}>R$ {selectedProductDetails.offerPrice.toFixed(2)}</span>
-                          </div>
-                        ) : (
-                          <span className={styles.modalNormalPrice}>R$ {selectedProductDetails.originalPrice.toFixed(2)}</span>
-                        )}
+                        {(() => {
+                          const pOri = Number(selectedProductDetails.originalPrice || 0);
+                          const pPro = Number(selectedProductDetails.offerPrice || 0);
+                          const isOfferModal = Boolean(selectedProductDetails.hasOffer || (selectedProductDetails as any).temOferta || (pPro > 0 && pPro < pOri));
+
+                          return isOfferModal && pPro > 0 ? (
+                            <div className={styles.modalOfferFlex}>
+                              <span className={styles.modalOldPrice}>R$ {pOri.toFixed(2)}</span>
+                              <span className={styles.modalNewPrice}>R$ {pPro.toFixed(2)}</span>
+                            </div>
+                          ) : (
+                            <span className={styles.modalNormalPrice}>R$ {pOri.toFixed(2)}</span>
+                          );
+                        })()}
                       </div>
 
                       <div 
