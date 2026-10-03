@@ -3,8 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import styles from './LoginForm.module.css';
 
-// Configuração para garantir o envio e recebimento de cookies HTTP-only
 axios.defaults.withCredentials = true;
+
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const API_URL = isLocal 
+  ? 'http://localhost:3333' 
+  : 'https://ninhoback.tamaralr.com.br';
 
 export const LoginForm: React.FC = () => {
   const navigate = useNavigate();
@@ -17,18 +21,15 @@ export const LoginForm: React.FC = () => {
     setErrorMessage(null);
     
     try {
-      // Faz a requisição real para o seu backend Express + Prisma
-      const response = await axios.post('http://localhost:3333/api/login', {
+      const response = await axios.post(`${API_URL}/api/login`, {
         email,
-        senha: password // Ajustado para corresponder ao campo 'senha' esperado pelo seu AuthController
+        senha: password
       });
 
       if (response.status === 200) {
-        // Login efetuado com sucesso de forma silenciosa (sem alertas)
-        navigate('/'); // Redireciona de volta para a vitrine da loja
+        navigate('/'); // Redireciona para a home, onde o useEffect vai puxar o /api/perfil com o cookie salvo
       }
     } catch (error: any) {
-      // Exibe a mensagem de erro retornada pelo backend (ex: "E-mail ou senha inválidos.")
       setErrorMessage(error.response?.data?.error || 'Erro ao realizar login.');
     }
   };
@@ -91,18 +92,22 @@ export const LoginForm: React.FC = () => {
         </p>
       </div>
 
-      {/* LADO DIREITO: Banner Visual & Suporte */}
+      {/* LADO DIREITO: Gradiente Dourado & Logotipo Fixa */}
       <div className={styles.rightSide}>
-        <div className={styles.brandContainer}>
-          <h1 className={styles.brandName}>MinhaLoja</h1>
+        <div className={styles.brandLogoContainer}>
+          <img 
+            src="/banner.png" 
+            alt="Ninho de Promessas" 
+            className={styles.brandLogoImage} 
+          />
           <p className={styles.brandTagline}>
-            A melhor seleção de eletrônicos e periféricos com entrega expressa para todo o Brasil.
+            Vestindo seu bebê com amor, cuidado e propósito.
           </p>
         </div>
 
         <div className={styles.contactFooter}>
           <p className={styles.contactLabel}>Precisa de ajuda ou suporte?</p>
-          <p className={styles.contactPhone}>📞 0800 123 4567</p>
+          <p className={styles.contactPhone}>📞 (48) 99179-4486</p>
         </div>
       </div>
 

@@ -114,15 +114,13 @@ export class AuthController {
     const token = jwt.sign({ id: user.id }, secret, { expiresIn: '1d' });
 
     const isProduction = process.env.NODE_ENV === 'production';
+    const oneDayInMs = 24 * 60 * 60 * 1000;
 
     res.cookie('token', token, {
       httpOnly: true,
-      secure: isProduction,
-      // Só define o domain se estiver em produção; em localhost, deixe o navegador gerenciar sozinho
-      ...(isProduction && { domain: '.tamaralr.com.br' }),
-      path: '/',
-      sameSite: isProduction ? 'strict' : 'lax', // 'lax' para localhost evitar bloqueios de porta cruzada
-      maxAge: 24 * 60 * 60 * 1000 // 1 dia em milissegundos
+      secure: isProduction, // true em produção (HTTPS)
+      sameSite: 'lax',      // 'lax' é essencial para permitir o envio do cookie entre subdomínios
+      maxAge: oneDayInMs,
     });
 
     // Retorna apenas os dados do usuário de forma silenciosa (sem expor o token no JSON)
@@ -140,13 +138,23 @@ export class AuthController {
     return res.json({ message: 'Logout realizado com sucesso.' });
   }
 
-async getProfile(req: Request, res: Response): Promise<Response> {
+  async getProfile(req: Request, res: Response): Promise<Response> {
     try {
-      const userId = (req as any).userId; // Ou req.user dependendo de como seu middleware injeta o id
+      const userId = (req as any).userId; // Conforme o seu middleware de autenticação
 
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, nome: true, email: true }
+        select: { 
+          id: true, 
+          nome: true, 
+          sobrenome: true, 
+          cpf: true, 
+          email: true, 
+          telefone: true, 
+          dataNascimento: true, 
+          sexo: true, 
+          receberNovidades: true 
+        }
       });
 
       if (!user) {
@@ -158,4 +166,29 @@ async getProfile(req: Request, res: Response): Promise<Response> {
       return res.status(500).json({ error: 'Erro interno no servidor.' });
     }
   }
+
+  async updateProfile(req: Request, res: Response): Promise<Response> {
+    try {
+      const userId = (req as any).userId; // ID do utilizador logado extraído pelo middleware
+      const { nome, sobrenome, telefone, dataNascimento, sexo, receberNovidades } = req.body;
+
+      const updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          nome,
+          sobrenome,
+          telefone,
+          dataNascimento: dataNascimento ? new Date(dataNascimento) : null,
+          sexo,
+          receberNovidades: Boolean(receberNovidades),
+        }
+      });
+
+      return res.json({ message: 'Perfil atualizado com sucesso!', user: updatedUser });
+    } catch (error) {
+      console.error('Erro ao atualizar perfil:', error);
+      return res.status(500).json({ error: 'Erro ao atualizar o perfil.' });
+    }
+  }
+
 }

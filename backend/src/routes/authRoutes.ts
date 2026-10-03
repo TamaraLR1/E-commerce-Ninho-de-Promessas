@@ -11,5 +11,6 @@ router.post('/logout', authController.logout); // Adicionado caso queira usar a 
 
 // Rota protegida que retorna os dados do usuário logado para o frontend
 router.get('/perfil', authMiddleware, authController.getProfile);
+router.put('/perfil', authMiddleware, authController.updateProfile);
 
 export { router as authRoutes };

@@ -5,6 +5,11 @@ import styles from './RegisterForm.module.css';
 
 axios.defaults.withCredentials = true;
 
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const API_URL = isLocal 
+  ? 'http://localhost:3333' 
+  : 'https://ninhoback.tamaralr.com.br';
+
 export const RegisterForm: React.FC = () => {
   const navigate = useNavigate();
   
@@ -51,7 +56,7 @@ export const RegisterForm: React.FC = () => {
 
     try {
       setLoading(true);
-      await axios.post('http://localhost:3333/api/register', {
+      await axios.post(`${API_URL}/api/register`, {
         ...formData,
       });
       
@@ -74,7 +79,7 @@ export const RegisterForm: React.FC = () => {
   return (
     <div className={styles.container}>
       
-      {/* LADO ESQUERDO: Formulário Espelhado do Login */}
+      {/* LADO ESQUERDO: Formulário de Cadastro */}
       <div className={styles.leftSide}>
         <span className={styles.backLink} onClick={() => navigate('/')}>
           ← Voltar para a loja
@@ -239,18 +244,22 @@ export const RegisterForm: React.FC = () => {
         </p>
       </div>
 
-      {/* LADO DIREITO: Idêntico ao Login */}
+      {/* LADO DIREITO: Gradiente Dourado & Logotipo Fixa */}
       <div className={styles.rightSide}>
-        <div className={styles.brandContainer}>
-          <h1 className={styles.brandName}>MinhaLoja</h1>
+        <div className={styles.brandLogoContainer}>
+          <img 
+            src="/banner.png" 
+            alt="Ninho de Promessas" 
+            className={styles.brandLogoImage} 
+          />
           <p className={styles.brandTagline}>
-            A melhor seleção de eletrônicos e periféricos com entrega expressa para todo o Brasil.
+            Vestindo seu bebê com amor, cuidado e propósito[cite: 7].
           </p>
         </div>
 
         <div className={styles.contactFooter}>
           <p className={styles.contactLabel}>Precisa de ajuda ou suporte?</p>
-          <p className={styles.contactPhone}>📞 0800 123 4567</p>
+          <p className={styles.contactPhone}>📞 (48) 99179-4486</p>
         </div>
       </div>
 

@@ -125,6 +125,7 @@ export const Home: React.FC = () => {
   const [isCategoryDrawerOpen, setIsCategoryDrawerOpen] = useState(false);
   
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -214,6 +215,18 @@ export const Home: React.FC = () => {
     };
   }, []);
 
+  const handleLogout = async () => {
+    try {
+      await axios.post(`${API_URL}/api/logout`);
+    } catch (err) {
+      console.error('Erro ao fazer logout', err);
+    } finally {
+      setUser(null);
+      setIsUserMenuOpen(false);
+      navigate('/');
+    }
+  };
+
   const showToast = (message: string) => {
     setToastMessage(message);
     setTimeout(() => {
@@ -244,42 +257,42 @@ export const Home: React.FC = () => {
       let fileToShare: File | undefined = undefined;
 
       if (imagemUrl && typeof navigator.canShare === 'function') {
-              try {
-                const response = await fetch(imagemUrl);
-                const blob = await response.blob();
-                const file = new File([blob], 'produto.jpg', { type: blob.type || 'image/jpeg' });
-                
-                if (navigator.canShare({ files: [file] })) {
-                  fileToShare = file;
-                }
-              } catch (imgErr) {
-                console.log('Não foi possível carregar a imagem para anexo.');
-              }
-            }
-
-            const shareData: ShareData = {
-              title: product.nome,
-              text: textoCompartilhamento,
-              url: productUrl,
-              ...(fileToShare ? { files: [fileToShare] } : {})
-            };
-
-            if (navigator.share) {
-              await navigator.share(shareData);
-            } else {
-              await navigator.clipboard.writeText(textoCompartilhamento);
-              showToast('Informações e link do produto copiados para a área de transferência!');
-            }
-          } catch (err: any) {
-            if (err.name !== 'AbortError') {
-              try {
-                await navigator.clipboard.writeText(textoCompartilhamento);
-                showToast('Link e dados copiados para a área de transferência!');
-              } catch (clipErr) {
-                showToast('Não foi possível compartilhar o produto.');
-              }
-            }
+        try {
+          const response = await fetch(imagemUrl);
+          const blob = await response.blob();
+          const file = new File([blob], 'produto.jpg', { type: blob.type || 'image/jpeg' });
+          
+          if (navigator.canShare({ files: [file] })) {
+            fileToShare = file;
           }
+        } catch (imgErr) {
+          console.log('Não foi possível carregar a imagem para anexo.');
+        }
+      }
+
+      const shareData: ShareData = {
+        title: product.nome,
+        text: textoCompartilhamento,
+        url: productUrl,
+        ...(fileToShare ? { files: [fileToShare] } : {})
+      };
+
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(textoCompartilhamento);
+        showToast('Informações e link do produto copiados para a área de transferência!');
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        try {
+          await navigator.clipboard.writeText(textoCompartilhamento);
+          showToast('Link e dados copiados para a área de transferência!');
+        } catch (clipErr) {
+          showToast('Não foi possível compartilhar o produto.');
+        }
+      }
+    }
   };
 
   const addToCartWithSpecificSize = (product: Product, size: string) => {
@@ -459,22 +472,89 @@ export const Home: React.FC = () => {
           </button>
 
           {user ? (
-            <button 
-              type="button"
-              className={`${styles.desktopCartButton} ${styles.desktopTopButton}`}
-              style={{ 
-                background: 'rgba(255, 255, 255, 0.95)', 
-                border: '1px solid #cbd5e1', 
-                cursor: 'pointer', 
-                fontWeight: 600, 
-                color: '#4a5568', 
-                borderRadius: '6px',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-              }}
-              onClick={() => navigate('/perfil')}
-            >
-              👤 {user.nome.split(' ')[0]}
-            </button>
+            <div style={{ position: 'relative' }}>
+              <button 
+                type="button"
+                className={`${styles.desktopCartButton} ${styles.desktopTopButton}`}
+                style={{ 
+                  background: 'rgba(255, 255, 255, 0.95)', 
+                  border: '1px solid #cbd5e1', 
+                  cursor: 'pointer', 
+                  fontWeight: 600, 
+                  color: '#C29E7A', 
+                  borderRadius: '6px',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+              >
+                {user.nome.split(' ')[0]} ▼
+              </button>
+
+              {isUserMenuOpen && (
+                <div 
+                  style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: '100%',
+                    marginTop: '6px',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '6px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                    width: '160px',
+                    zIndex: 100,
+                    overflow: 'hidden'
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      navigate('/perfil');
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      textAlign: 'left',
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: '1px solid #f1f1f1',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      color: '#333',
+                      fontWeight: 500
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    ⚙️ Meu Perfil
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      textAlign: 'left',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      color: '#dc3545',
+                      fontWeight: 600
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    🚪 Sair da conta
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <button 
               type="button"
@@ -904,7 +984,6 @@ export const Home: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* BOTÕES DE AÇÃO LADO A LADO (CARRINHO + COMPARTILHAR) */}
                     <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                       <button 
                         className={styles.shareButton} 

@@ -17,11 +17,11 @@
 }
 
 .backLink {
-  color: #0066cc;
+  color: #D7B796;
   cursor: pointer;
   font-size: 0.9rem;
   font-weight: 600;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
   display: inline-block;
 }
 
@@ -66,26 +66,23 @@
 
 .input:focus {
   outline: none;
-  border-color: #0066cc;
+  border-color: #D7B796;
   box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.15);
 }
 
 .loginButton {
-  width: 100%;
-  padding: 0.85rem;
-  background-color: #0066cc;
+  background-color: #D7B796;
   color: white;
   border: none;
+  padding: 0.75rem 1.5rem;
   border-radius: 6px;
-  font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.2s;
-  margin-top: 1rem;
 }
 
 .loginButton:hover {
-  background-color: #0052a3;
+  background-color: #C29E7A;
 }
 
 .registerText {
@@ -96,7 +93,7 @@
 }
 
 .registerLink {
-  color: #0066cc;
+  color: #b89776;
   font-weight: 600;
   cursor: pointer;
 }
@@ -107,14 +104,66 @@
 
 /* LADO DIREITO: Exatamente 50% da tela */
 .rightSide {
-  flex: 1; /* Ocupa metade exata */
-  background: linear-gradient(rgba(0, 51, 102, 0.85), rgba(0, 26, 51, 0.9)), 
-              url('https://images.unsplash.com/photo-1441986300917-64674bd600d8?q=80&w=1200') no-repeat center/cover;
+  flex: 1; 
+  background: linear-gradient(135deg, rgba(215, 183, 150, 0.92) 0%, rgba(162, 134, 97, 0.96) 100%);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  align-items: center;
+  text-align: center;
   padding: 4rem;
   box-sizing: border-box;
+}
+
+.brandLogoContainer {
+  margin-top: auto;
+  margin-bottom: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.brandLogoImage {
+  max-width: 260px;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  background-color: #ffffff;
+  padding: 12px;
+}
+
+.brandTagline { 
+  font-size: 1.1rem; 
+  opacity: 0.95; 
+  line-height: 1.5; 
+  max-width: 380px; 
+  color: white; 
+  font-weight: 500;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.contactFooter { 
+  border-top: 1px solid rgba(255, 255, 255, 0.25); 
+  padding-top: 1.5rem; 
+  width: 100%;
+}
+
+.contactLabel { 
+  font-size: 0.8rem; 
+  text-transform: uppercase; 
+  letter-spacing: 1px; 
+  opacity: 0.8; 
+  margin-bottom: 0.25rem; 
+  color: white; 
+}
+
+.contactPhone { 
+  font-size: 1.2rem; 
+  font-weight: 700; 
+  color: #ffffff; 
 }
 
 @media (max-width: 768px) {

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Home } from './features/ecommerce/components/Home/Home';
 import { LoginForm } from './features/auth/components/LoginForm/LoginForm';
 import { RegisterForm } from './features/auth/components/LoginForm/RegisterForm';
+import { Perfil } from './features/ecommerce/components/Perfil/Perfil';
 import './index.css';
 
 function App() {
@@ -14,6 +15,9 @@ function App() {
         {/* Rotas de autenticação acessadas via navegação */}
         <Route path="/login" element={<LoginForm />} />
         <Route path="/cadastro" element={<RegisterForm />} />
+
+        {/* Rota para o perfil do utilizador logado */}
+        <Route path="/perfil" element={<Perfil />} />
       </Routes>
     </BrowserRouter>
   );

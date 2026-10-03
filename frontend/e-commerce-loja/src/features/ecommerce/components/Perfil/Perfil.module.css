@@ -1,0 +1,265 @@
+.container {
+  display: flex;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, sans-serif;
+  background-color: #fafafa;
+}
+
+.content {
+  flex: 1;
+  max-width: 800px;
+  margin: 40px auto;
+  padding: 0 20px;
+  box-sizing: border-box;
+}
+
+.backLink {
+  color: #D7B796;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  display: inline-block;
+}
+
+.backLink:hover {
+  text-decoration: underline;
+}
+
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 2.5rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+  border: 1px solid #eaeaea;
+}
+
+.title {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #222222;
+  margin-bottom: 0.5rem;
+}
+
+.subtitle {
+  font-size: 0.95rem;
+  color: #666666;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid #f1f1f1;
+  padding-bottom: 1rem;
+}
+
+.infoGroup {
+  margin-bottom: 1.5rem;
+}
+
+.label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #888888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.3rem;
+  display: block;
+}
+
+.value {
+  font-size: 1.1rem;
+  color: #333333;
+  font-weight: 500;
+}
+
+.logoutButton {
+  margin-top: 2rem;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.logoutButton:hover {
+  background-color: #c82333;
+}
+
+.container {
+  display: flex;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, sans-serif;
+  background-color: #fafafa;
+}
+
+.content {
+  flex: 1;
+  max-width: 800px;
+  margin: 40px auto;
+  padding: 0 20px;
+  box-sizing: border-box;
+}
+
+.backLink {
+  color: #D7B796;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  display: inline-block;
+}
+
+.backLink:hover {
+  text-decoration: underline;
+}
+
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 2.5rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+  border: 1px solid #eaeaea;
+}
+
+.title {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #222222;
+  margin-bottom: 0.5rem;
+}
+
+.subtitle {
+  font-size: 0.95rem;
+  color: #666666;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid #f1f1f1;
+  padding-bottom: 1rem;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+.formGroup {
+  margin-bottom: 1.25rem;
+  grid-column: span 1;
+}
+
+.fullWidth {
+  grid-column: span 2;
+}
+
+.label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #555555;
+  margin-bottom: 0.4rem;
+  display: block;
+}
+
+.input, .select {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+  background-color: #fff;
+  transition: border-color 0.2s;
+}
+
+.input:focus, .select:focus {
+  outline: none;
+  border-color: #D7B796;
+  box-shadow: 0 0 0 3px rgba(215, 183, 150, 0.15);
+}
+
+.input:disabled {
+  background-color: #f8f9fa;
+  color: #6c757d;
+  cursor: not-allowed;
+}
+
+.checkboxGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 0.5rem;
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #D7B796;
+}
+
+.actionsFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 2rem;
+  border-top: 1px solid #f1f1f1;
+  padding-top: 1.5rem;
+}
+
+.saveButton {
+  background-color: #D7B796;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.saveButton:hover {
+  background-color: #C29E7A;
+}
+
+.logoutButton {
+  background-color: transparent;
+  color: #dc3545;
+  border: 1px solid #dc3545;
+  padding: 0.75rem 1.2rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.logoutButton:hover {
+  background-color: #dc3545;
+  color: white;
+}
+
+.message {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+
+.success {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.error {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+@media (max-width: 600px) {
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+  .formGroup, .fullWidth {
+    grid-column: span 1;
+  }
+}
