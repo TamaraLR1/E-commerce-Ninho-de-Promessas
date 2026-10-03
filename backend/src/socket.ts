@@ -6,11 +6,16 @@ let io: Server;
 export function initSocket(server: http.Server) {
   io = new Server(server, {
     cors: {
-      origin: ['http://localhost:5173', 'http://localhost:5174'],
+      origin: [
+        'http://localhost:5173',
+        'http://localhost:5174',
+        'https://ninho.tamaralr.com.br',
+        'https://painelninho.tamaralr.com.br'
+      ],
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
       credentials: true
     },
-    transports: ['websocket', 'polling']
+    transports: ['polling', 'websocket'] // O polling deve vir primeiro para o Cloudflare Tunnel fazer o upgrade seguro
   });
 
   io.on('connection', (socket) => {

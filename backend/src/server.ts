@@ -52,8 +52,8 @@ app.use('/api', produtoRoutes);
 app.use('/api', estoqueRoutes);
 app.use('/api', motivoRoutes);
 
-const PORT = process.env.PORT || 3333;
+const PORT = Number(process.env.PORT) || 3333;
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });

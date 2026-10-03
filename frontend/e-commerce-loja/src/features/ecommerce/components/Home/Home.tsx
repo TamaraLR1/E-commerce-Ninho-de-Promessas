@@ -179,14 +179,15 @@ export const Home: React.FC = () => {
     checkUserSession();
     fetchStoreData();
 
+    // Inicialização do Socket.io otimizada para o Cloudflare Tunnel (inicia em polling para handshakes seguros)
     const socket = io(API_URL, {
       withCredentials: true,
-      transports: ['websocket', 'polling'],
-      secure: true,
+      transports: ['polling', 'websocket'],
+      secure: window.location.protocol === 'https:',
       rejectUnauthorized: false
     });
 
-    socket.on('produtoAtualizado', (produtoAlterado: Product) => {
+    const handleProductUpdate = (produtoAlterado: Product) => {
       setProducts(prevProducts => {
         const index = prevProducts.findIndex(p => p.id === produtoAlterado.id);
 
@@ -202,9 +203,15 @@ export const Home: React.FC = () => {
           return [produtoAlterado, ...prevProducts];
         }
       });
-    });
+    };
+
+    // Escuta ambas as variações de nomes de eventos emitidos pelo backend
+    socket.on('produtoAtualizado', handleProductUpdate);
+    socket.on('produto-atualizado', handleProductUpdate);
 
     return () => {
+      socket.off('produtoAtualizado', handleProductUpdate);
+      socket.off('produto-atualizado', handleProductUpdate);
       socket.disconnect();
     };
   }, []);

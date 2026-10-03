@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import fs from 'fs';
 import path from 'path';
+import { getIO } from '../socket'; // Ajuste o caminho relativo para onde está o seu arquivo socket.ts
 
 // 🧮 Função auxiliar para calcular estoque ativo e percentual de desconto de forma padronizada
 function formatarProduto(produto: any) {
@@ -357,21 +358,22 @@ export const produtoController = {
 
       const precoOriginal = Number(produto.preco);
       let precoPromocional = 0;
+      let percentualCalculado = 0; // Já declarada aqui
 
       // 2. Calcula o preço promocional com base no tipo escolhido
       if (discountType === 'percentual') {
-        // promoValue aqui é a porcentagem, ex: 15 para 15% OFF
         const percentual = Number(promoValue);
         if (isNaN(percentual) || percentual < 0 || percentual > 100) {
           return res.status(400).json({ message: 'Percentual de desconto inválido.' });
         }
         precoPromocional = precoOriginal * (1 - percentual / 100);
+        percentualCalculado = percentual;
       } else if (discountType === 'fixo') {
-        // promoValue aqui é o valor final direto em R$
         precoPromocional = Number(promoValue);
         if (isNaN(precoPromocional) || precoPromocional < 0 || precoPromocional >= precoOriginal) {
           return res.status(400).json({ message: 'Preço promocional fixo inválido.' });
         }
+        percentualCalculado = Math.round(((precoOriginal - precoPromocional) / precoOriginal) * 100);
       } else {
         return res.status(400).json({ message: 'Tipo de desconto inválido.' });
       }
@@ -381,15 +383,36 @@ export const produtoController = {
         where: { id },
         data: {
           temOferta: true,
-          precoPromocional: precoPromocional.toFixed(2),
-          // Se você tiver o campo percentualDesconto no schema, descomente a linha abaixo:
-          // percentualDesconto: discountType === 'percentual' ? Number(promoValue) : Math.round(((precoOriginal - precoPromocional) / precoOriginal) * 100)
+          precoPromocional: precoPromocional.toFixed(2)
         },
+        include: {
+          categoria: true,
+          imagens: true,
+          estoques: {
+            include: {
+              tamanho: true,
+              cor: true
+            }
+          }
+        }
       });
+
+      // Monta o objeto incluindo a porcentagem já calculada (sem redeclarar com const)
+      const produtoComDesconto = {
+        ...produtoAtualizado,
+        percentualDesconto: percentualCalculado
+      };
+
+      // 4. Dispara o evento via WebSocket com o objeto completo contendo a porcentagem
+      const io = getIO();
+      if (io) {
+        io.emit('produtoAtualizado', produtoComDesconto);
+        io.emit('produto-atualizado', produtoComDesconto);
+      }
 
       return res.status(200).json({ 
         message: 'Oferta configurada com sucesso!',
-        produto: produtoAtualizado 
+        produto: produtoComDesconto 
       });
     } catch (error) {
       console.error('Erro ao configurar oferta:', error);
