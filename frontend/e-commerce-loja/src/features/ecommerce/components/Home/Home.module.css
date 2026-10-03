@@ -814,3 +814,28 @@
 .sortSelect:hover {
   border-color: #C29E7A;
 }
+
+/* Botão de Compartilhar */
+.shareButton {
+  background-color: #f1f3f5;
+  color: #495057;
+  border: 1px solid #ced4da;
+  padding: 8px;
+  margin-top: 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.shareButton:hover {
+  background-color: #e2e6ea;
+  color: #212529;
+  border-color: #adb5bd;
+}

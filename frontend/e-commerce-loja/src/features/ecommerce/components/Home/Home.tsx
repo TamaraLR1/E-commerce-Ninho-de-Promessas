@@ -179,7 +179,6 @@ export const Home: React.FC = () => {
     checkUserSession();
     fetchStoreData();
 
-    // Inicialização do Socket.io otimizada para o Cloudflare Tunnel (inicia em polling para handshakes seguros)
     const socket = io(API_URL, {
       withCredentials: true,
       transports: ['polling', 'websocket'],
@@ -205,7 +204,6 @@ export const Home: React.FC = () => {
       });
     };
 
-    // Escuta ambas as variações de nomes de eventos emitidos pelo backend
     socket.on('produtoAtualizado', handleProductUpdate);
     socket.on('produto-atualizado', handleProductUpdate);
 
@@ -221,6 +219,67 @@ export const Home: React.FC = () => {
     setTimeout(() => {
       setToastMessage(null);
     }, 3000);
+  };
+
+  const handleShare = async (product: Product, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const productUrl = window.location.href;
+    
+    const precoEfetivo = product.temOferta && product.precoPromocional && Number(product.precoPromocional) > 0 
+      ? Number(product.precoPromocional) 
+      : (parseFloat(product.preco) || 0);
+
+    const imagemUrl = product.imagens && product.imagens.length > 0 ? getImageUrl(product.imagens[0].url) : '';
+
+    const descricaoLimpa = (product.descricao || '')
+      .replace(/<[^>]*>/g, '')
+      .substring(0, 100);
+
+    const textoCompartilhamento = `👶 *${product.nome}*\n\n` +
+      (descricaoLimpa ? `${descricaoLimpa}...\n\n` : '') +
+      `💰 *Preço:* R$ ${precoEfetivo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n` +
+      `🔗 ${productUrl}`;
+
+    try {
+      let fileToShare: File | undefined = undefined;
+
+      if (imagemUrl && typeof navigator.canShare === 'function') {
+              try {
+                const response = await fetch(imagemUrl);
+                const blob = await response.blob();
+                const file = new File([blob], 'produto.jpg', { type: blob.type || 'image/jpeg' });
+                
+                if (navigator.canShare({ files: [file] })) {
+                  fileToShare = file;
+                }
+              } catch (imgErr) {
+                console.log('Não foi possível carregar a imagem para anexo.');
+              }
+            }
+
+            const shareData: ShareData = {
+              title: product.nome,
+              text: textoCompartilhamento,
+              url: productUrl,
+              ...(fileToShare ? { files: [fileToShare] } : {})
+            };
+
+            if (navigator.share) {
+              await navigator.share(shareData);
+            } else {
+              await navigator.clipboard.writeText(textoCompartilhamento);
+              showToast('Informações e link do produto copiados para a área de transferência!');
+            }
+          } catch (err: any) {
+            if (err.name !== 'AbortError') {
+              try {
+                await navigator.clipboard.writeText(textoCompartilhamento);
+                showToast('Link e dados copiados para a área de transferência!');
+              } catch (clipErr) {
+                showToast('Não foi possível compartilhar o produto.');
+              }
+            }
+          }
   };
 
   const addToCartWithSpecificSize = (product: Product, size: string) => {
@@ -697,7 +756,6 @@ export const Home: React.FC = () => {
               return (
                 <div key={product.id} className={styles.productCard}>
                   
-                  {/* BARRA DE SELOS NO TOPO DO CARD (FORA DA IMAGEM) */}
                   <div className={styles.badgesTopBar}>
                     {product.isNovidade ? (
                       <span className={styles.badgeNovidadeVitrine}>
@@ -846,16 +904,31 @@ export const Home: React.FC = () => {
                       </div>
                     </div>
 
-                    <button 
-                      className={styles.actionButton} 
-                      type="button"
-                      onClick={() => {
-                        addToCartWithSpecificSize(product, chosenSize);
-                        setIsCartOpen(true); 
-                      }}
-                    >
-                      Adicionar ao Carrinho
-                    </button>
+                    {/* BOTÕES DE AÇÃO LADO A LADO (CARRINHO + COMPARTILHAR) */}
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                      <button 
+                        className={styles.shareButton} 
+                        type="button"
+                        style={{ flex: 1, marginTop: 0 }}
+                        onClick={() => {
+                          addToCartWithSpecificSize(product, chosenSize);
+                          setIsCartOpen(true); 
+                        }}
+                        title="Adicionar ao Carrinho"
+                      >
+                        🛒 Carrinho
+                      </button>
+
+                      <button 
+                        className={styles.shareButton} 
+                        type="button"
+                        style={{ flex: 1, marginTop: 0 }}
+                        onClick={(e) => handleShare(product, e)}
+                        title="Compartilhar produto"
+                      >
+                        🔗 Compartilhar
+                      </button>
+                    </div>
                     
                     <button 
                       className={styles.buyButton} 
