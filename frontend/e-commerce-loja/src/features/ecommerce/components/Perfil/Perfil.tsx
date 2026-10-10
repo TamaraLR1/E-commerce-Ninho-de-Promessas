@@ -41,7 +41,7 @@ export const Perfil: React.FC = () => {
   useEffect(() => {
     const fetchPerfil = async () => {
       try {
-        const response = await axios.get(`${API_URL}/api/perfil`);
+        const response = await axios.get<any>(`${API_URL}/api/perfil`);
         if (response.data && response.data.user) {
           const u = response.data.user;
           setFormData({
@@ -226,24 +226,23 @@ export const Perfil: React.FC = () => {
               </div>
 
             </div>
+              <div className={styles.actionsFooter}>
+                <button 
+                  type="submit" 
+                  className={styles.saveButton}
+                  disabled={saving}
+                >
+                  {saving ? 'A salvar...' : 'Salvar Alterações'}
+                </button>
 
-            <div className={styles.actionsFooter}>
-              <button 
-                type="submit" 
-                className={styles.saveButton}
-                disabled={saving}
-              >
-                {saving ? 'A salvar...' : 'Salvar Alterações'}
-              </button>
-
-              <button 
-                type="button" 
-                className={styles.logoutButton}
-                onClick={handleLogout}
-              >
-                Sair da Conta
-              </button>
-            </div>
+                <button 
+                  type="button" 
+                  className={styles.logoutButton}
+                  onClick={handleLogout}
+                >
+                  Sair da Conta
+                </button>
+              </div>
           </form>
         </div>
       </div>

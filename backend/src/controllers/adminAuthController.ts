@@ -31,13 +31,13 @@ export class AdminAuthController {
         { expiresIn: '1d' }
       );
 
-      // Define o cookie com validade de 1 dia (24 * 60 * 60 * 1000 ms)
+      const isProduction = process.env.NODE_ENV === 'production';
       const oneDayInMs = 24 * 60 * 60 * 1000;
 
       res.cookie('admin_token', token, {
-        httpOnly: true, // Impede acesso via JS no browser (mais seguro)
-        secure: process.env.NODE_ENV === 'production', // true em produção (HTTPS)
-        sameSite: 'strict',
+        httpOnly: true,
+        secure: isProduction, // true em produção (HTTPS)
+        sameSite: 'lax',      // 'lax' é essencial para permitir o envio do cookie entre subdomínios
         maxAge: oneDayInMs,
       });
 

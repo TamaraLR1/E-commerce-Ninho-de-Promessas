@@ -138,12 +138,8 @@ export const Home: React.FC = () => {
   const [filtroGenero, setFiltroGenero] = useState<string>('Todos');
   const [filtroCor, setFiltroCor] = useState<string>('Todos');
 
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedSizes, setSelectedSizes] = useState<{ [productId: string]: string }>({});
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  
-  const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
-  const [selectedColorForDetails, setSelectedColorForDetails] = useState<string | null>(null);
   const [cardImageIndexes, setCardImageIndexes] = useState<{ [productId: string]: number }>({});
   
   const [products, setProducts] = useState<Product[]>([]);
@@ -236,8 +232,7 @@ export const Home: React.FC = () => {
 
   const handleShare = async (product: Product, e: React.MouseEvent) => {
     e.stopPropagation();
-    const productUrl = window.location.href;
-    
+    const productUrl = `${window.location.origin}/produto/${product.id}?utm_source=whatsapp&utm_medium=social&utm_campaign=compartilhamento_vitrine`;    
     const precoEfetivo = product.temOferta && product.precoPromocional && Number(product.precoPromocional) > 0 
       ? Number(product.precoPromocional) 
       : (parseFloat(product.preco) || 0);
@@ -855,11 +850,7 @@ export const Home: React.FC = () => {
                       src={imageUrl} 
                       alt={product.nome} 
                       className={styles.productImage} 
-                      onClick={() => {
-                        setSelectedProduct(product);
-                        setActiveImageIndex(0);
-                        setSelectedColorForDetails(currentCardColor || product.estoques?.find(e => e.cor)?.cor?.id || null);
-                      }}
+                      onClick={() => navigate(`/produto/${product.id}`)}
                     />
 
                     {listaImagensCard.length > 1 && (
@@ -903,11 +894,7 @@ export const Home: React.FC = () => {
                   </div>
 
                   <div className={styles.productInfo}>
-                    <h3 onClick={() => {
-                      setSelectedProduct(product);
-                      setActiveImageIndex(0);
-                      setSelectedColorForDetails(currentCardColor || product.estoques?.find(e => e.cor)?.cor?.id || null);
-                    }}>{product.nome}</h3>
+                    <h3 onClick={() => navigate(`/produto/${product.id}`)}>{product.nome}</h3>
                     
                     <div className={styles.rating}>
                       {Array.from({ length: 5 }).map((_, i) => <span key={i} className={styles.star}>★</span>)}
@@ -1111,250 +1098,6 @@ export const Home: React.FC = () => {
         </div>
       )}
 
-      {selectedProduct && (
-        <div className={styles.modalOverlay} onClick={() => setSelectedProduct(null)}>
-          <div className={styles.modalContentBox} onClick={(e) => e.stopPropagation()}>
-            <button 
-              type="button"
-              onClick={() => setSelectedProduct(null)}
-              className={styles.modalCloseButton}
-            >
-              ✕
-            </button>
-
-            <div className={styles.modalGridContainer}>
-              <div>
-                {(() => {
-                  const imagensModalDaCor = selectedProduct.imagens?.filter((img: any) => {
-                    const imgCorId = img.corId || img.cor?.id;
-                    return !selectedColorForDetails || imgCorId === selectedColorForDetails;
-                  }) || [];
-
-                  const listaImagensOrdenadasModal = [...imagensModalDaCor].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
-                  const listaImagensModal = listaImagensOrdenadasModal.length > 0 
-                    ? listaImagensOrdenadasModal 
-                    : [...(selectedProduct.imagens || [])].sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
-
-                  const imagemAtualModalUrl = listaImagensModal[activeImageIndex]?.url || listaImagensModal[0]?.url || '';
-
-                  return (
-                    <div>
-                      <img 
-                        src={getImageUrl(imagemAtualModalUrl)} 
-                        alt={selectedProduct.nome} 
-                        className={styles.modalMainImage} 
-                      />
-                      
-                      {listaImagensModal.length > 1 && (
-                        <div className={styles.modalThumbnailsList}>
-                          {listaImagensModal.map((img: any, idx: number) => {
-                            const isSelectedThumb = activeImageIndex === idx;
-                            return (
-                              <img 
-                                key={img.id || idx} 
-                                src={getImageUrl(img.url)} 
-                                alt="" 
-                                onClick={() => setActiveImageIndex(idx)}
-                                className={`${styles.modalThumbItem} ${isSelectedThumb ? styles.modalThumbActive : styles.modalThumbInactive}`} 
-                              />
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-
-              <div>
-                <span className={styles.modalCategoryBadge}>
-                  {selectedProduct.categoria?.nome || 'Geral'}
-                </span>
-                <h2 className={styles.modalProductTitle}>{selectedProduct.nome}</h2>
-                
-                <div className={styles.modalPriceBlock}>
-                  {selectedProduct.temOferta && selectedProduct.precoPromocional && Number(selectedProduct.precoPromocional) > 0 ? (
-                    <div className={styles.modalOfferFlex}>
-                      <span className={styles.modalOldPrice}>
-                        R$ {(parseFloat(selectedProduct.preco) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </span>
-                      <span className={styles.modalNewPrice}>
-                        R$ {Number(selectedProduct.precoPromocional).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  ) : (
-                    <span className={styles.modalNormalPrice}>
-                      R$ {(parseFloat(selectedProduct.preco) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </span>
-                  )}
-                </div>
-
-                <div 
-                  className={styles.modalDescriptionText}
-                  dangerouslySetInnerHTML={{ 
-                    __html: (selectedProduct?.descricao || 'Nenhuma descrição informada.')
-                      .split('\n')
-                      .map(line => {
-                        const trimmed = line.trim();
-                        if (trimmed.startsWith('*')) {
-                          return `<li style="margin-top: 4px; margin-bottom: 4px;">${trimmed.substring(1).trim()}</li>`;
-                        }
-                        if (trimmed === '') {
-                          return '<div style="height: 8px;"></div>';
-                        }
-                        return `<div>${trimmed}</div>`;
-                      })
-                      .join('')
-                  }}
-                />
-
-                <div className={styles.modalSectionGroup}>
-                  <label className={styles.modalSectionLabel}>
-                    🎨 Escolha a Cor / Estampa:
-                  </label>
-                  <div className={styles.modalColorsList}>
-                    {(() => {
-                      const coresUnicasMap = new Map();
-                      selectedProduct.estoques?.forEach((item: any) => {
-                        if (item.cor) {
-                          coresUnicasMap.set(item.cor.id, item.cor);
-                        }
-                      });
-                      const coresList = Array.from(coresUnicasMap.values());
-
-                      if (coresList.length > 0) {
-                        return coresList.map((c: any) => {
-                          const isSelected = selectedColorForDetails === c.id;
-                          return (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedColorForDetails(c.id);
-                                setActiveImageIndex(0);
-                              }}
-                              className={`${styles.modalColorButton} ${isSelected ? styles.modalColorButtonSelected : styles.modalColorButtonUnselected}`}
-                            >
-                              {c.hex && (
-                                <span className={styles.modalColorDot} style={{ backgroundColor: c.hex }}></span>
-                              )}
-                              {c.nome}
-                            </button>
-                          );
-                        });
-                      }
-                      return <span>Cor única padrão</span>;
-                    })()}
-                  </div>
-                </div>
-
-                <div className={styles.modalSectionGroup}>
-                  <label className={styles.modalSectionLabel}>
-                    📏 Selecione o Tamanho:
-                  </label>
-                  <div className={styles.modalSizesGrid}>
-                    {(() => {
-                      if (!selectedProduct.estoques || selectedProduct.estoques.length === 0) {
-                        return <span>Tamanho único</span>;
-                      }
-
-                      const tamanhosDaCor = selectedProduct.estoques.filter((item: any) => {
-                        return !selectedColorForDetails || item.cor?.id === selectedColorForDetails;
-                      });
-
-                      if (tamanhosDaCor.length === 0) {
-                        return <span>Selecione uma cor para ver os tamanhos.</span>;
-                      }
-
-                      const rawAvailableSizes = Array.from(new Set(tamanhosDaCor.map((e: any) => e.tamanho?.nome).filter(Boolean)));
-                      const availableSizes = sortSizes(rawAvailableSizes as string[]);
-                      const currentSelectedSize = selectedSizes[selectedProduct.id] || availableSizes[0];
-
-                      return availableSizes.map((sizeName: any, idx: number) => {
-                        const isSelected = currentSelectedSize === sizeName;
-                        const estoqueItem = tamanhosDaCor.find((e: any) => e.tamanho?.nome === sizeName);
-                        const estoqueDisp = estoqueItem?.estoque ?? 0;
-
-                        return (
-                          <button
-                            key={idx}
-                            type="button"
-                            disabled={estoqueDisp === 0}
-                            className={isSelected ? styles.modalSizeButtonSelected : styles.modalSizeButtonUnselected}
-                            style={{ opacity: estoqueDisp === 0 ? 0.4 : 1, cursor: estoqueDisp === 0 ? 'not-allowed' : 'pointer' }}
-                            onClick={() => {
-                              setSelectedSizes(prev => ({
-                                ...prev,
-                                [selectedProduct.id]: sizeName
-                              }));
-                            }}
-                          >
-                            {sizeName} ({estoqueDisp})
-                          </button>
-                        );
-                      });
-                    })()}
-                  </div>
-                </div>
-
-                <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <button 
-                    className={styles.actionButton} 
-                    type="button"
-                    onClick={() => {
-                      const rawAvailableSizes = selectedProduct.estoques && selectedProduct.estoques.length > 0 
-                        ? Array.from(new Set(selectedProduct.estoques.map((e: any) => e.tamanho?.nome).filter(Boolean)))
-                        : ['U'];
-                      const availableSizes = sortSizes(rawAvailableSizes as string[]);
-                      
-                      const sizeSelected = selectedSizes[selectedProduct.id] || availableSizes[0];
-                      if (!selectedSizes[selectedProduct.id] && availableSizes.length > 1) {
-                        showToast('Por favor, selecione um tamanho antes de adicionar ao carrinho!');
-                        return;
-                      }
-
-                      addToCartWithSpecificSize(selectedProduct, sizeSelected);
-                      setSelectedProduct(null);
-                      setIsCartOpen(true); 
-                    }}
-                  >
-                    Adicionar ao Carrinho
-                  </button>
-                  
-                  <button 
-                    className={styles.buyButton} 
-                    type="button"
-                    onClick={() => { 
-                      const rawAvailableSizes = selectedProduct.estoques && selectedProduct.estoques.length > 0 
-                        ? Array.from(new Set(selectedProduct.estoques.map((e: any) => e.tamanho?.nome).filter(Boolean)))
-                        : ['U'];
-                      const availableSizes = sortSizes(rawAvailableSizes as string[]);
-
-                      const sizeSelected = selectedSizes[selectedProduct.id] || availableSizes[0];
-                      if (!selectedSizes[selectedProduct.id] && availableSizes.length > 1) {
-                        showToast('Por favor, selecione um tamanho antes de comprar!');
-                        return;
-                      }
-
-                      addToCartWithSpecificSize(selectedProduct, sizeSelected); 
-                      setSelectedProduct(null); 
-                      
-                      if (!user) {
-                        navigate('/login');
-                      } else {
-                        setIsCheckoutOpen(true); 
-                      }
-                    }}
-                  >
-                    Comprar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {isCartOpen && (
         <div className={styles.modalOverlay} onClick={() => setIsCartOpen(false)}>
           <div className={styles.cartModal} onClick={(e) => e.stopPropagation()}>
@@ -1440,6 +1183,19 @@ export const Home: React.FC = () => {
           <p>{toastMessage}</p>
         </div>
       )}
+
+      {/* BOTÃO FLUTUANTE DO WHATSAPP */}
+      <a
+        href="https://wa.me/5548991794486?text=Ol%C3%A1%2C%20tudo%20bem%20%3F%20Peguei%20o%20contato%20da%20loja%20no%20site"
+        target="_blank"
+        rel="noopener noreferrer"
+        className={styles.whatsappButton}
+        title="Fale conosco no WhatsApp"
+      >
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+        </svg>
+      </a>
     </div>
   );
 };

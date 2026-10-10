@@ -14,3 +14,7 @@ npx prisma db seed
 npx prisma migrate reset
 npx prisma db push
 npx prisma migrate dev
+
+
+Gerar o build e descobrir erros/ frontend
+npm run build

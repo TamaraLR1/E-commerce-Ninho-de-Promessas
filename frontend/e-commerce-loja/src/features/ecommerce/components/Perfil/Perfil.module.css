@@ -49,93 +49,6 @@
   padding-bottom: 1rem;
 }
 
-.infoGroup {
-  margin-bottom: 1.5rem;
-}
-
-.label {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #888888;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 0.3rem;
-  display: block;
-}
-
-.value {
-  font-size: 1.1rem;
-  color: #333333;
-  font-weight: 500;
-}
-
-.logoutButton {
-  margin-top: 2rem;
-  background-color: #dc3545;
-  color: white;
-  border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.logoutButton:hover {
-  background-color: #c82333;
-}
-
-.container {
-  display: flex;
-  min-height: 100vh;
-  font-family: system-ui, -apple-system, sans-serif;
-  background-color: #fafafa;
-}
-
-.content {
-  flex: 1;
-  max-width: 800px;
-  margin: 40px auto;
-  padding: 0 20px;
-  box-sizing: border-box;
-}
-
-.backLink {
-  color: #D7B796;
-  cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 600;
-  margin-bottom: 1.5rem;
-  display: inline-block;
-}
-
-.backLink:hover {
-  text-decoration: underline;
-}
-
-.card {
-  background: white;
-  border-radius: 12px;
-  padding: 2.5rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
-  border: 1px solid #eaeaea;
-}
-
-.title {
-  font-size: 1.8rem;
-  font-weight: 700;
-  color: #222222;
-  margin-bottom: 0.5rem;
-}
-
-.subtitle {
-  font-size: 0.95rem;
-  color: #666666;
-  margin-bottom: 2rem;
-  border-bottom: 1px solid #f1f1f1;
-  padding-bottom: 1rem;
-}
-
 .formGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -161,7 +74,7 @@
 
 .input, .select {
   width: 100%;
-  padding: 0.75rem 1rem;
+  padding: 0.65rem 1rem;
   border: 1px solid #ced4da;
   border-radius: 6px;
   font-size: 0.95rem;
@@ -196,44 +109,63 @@
   accent-color: #D7B796;
 }
 
+/* Container que abriga os dois botões lado a lado perfeitamente alinhados */
 .actionsFooter {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: row;
+  gap: 1rem;
   margin-top: 2rem;
-  border-top: 1px solid #f1f1f1;
-  padding-top: 1.5rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .saveButton {
+  flex: 1;
+  height: 42px; /* Altura fixa para alinhar perfeitamente com o botão de sair */
+  padding: 0 1rem;
   background-color: #D7B796;
   color: white;
   border: none;
-  padding: 0.75rem 1.5rem;
   border-radius: 6px;
+  font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.2s;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .saveButton:hover {
-  background-color: #C29E7A;
+  background-color: #c29e7a;
+}
+
+.saveButton:disabled {
+  background-color: #e2e8f0;
+  cursor: not-allowed;
 }
 
 .logoutButton {
-  background-color: transparent;
+  flex: 1;
+  height: 42px; /* Altura fixa para alinhar perfeitamente com o botão de salvar */
+  padding: 0 1rem;
+  background-color: #ffffff;
   color: #dc3545;
   border: 1px solid #dc3545;
-  padding: 0.75rem 1.2rem;
   border-radius: 6px;
+  font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .logoutButton:hover {
-  background-color: #dc3545;
-  color: white;
+  background-color: #fff5f5;
 }
 
 .message {

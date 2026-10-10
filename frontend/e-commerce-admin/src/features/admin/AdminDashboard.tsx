@@ -196,7 +196,21 @@ export const AdminDashboard: React.FC = () => {
   const [loadingMovimentacao, setLoadingMovimentacao] = useState<{ [key: string]: boolean }>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   
-  const API_URL = 'http://localhost:3333/api';
+  // Definição dinâmica da API_URL suportando tanto ambiente local quanto de produção
+  const API_URL = (() => {
+    // 1. Prioriza variável de ambiente caso configurada no build (.env / Vite)
+    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) {
+      return import.meta.env.VITE_API_URL;
+    }
+    // 2. Se executando no navegador, verifica se o hostname atual é localhost
+    if (typeof window !== 'undefined') {
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      return isLocalhost
+        ? 'http://localhost:3333/api'
+        : 'https://ninhoback.tamaralr.com.br/api';
+    }
+    return 'https://ninhoback.tamaralr.com.br/api';
+  })();
 
   useEffect(() => {
     carregarCategorias();
@@ -2181,7 +2195,7 @@ export const AdminDashboard: React.FC = () => {
                           </div>
                           <div className={styles.categoryActionsGroup}>
                             <button type="button" onClick={() => handleStartEditCor(cor)} className={styles.btnEditTable}>
-                              ✏️ Editar
+                              ✏️️ Editar
                             </button>
                             <button 
                               type="button" 
