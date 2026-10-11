@@ -7,18 +7,25 @@ generator client {
 }
 
 model User {
-  id               Int      @id @default(autoincrement())
+  id               Int       @id @default(autoincrement())
   nome             String
   sobrenome        String
-  cpf              String   @unique
-  email            String   @unique
+  cpf              String    @unique
+  email            String    @unique
   telefone         String
   senhaHash        String
   dataNascimento   DateTime?
   sexo             String?
-  receberNovidades Boolean  @default(false)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  receberNovidades Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // Relações com Endereços, Pedidos e Carrinho do Cliente
+  enderecos Endereco[]
+  pedidos   Pedido[]
+  carrinho  Carrinho?
+
+  @@map("users")
 }
 
 model Admin {
@@ -27,38 +34,41 @@ model Admin {
   email     String   @unique
   senha     String
   createdAt DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  updatedAt DateTime @updatedAt
 
   produtosCriados     Produto[]             @relation("ProdutoCriado")
   produtosAtualizados Produto[]             @relation("ProdutoAtualizado")
   movimentacoes       MovimentacaoEstoque[]
-  logsAtividade LogAtividade[]
-  
+  logsAtividade       LogAtividade[]
+
   @@map("admins")
 }
 
 model Categoria {
-  id        String    @id @default(uuid())
-  nome      String    @unique
-  slug      String    @unique
+  id        String   @id @default(uuid())
+  nome      String   @unique
+  slug      String   @unique
   ativo     Boolean  @default(true)
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt 
+  updatedAt DateTime @updatedAt
 
-  produtos  Produto[]
+  produtos Produto[]
 
   @@map("categorias")
 }
 
 model Tamanho {
-  id        String           @id @default(uuid())
-  nome      String           @unique
-  slug      String           @unique
-  ordem     Int              @default(0)
-  ativo     Boolean          @default(true)
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt 
-  estoques ProdutoEstoque[]
+  id        String   @id @default(uuid())
+  nome      String   @unique
+  slug      String   @unique
+  ordem     Int      @default(0)
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  estoques      ProdutoEstoque[]
+  itemPedidos   ItemPedido[]
+  itensCarrinho ItemCarrinho[]
 
   @@map("tamanhos")
 }
@@ -68,43 +78,48 @@ model Cor {
   nome      String   @unique
   slug      String   @unique
   hex       String?  // Código da cor (ex: #ff69b4 para rosa)
-  ativo Boolean @default(true)
+  ativo     Boolean  @default(true)
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt 
-  imagens   ProdutoImagem[]
-  estoques  ProdutoEstoque[] // Relação com o estoque
+  updatedAt DateTime @updatedAt
+
+  imagens       ProdutoImagem[]
+  estoques      ProdutoEstoque[]
+  itemPedidos   ItemPedido[]
+  itensCarrinho ItemCarrinho[]
 
   @@map("cores")
 }
 
 model Produto {
-  id          String           @id @default(uuid())
-  nome        String           @db.VarChar(100) // Máximo 100 caracteres
-  preco       Decimal          @db.Decimal(10, 2) // Preço monetário
-  descricao   String?          @db.Text
-  genero      String           @default("Unissex")
-  ativo       Boolean          @default(true) // <--- Adicione esta linha aqui
-  categoryId  String
-  categoria   Categoria        @relation(fields: [categoryId], references: [id])
-  
-  temOferta        Boolean         @default(false)
-  precoPromocional Decimal         @default(0) @db.Decimal(10, 2)
+  id               String    @id @default(uuid())
+  nome             String    @db.VarChar(100)
+  preco            Decimal   @db.Decimal(10, 2)
+  descricao        String?   @db.Text
+  genero           String    @default("Unissex")
+  ativo            Boolean   @default(true)
+  categoryId       String
+  categoria        Categoria @relation(fields: [categoryId], references: [id])
 
-  isVisible    Boolean         @default(true)
-  isNovidade      Boolean      @default(false)
-  
-  estoques    ProdutoEstoque[]
-  imagens     ProdutoImagem[]  // Até 10 imagens do produto
-  movimentacoes       MovimentacaoEstoque[]
+  temOferta        Boolean   @default(false)
+  precoPromocional Decimal   @default(0) @db.Decimal(10, 2)
 
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  isVisible        Boolean   @default(true)
+  isNovidade       Boolean   @default(false)
+
+  estoques      ProdutoEstoque[]
+  imagens       ProdutoImagem[]
+  movimentacoes MovimentacaoEstoque[]
+  itemPedidos   ItemPedido[]
+  itensCarrinho ItemCarrinho[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   criadoPorId     Int?
-  criadoPor       Admin?   @relation("ProdutoCriado", fields: [criadoPorId], references: [id])
-  
+  criadoPor       Admin? @relation("ProdutoCriado", fields: [criadoPorId], references: [id])
+
   atualizadoPorId Int?
-  atualizadoPor   Admin?   @relation("ProdutoAtualizado", fields: [atualizadoPorId], references: [id])
+  atualizadoPor   Admin? @relation("ProdutoAtualizado", fields: [atualizadoPorId], references: [id])
 
   @@map("produtos")
 }
@@ -112,23 +127,22 @@ model Produto {
 model ProdutoEstoque {
   id        String   @id @default(uuid())
   produtoId String
-  tamanhoId String? 
-  corId     String? 
+  tamanhoId String?
+  corId     String?
   estoque   Int      @default(0)
-  ativo     Boolean  @default(true) 
+  ativo     Boolean  @default(true)
 
-  produto   Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
-  tamanho   Tamanho? @relation(fields: [tamanhoId], references: [id], onDelete: Restrict)
-  cor       Cor?     @relation(fields: [corId], references: [id], onDelete: Restrict)
+  produto Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  tamanho Tamanho? @relation(fields: [tamanhoId], references: [id], onDelete: Restrict)
+  cor     Cor?     @relation(fields: [corId], references: [id], onDelete: Restrict)
 
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([produtoId, tamanhoId, corId])
   @@map("produto_estoques")
 }
 
-// Tabela para armazenar as imagens do produto (limite de até 10)
 model ProdutoImagem {
   id        String   @id @default(uuid())
   url       String
@@ -137,53 +151,194 @@ model ProdutoImagem {
   corId     String
   produto   Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
   cor       Cor      @relation(fields: [corId], references: [id], onDelete: Cascade)
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("produto_imagens")
 }
 
 model MotivoEstoque {
-  id            String                @id @default(uuid())
-  nome          String                @unique
-  tipo          String                // 'ENTRADA' ou 'SAIDA'
-  ativo     Boolean  @default(true) 
+  id        String   @id @default(uuid())
+  nome      String   @unique
+  tipo      String   // 'ENTRADA' ou 'SAIDA'
+  ativo     Boolean  @default(true)
 
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt 
-  
+  updatedAt DateTime @updatedAt
+
   movimentacoes MovimentacaoEstoque[]
 
   @@map("motivos_estoque")
 }
 
 model MovimentacaoEstoque {
-  id          String   @id @default(uuid())
-  produtoId   String
-  corNome     String
-  tamanho     String
-  tipo        String   // 'ENTRADA' ou 'SAIDA'
-  quantidade  Int
+  id         String   @id @default(uuid())
+  produtoId  String
+  corNome    String
+  tamanho    String
+  tipo       String   // 'ENTRADA' ou 'SAIDA'
+  quantidade Int
 
-  motivoId    String         // Chave estrangeira para a tabela de motivos
-  motivo      MotivoEstoque  @relation(fields: [motivoId], references: [id], onDelete: Restrict)
-  
-  adminId    Int            
-  admin      Admin          @relation(fields: [adminId], references: [id], onDelete: Restrict)
+  motivoId String
+  motivo   MotivoEstoque @relation(fields: [motivoId], references: [id], onDelete: Restrict)
 
-  data        DateTime @default(now())
-  
-  produto     Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  adminId Int
+  admin   Admin @relation(fields: [adminId], references: [id], onDelete: Restrict)
 
+  data DateTime @default(now())
 
+  produto Produto @relation(fields: [produtoId], references: [id], onDelete: Cascade)
 
   @@map("movimentacoes_estoque")
 }
 
 model LogAtividade {
-   id        String   @id @default(uuid())
-   adminId   Int
-   admin     Admin    @relation(fields: [adminId], references: [id])
-   acao      String   // Ex: "Cadastrou o produto X", "Alterou preço de Y"
-   data      DateTime @default(now())
+  id      String   @id @default(uuid())
+  adminId Int
+  admin   Admin    @relation(fields: [adminId], references: [id])
+  acao    String
+  data    DateTime @default(now())
+
+  @@map("logs_atividade")
+}
+
+// ========================================================
+// TABELAS DE PEDIDOS, ENDEREÇO E FRETE
+// ========================================================
+
+model Endereco {
+  id           String   @id @default(uuid())
+  cep          String
+  rua          String
+  numero       String
+  complemento  String?
+  bairro       String
+  cidade       String
+  estado       String
+  destinatario String?  // Nome de quem receberá o pacote no local
+
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  pedidos Pedido[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("enderecos")
+}
+
+enum StatusPedido {
+  PENDENTE
+  APROVADO
+  EM_PROCESSAMENTO
+  RECUSADO
+  CANCELADO
+  ENVIADO
+  ENTREGUE
+}
+
+model Pedido {
+  id           String       @id @default(uuid())
+  numeroPedido Int          @unique @default(autoincrement()) // Gera sequencialmente ex: 1001, 1002...
+  status       StatusPedido @default(PENDENTE)
+
+  // Valores Financeiros
+  subtotal   Decimal @db.Decimal(10, 2)
+  valorFrete Decimal @default(0.00) @db.Decimal(10, 2)
+  valorTotal Decimal @db.Decimal(10, 2)
+
+  // Informações de Frete e Entrega
+  servicoFrete   String? // Ex: "Sedex", "Loggi", "Melhor Envio"
+  prazoEntrega   String? // Ex: "3 dias úteis"
+  codigoRastreio String? // Código de rastreamento para o cliente
+
+  // Integração com Mercado Pago
+  metodoPagamento String? // Ex: "credit_card", "pix", "ticket"
+  mpPaymentId     String? // ID do pagamento retornado pelo Mercado Pago
+
+  // Snapshot do Cliente
+  clienteNome  String
+  clienteEmail String
+  clienteCpf   String
+  clienteFone  String?
+
+  // Relação opcional com o cadastro de User
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Endereço do Pedido
+  enderecoId String
+  endereco   Endereco @relation(fields: [enderecoId], references: [id], onDelete: Restrict)
+
+  itens ItemPedido[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("pedidos")
+}
+
+model ItemPedido {
+  id String @id @default(uuid())
+
+  pedidoId String
+  pedido   Pedido @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+
+  produtoId String
+  produto   Produto @relation(fields: [produtoId], references: [id], onDelete: Restrict)
+
+  tamanhoId String?
+  tamanho   Tamanho? @relation(fields: [tamanhoId], references: [id], onDelete: SetNull)
+
+  corId String?
+  cor   Cor? @relation(fields: [corId], references: [id], onDelete: SetNull)
+
+  // Snapshot do produto no momento da compra
+  nomeProduto   String
+  precoUnitario Decimal @db.Decimal(10, 2)
+  quantidade    Int
+
+  createdAt DateTime @default(now())
+
+  @@map("itens_pedido")
+}
+
+// ========================================================
+// TABELAS DO CARRINHO DE COMPRAS
+// ========================================================
+
+model Carrinho {
+  id        String         @id @default(uuid())
+  userId    Int            @unique
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itens     ItemCarrinho[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@map("carrinhos")
+}
+
+model ItemCarrinho {
+  id         String   @id @default(uuid())
+  carrinhoId String
+  carrinho   Carrinho @relation(fields: [carrinhoId], references: [id], onDelete: Cascade)
+
+  produtoId  String
+  produto    Produto  @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+
+  tamanhoId  String?
+  tamanho    Tamanho? @relation(fields: [tamanhoId], references: [id], onDelete: SetNull)
+
+  corId      String?
+  cor        Cor?     @relation(fields: [corId], references: [id], onDelete: SetNull)
+
+  quantidade Int      @default(1)
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Evita duplicar o mesmo produto com a mesma combinação de tamanho e cor no carrinho
+  @@unique([carrinhoId, produtoId, tamanhoId, corId])
+  @@map("itens_carrinho")
 }

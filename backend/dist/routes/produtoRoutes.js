@@ -1,0 +1,16 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.produtoRoutes = void 0;
+const express_1 = require("express");
+const produtoController_1 = require("../controllers/produtoController");
+const upload_middleware_1 = require("../middlewares/upload.middleware");
+const authAdminMiddleware_1 = require("../middlewares/authAdminMiddleware");
+const router = (0, express_1.Router)();
+exports.produtoRoutes = router;
+router.get('/produtos', produtoController_1.produtoController.listar);
+router.delete('/produtos/:id', authAdminMiddleware_1.ensureAdminAuthenticated, produtoController_1.produtoController.excluir);
+router.post('/produtos', authAdminMiddleware_1.ensureAdminAuthenticated, (0, upload_middleware_1.parseUpload)(), produtoController_1.produtoController.criar);
+router.put('/produtos/:id', authAdminMiddleware_1.ensureAdminAuthenticated, (0, upload_middleware_1.parseUpload)(), produtoController_1.produtoController.atualizar);
+router.patch('/produtos/:id/oferta', authAdminMiddleware_1.ensureAdminAuthenticated, produtoController_1.produtoController.configurarOferta);
+router.patch('/produtos/:id/visibilidade', authAdminMiddleware_1.ensureAdminAuthenticated, produtoController_1.produtoController.atualizarVisibilidade);
+router.patch('/produtos/:id/reativar', authAdminMiddleware_1.ensureAdminAuthenticated, produtoController_1.produtoController.reativar);

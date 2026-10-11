@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const corController_1 = require("../controllers/corController");
+const authAdminMiddleware_1 = require("../middlewares/authAdminMiddleware");
+const router = (0, express_1.Router)();
+router.get('/cores', corController_1.corController.listar);
+router.post('/cores', authAdminMiddleware_1.ensureAdminAuthenticated, corController_1.corController.criar);
+router.put('/cores/:id', authAdminMiddleware_1.ensureAdminAuthenticated, corController_1.corController.atualizar);
+router.delete('/cores/:id', authAdminMiddleware_1.ensureAdminAuthenticated, corController_1.corController.excluir);
+router.patch('/cores/:id/inativar', authAdminMiddleware_1.ensureAdminAuthenticated, corController_1.corController.inativar);
+router.patch('/cores/:id/ativar', authAdminMiddleware_1.ensureAdminAuthenticated, corController_1.corController.ativar);
+exports.default = router;

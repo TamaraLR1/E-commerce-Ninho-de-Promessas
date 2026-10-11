@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import ReactGA from 'react-ga4';
 import styles from './ProductDetail.module.css';
+import { useCart } from '../../components/CartContext/CartContext';
+import { AuthModal } from '../../../ecommerce/components/AuthModal/AuthModal';
 
 axios.defaults.withCredentials = true;
 
@@ -13,14 +15,20 @@ const API_URL = isLocal
 
 const getImageUrl = (url?: string) => {
   if (!url) return '';
-  if (url.includes('localhost:3333') || url.includes('127.0.0.1:3333')) {
-    const relativePath = url.replace(/https?:\/\/(localhost|127\.0\.0\.1):3333/, '');
-    return `${API_URL}${relativePath}`;
+
+  let finalUrl = url;
+  if (finalUrl.includes('localhost:3333') || finalUrl.includes('127.0.0.1:3333')) {
+    const relativePath = finalUrl.replace(/https?:\/\/(localhost|127\.0\.0\.1):3333/, '');
+    finalUrl = `${API_URL}${relativePath}`;
+  } else if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+    finalUrl = `${API_URL}${finalUrl.startsWith('/') ? '' : '/'}${finalUrl}`;
   }
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    return url;
+
+  if (window.location.protocol === 'https:') {
+    return finalUrl.replace(/^http:\/\//, 'https://');
   }
-  return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+
+  return finalUrl;
 };
 
 const sortSizes = (sizes: string[]) => {
@@ -95,13 +103,16 @@ interface ShippingOption {
 export const ProductDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { adicionarAoCarrinho } = useCart();
 
   const [product, setProduct] = useState<Product | null>(null);
+  const [user, setUser] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const [selectedColorId, setSelectedColorId] = useState<string | null>(null);
   const [selectedSize, setSelectedSize] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
 
   // Estados de cálculo de Frete
   const [cep, setCep] = useState<string>('');
@@ -111,22 +122,31 @@ export const ProductDetail: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    const checkUserSession = async () => {
+      try {
+        const response = await axios.get<any>(`${API_URL}/api/perfil`);
+        if (response.data && response.data.user) {
+          setUser(response.data.user);
+        }
+      } catch (error) {
+        setUser(null);
+      }
+    };
+
     const fetchProduct = async () => {
       try {
         setLoading(true);
         let foundProduct: Product | null = null;
 
-        // 1ª Tentativa: Endpoint individual com tipagem <any>
         try {
           const response = await axios.get<any>(`${API_URL}/api/produtos/${id}`);
           if (response.data && (response.data.id || response.data.nome)) {
             foundProduct = response.data;
           }
         } catch (err) {
-          console.warn('Rota individual retornou 404. Utilizando fallback da lista geral...');
+          console.warn('Rota individual não encontrada. Usando lista geral...');
         }
 
-        // 2ª Tentativa (Fallback): Se a rota individual der 404, busca da lista geral
         if (!foundProduct) {
           const allProductsRes = await axios.get<any>(`${API_URL}/api/produtos`);
           if (Array.isArray(allProductsRes.data)) {
@@ -137,7 +157,6 @@ export const ProductDetail: React.FC = () => {
         if (foundProduct) {
           setProduct(foundProduct);
 
-          // Seleciona a primeira cor por padrão
           const coresUnicasMap = new Map();
           foundProduct.estoques?.forEach((item: any) => {
             if (item.cor) coresUnicasMap.set(item.cor.id, item.cor);
@@ -147,7 +166,6 @@ export const ProductDetail: React.FC = () => {
             setSelectedColorId(coresList[0].id);
           }
 
-          // Envia o evento de visualização do produto para o Google Analytics
           ReactGA.event({
             category: 'Ecommerce',
             action: 'view_item',
@@ -161,6 +179,7 @@ export const ProductDetail: React.FC = () => {
       }
     };
 
+    checkUserSession();
     if (id) {
       fetchProduct();
     }
@@ -169,6 +188,44 @@ export const ProductDetail: React.FC = () => {
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleAddToCart = async () => {
+    if (!product) return;
+
+    if (!user) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+
+    if (!selectedSize && availableSizes.length > 0) {
+      showToast('Por favor, selecione um tamanho antes de prosseguir!');
+      return;
+    }
+
+    try {
+      const estoqueItem = product.estoques?.find((e) => 
+        e.tamanho?.nome === selectedSize && (!selectedColorId || e.cor?.id === selectedColorId)
+      );
+
+      await adicionarAoCarrinho({
+        produtoId: product.id,
+        tamanhoId: estoqueItem?.tamanho?.id || null,
+        corId: selectedColorId || estoqueItem?.cor?.id || null,
+        quantidade: quantity,
+      });
+
+      ReactGA.event({
+        category: 'Ecommerce',
+        action: 'click_buy',
+        label: `${product.nome} (Tamanho: ${selectedSize}, Qtd: ${quantity})`
+      });
+
+      showToast(`Sucesso! ${quantity}x item(ns) adicionado(s) ao carrinho.`);
+    } catch (error) {
+      console.error('Erro ao adicionar produto:', error);
+      setIsAuthModalOpen(true);
+    }
   };
 
   const handleCalculateShipping = async (e: React.FormEvent) => {
@@ -180,29 +237,46 @@ export const ProductDetail: React.FC = () => {
       return;
     }
 
+    if (!product?.id) {
+      showToast('Produto indisponível para cálculo de frete.');
+      return;
+    }
+
     try {
       setCalculatingShipping(true);
       setShippingOptions(null);
 
-      const response = await axios.post<any>(`${API_URL}/api/frete/calcular`, {
+      // ✅ Envia a estrutura correta com o array de itens exigido pelo backend
+      const response = await axios.post(`${API_URL}/api/frete/calcular`, {
         cepDestino: cleanCep,
-        produtoId: product?.id,
-        quantidade: quantity
+        itens: [
+          {
+            produtoId: product.id,
+            quantidade: quantity,
+          },
+        ],
       });
 
-      if (response.data && Array.isArray(response.data.opcoes)) {
+      if (Array.isArray(response.data) && response.data.length > 0) {
+        setShippingOptions(
+          response.data.map((opt: any) => ({
+            nome: opt.name || opt.nome,
+            valor: parseFloat(opt.price || opt.valor || '0'),
+            prazo: opt.custom_delivery_time 
+              ? `Até ${opt.custom_delivery_time} dias úteis` 
+              : opt.prazo || 'A consultar'
+          }))
+        );
+      } else if (response.data && Array.isArray(response.data.opcoes)) {
         setShippingOptions(response.data.opcoes);
       } else {
-        setShippingOptions([
-          { nome: 'Padrão (Melhor Envio)', valor: 18.90, prazo: '4 a 6 dias úteis' },
-          { nome: 'Expresso (Loggi)', valor: 28.50, prazo: '1 a 2 dias úteis' }
-        ]);
+        showToast('Nenhuma opção de frete encontrada para este CEP.');
       }
-    } catch (error) {
-      setShippingOptions([
-        { nome: 'Entrega Padrão', valor: 19.90, prazo: '3 a 6 dias úteis' },
-        { nome: 'Entrega Expressa', valor: 29.90, prazo: '1 a 2 dias úteis' }
-      ]);
+    } catch (error: any) {
+      console.error('Erro ao calcular frete:', error);
+      showToast(
+        error.response?.data?.message || 'Erro ao calcular o frete para este CEP.'
+      );
     } finally {
       setCalculatingShipping(false);
     }
@@ -452,27 +526,18 @@ export const ProductDetail: React.FC = () => {
             <button 
               type="button" 
               className={styles.buyButton}
-              onClick={() => {
-                if (!selectedSize && availableSizes.length > 0) {
-                  showToast('Por favor, selecione um tamanho antes de prosseguir!');
-                  return;
-                }
-                
-                // Dispara evento de clique de compra no Analytics
-                ReactGA.event({
-                  category: 'Ecommerce',
-                  action: 'click_buy',
-                  label: `${product.nome} (Tamanho: ${selectedSize}, Qtd: ${quantity})`
-                });
-
-                showToast(`Sucesso! ${quantity}x item(ns) selecionado(s).`);
-              }}
+              onClick={handleAddToCart}
             >
               Comprar Agora
             </button>
           </div>
         </div>
       </main>
+
+      <AuthModal 
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+      />
 
       {toastMessage && (
         <div className={styles.toast}>

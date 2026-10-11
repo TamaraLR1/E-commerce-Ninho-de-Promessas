@@ -4,6 +4,9 @@ import axios from 'axios';
 import { io } from 'socket.io-client';
 import styles from './Home.module.css';
 import { CheckoutModal } from '../CheckoutModal/CheckoutModal';
+import { CartDrawer } from '../../components/CartContext/CartDrawer';
+import { useCart } from '../../components/CartContext/CartContext';
+import { AuthModal } from '../../../ecommerce/components/AuthModal/AuthModal';
 
 axios.defaults.withCredentials = true;
 
@@ -15,16 +18,19 @@ const API_URL = isLocal
 const getImageUrl = (url?: string) => {
   if (!url) return '';
   
-  if (url.includes('localhost:3333') || url.includes('127.0.0.1:3333')) {
-    const relativePath = url.replace(/https?:\/\/(localhost|127\.0\.0\.1):3333/, '');
-    return `${API_URL}${relativePath}`;
+  let finalUrl = url;
+  if (finalUrl.includes('localhost:3333') || finalUrl.includes('127.0.0.1:3333')) {
+    const relativePath = finalUrl.replace(/https?:\/\/(localhost|127\.0\.0\.1):3333/, '');
+    finalUrl = `${API_URL}${relativePath}`;
+  } else if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+    finalUrl = `${API_URL}${finalUrl.startsWith('/') ? '' : '/'}${finalUrl}`;
   }
 
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    return url;
+  if (window.location.protocol === 'https:') {
+    return finalUrl.replace(/^http:\/\//, 'https://');
   }
-  
-  return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+
+  return finalUrl;
 };
 
 const sortSizes = (sizes: string[]) => {
@@ -101,15 +107,6 @@ interface Product {
   }[];
 }
 
-interface CartItem {
-  product: Product;
-  numericPrice: number;
-  quantity: number;
-  selectedSize: string;
-  displayName: string;
-  displayImage: string;
-}
-
 interface User {
   id: number;
   nome: string;
@@ -118,11 +115,13 @@ interface User {
 
 export const Home: React.FC = () => {
   const navigate = useNavigate();
+  const { quantidadeTotal, subtotal, adicionarAoCarrinho } = useCart();
+
   const [user, setUser] = useState<User | null>(null);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
-  const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCategoryDrawerOpen, setIsCategoryDrawerOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -290,65 +289,32 @@ export const Home: React.FC = () => {
     }
   };
 
-  const addToCartWithSpecificSize = (product: Product, size: string) => {
-    if (!product) return;
+  const handleAddToCart = async (product: Product, size: string, corId?: string) => {
+    // 🔴 Exibe o Pop-up de Autenticação se não houver usuário logado
+    if (!user) {
+      setIsAuthModalOpen(true);
+      return;
+    }
 
-    const precoEfetivo = product.temOferta && product.precoPromocional && Number(product.precoPromocional) > 0 
-      ? Number(product.precoPromocional) 
-      : (parseFloat(product.preco) || 0);
-
-    const imageUrl = product.imagens && product.imagens.length > 0 ? getImageUrl(product.imagens[0].url) : '';
-
-    setCart((prevCart) => {
-      const safeCart = Array.isArray(prevCart) ? prevCart : [];
-      
-      const existingIndex = safeCart.findIndex(
-        item => item.product.id === product.id && item.selectedSize === size
+    try {
+      const estoqueItem = product.estoques?.find((e: any) => 
+        e.tamanho?.nome === size && (!corId || e.cor?.id === corId)
       );
 
-      if (existingIndex > -1) {
-        const updated = [...safeCart];
-        updated[existingIndex] = {
-          ...updated[existingIndex],
-          numericPrice: precoEfetivo,
-          quantity: updated[existingIndex].quantity + 1
-        };
-        return updated;
-      }
+      await adicionarAoCarrinho({
+        produtoId: product.id,
+        tamanhoId: estoqueItem?.tamanho?.id || null,
+        corId: corId || estoqueItem?.cor?.id || null,
+        quantidade: 1,
+      });
 
-      const newItem: CartItem = {
-        product,
-        numericPrice: precoEfetivo,
-        quantity: 1,
-        selectedSize: size,
-        displayName: product.nome,
-        displayImage: imageUrl,
-      };
-
-      return [...safeCart, newItem];
-    });
+      showToast('Produto adicionado ao carrinho!');
+      setIsCartOpen(true);
+    } catch (error) {
+      console.error('Erro ao adicionar produto:', error);
+      setIsAuthModalOpen(true);
+    }
   };
-
-  const updateQuantity = (productId: string, amount: number) => {
-    setCart((prevCart) =>
-      prevCart
-        .map(item => {
-          if (item.product.id === productId) {
-            const newQuantity = item.quantity + amount;
-            return { ...item, quantity: newQuantity };
-          }
-          return item;
-        })
-        .filter(item => item.quantity > 0)
-    );
-  };
-
-  const removeFromCart = (productId: string) => {
-    setCart((prevCart) => prevCart.filter(item => item.product.id !== productId));
-  };
-
-  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const totalPrice = cart.reduce((sum, item) => sum + item.numericPrice * item.quantity, 0);
 
   const dbSizesList = Array.from(new Set(products.flatMap(p => p.estoques?.map(e => e.tamanho?.nome).filter(Boolean) || []))) as string[];
   const sortedDbSizes = sortSizes(dbSizesList);
@@ -461,9 +427,15 @@ export const Home: React.FC = () => {
               cursor: 'pointer', 
               boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
             }}
-            onClick={() => setIsCartOpen(true)}
+            onClick={() => {
+              if (!user) {
+                setIsAuthModalOpen(true);
+              } else {
+                setIsCartOpen(true);
+              }
+            }}
           >
-            🛒 ({totalItems})
+            🛒 ({quantidadeTotal})
           </button>
 
           {user ? (
@@ -977,8 +949,7 @@ export const Home: React.FC = () => {
                         type="button"
                         style={{ flex: 1, marginTop: 0 }}
                         onClick={() => {
-                          addToCartWithSpecificSize(product, chosenSize);
-                          setIsCartOpen(true); 
+                          handleAddToCart(product, chosenSize, currentCardColor);
                         }}
                         title="Adicionar ao Carrinho"
                       >
@@ -1006,11 +977,10 @@ export const Home: React.FC = () => {
                           return;
                         }
 
-                        addToCartWithSpecificSize(product, sizeSelected); 
-                        
                         if (!user) {
-                          navigate('/login');
+                          setIsAuthModalOpen(true);
                         } else {
+                          handleAddToCart(product, sizeSelected, currentCardColor); 
                           setIsCheckoutOpen(true); 
                         }
                       }}
@@ -1098,82 +1068,24 @@ export const Home: React.FC = () => {
         </div>
       )}
 
-      {isCartOpen && (
-        <div className={styles.modalOverlay} onClick={() => setIsCartOpen(false)}>
-          <div className={styles.cartModal} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.cartHeader}>
-              <h2>Seu Carrinho ({totalItems})</h2>
-              <button type="button" className={styles.closeButton} onClick={() => setIsCartOpen(false)}>×</button>
-            </div>
+      {/* Pop-up de Autenticação */}
+      <AuthModal 
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+      />
 
-            <div className={styles.cartList}>
-              {cart.length === 0 ? (
-                <p className={styles.emptyCart}>O seu carrinho está vazio.</p>
-              ) : (
-                cart.map(item => (
-                  <div key={`${item.product.id}-${item.selectedSize}`} className={styles.cartItem}>
-                    <img src={item.displayImage} alt={item.displayName} className={styles.cartItemImage} />
-                    
-                    <div className={styles.cartItemInfo}>
-                      <div className={styles.cartItemDetails}>
-                        <h4>{item.displayName}</h4>
-                        {item.selectedSize && (
-                          <span className={styles.cartItemSize}>Tamanho: {item.selectedSize}</span>
-                        )}
-                        <button type="button" className={styles.removeButton} onClick={() => removeFromCart(item.product.id)}>
-                          Remover
-                        </button>
-                      </div>
-                      
-                      <div className={styles.cartItemRight}>
-                        <span className={styles.cartItemPrice}>
-                          R$ {(item.numericPrice * item.quantity).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </span>
-                        
-                        <div className={styles.quantityControls}>
-                          <button type="button" className={styles.qtyButton} onClick={() => updateQuantity(item.product.id, -1)}>-</button>
-                          <span className={styles.qtyValue}>{item.quantity}</span>
-                          <button type="button" className={styles.qtyButton} onClick={() => updateQuantity(item.product.id, 1)}>+</button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {cart.length > 0 && (
-              <div className={styles.cartFooter}>
-                <div className={styles.totalRow}>
-                  <span>Total do Pedido:</span>
-                  <span>R$ {totalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                </div>
-                <button 
-                  type="button"
-                  className={styles.actionButton} 
-                  style={{ backgroundColor: '#28a745', padding: '0.8rem' }} 
-                  onClick={() => {
-                    if (!user) {
-                      setIsCartOpen(false);
-                      navigate('/login');
-                    } else {
-                      setIsCartOpen(false);
-                      setIsCheckoutOpen(true);
-                    }
-                  }}
-                >
-                  Confirmar e Finalizar Compra
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* CartDrawer Responsivo com Cálculo de Frete */}
+      <CartDrawer 
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        onOpenCheckout={() => setIsCheckoutOpen(true)}
+        user={user}
+      />
 
       {isCheckoutOpen && (
         <CheckoutModal 
           onClose={() => setIsCheckoutOpen(false)} 
-          total={totalPrice} 
+          total={subtotal} 
         />
       )}
 

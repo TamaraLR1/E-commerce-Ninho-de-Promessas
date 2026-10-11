@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const estoqueController_1 = require("../controllers/estoqueController");
+const authAdminMiddleware_1 = require("../middlewares/authAdminMiddleware");
+const router = (0, express_1.Router)();
+router.get('/estoque/dashboard', authAdminMiddleware_1.ensureAdminAuthenticated, estoqueController_1.estoqueController.obterDashboard);
+router.get('/movimentacoes', authAdminMiddleware_1.ensureAdminAuthenticated, estoqueController_1.estoqueController.listarMovimentacoes);
+router.post('/movimentacoes', authAdminMiddleware_1.ensureAdminAuthenticated, estoqueController_1.estoqueController.criarMovimentacao);
+exports.default = router;

@@ -1,0 +1,501 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.produtoController = void 0;
+const prisma_1 = require("../lib/prisma");
+const socket_1 = require("../socket"); // Ajuste o caminho relativo para onde está o seu arquivo socket.ts
+// 🧮 Função auxiliar para calcular estoque ativo e percentual de desconto de forma padronizada
+function formatarProduto(produto) {
+    if (!produto)
+        return null;
+    const estoques = produto.estoques || [];
+    const temEstoqueAtivo = estoques.length > 0 ? estoques.some((est) => est.ativo === true) : true;
+    let percentualDesconto = 0;
+    if (produto.temOferta && produto.precoPromocional && Number(produto.precoPromocional) > 0 && Number(produto.preco) > 0) {
+        const precoNormal = Number(produto.preco);
+        const precoPromo = Number(produto.precoPromocional);
+        if (precoPromo < precoNormal) {
+            percentualDesconto = Math.round(((precoNormal - precoPromo) / precoNormal) * 100);
+        }
+    }
+    return {
+        ...produto,
+        ativoGeral: temEstoqueAtivo,
+        percentualDesconto,
+    };
+}
+exports.produtoController = {
+    async criar(req, res) {
+        try {
+            // 1. Extrair os campos do req.body, incluindo o isNovidade
+            const { nome, preco, descricao, categoryId, genero, tamanhos, coresMapeamentoImagens, isNovidade } = req.body;
+            const arquivos = req.files || [];
+            const rawAdminId = req.admin?.id || req.admin?.adminId || req.user?.id || req.user?.adminId;
+            const adminId = rawAdminId ? Number(rawAdminId) : null;
+            if (!nome || preco === undefined || !categoryId) {
+                return res.status(400).json({ message: 'Nome, preço e categoria são obrigatórios.' });
+            }
+            if (nome.length > 100) {
+                return res.status(400).json({ message: 'O nome do produto não pode exceder 100 caracteres.' });
+            }
+            const precoNumerico = Number(preco);
+            if (isNaN(precoNumerico) || precoNumerico <= 0) {
+                return res.status(400).json({ message: 'O preço do produto deve ser maior que zero.' });
+            }
+            const categoriaExiste = await prisma_1.prisma.categoria.findUnique({
+                where: { id: String(categoryId) },
+            });
+            if (!categoriaExiste) {
+                return res.status(400).json({ message: 'A categoria informada não existe.' });
+            }
+            const tamanhosParsed = typeof tamanhos === 'string' ? JSON.parse(tamanhos) : tamanhos;
+            if (!tamanhosParsed || !Array.isArray(tamanhosParsed) || tamanhosParsed.length === 0) {
+                return res.status(400).json({ message: 'O produto deve conter pelo menos uma variação de cor e tamanho.' });
+            }
+            // 2. Conversão segura do isNovidade vindo do FormData
+            const isNovidadeBoolean = isNovidade === 'true' || isNovidade === true;
+            const coresUnicasSet = new Set();
+            tamanhosParsed.forEach((item) => {
+                if (item.corId)
+                    coresUnicasSet.add(String(item.corId));
+            });
+            const coresIdsArray = Array.from(coresUnicasSet);
+            const baseUrl = `${req.protocol}://${req.get('host')}`;
+            const imagensCreatePayload = [];
+            for (const corId of coresIdsArray) {
+                const keyFiles = `imagens_${corId}`;
+                const arquivosDaCor = arquivos.filter(file => file.fieldname === keyFiles);
+                if (arquivosDaCor.length === 0) {
+                    return res.status(400).json({ message: `A cor selecionada precisa ter pelo menos 1 imagem obrigatória.` });
+                }
+                if (arquivosDaCor.length > 6) {
+                    return res.status(400).json({ message: `Cada cor pode ter no máximo 6 imagens.` });
+                }
+                arquivosDaCor.forEach((file, index) => {
+                    imagensCreatePayload.push({
+                        url: `${baseUrl}/uploads/${file.filename}`,
+                        corId: corId,
+                        ordem: index
+                    });
+                });
+            }
+            const novoProduto = await prisma_1.prisma.produto.create({
+                data: {
+                    nome,
+                    preco: precoNumerico,
+                    descricao: descricao || null,
+                    categoryId: String(categoryId),
+                    genero: genero || 'Unissex',
+                    isVisible: false,
+                    isNovidade: isNovidadeBoolean, // 3. Salva a flag de novidade no banco
+                    criadoPorId: adminId,
+                    atualizadoPorId: adminId,
+                    estoques: {
+                        create: tamanhosParsed.map((item) => ({
+                            tamanhoId: String(item.tamanhoId),
+                            corId: item.corId ? String(item.corId) : null,
+                            estoque: Number(item.estoque || item.quantidade || 0),
+                        })),
+                    },
+                    imagens: {
+                        create: imagensCreatePayload,
+                    },
+                },
+                include: {
+                    categoria: true,
+                    estoques: { include: { tamanho: true, cor: true } },
+                    imagens: { include: { cor: true }, orderBy: { ordem: 'asc' } },
+                    criadoPor: true,
+                    atualizadoPor: true,
+                },
+            });
+            if (adminId) {
+                await prisma_1.prisma.logAtividade.create({
+                    data: {
+                        adminId: adminId,
+                        acao: `Cadastrou o produto "${nome}" com imagens separadas por cor`
+                    }
+                });
+            }
+            const produtoFormatado = global.formatarProduto ? global.formatarProduto(novoProduto) : novoProduto;
+            const io = req.io;
+            if (io) {
+                io.emit('produtoAtualizado', produtoFormatado);
+            }
+            return res.status(201).json(produtoFormatado);
+        }
+        catch (error) {
+            console.error('Erro ao criar produto:', error);
+            return res.status(500).json({ message: 'Erro interno ao cadastrar produto.' });
+        }
+    },
+    async listar(req, res) {
+        try {
+            const produtos = await prisma_1.prisma.produto.findMany({
+                include: {
+                    categoria: true,
+                    imagens: {
+                        include: { cor: true } // Inclui a cor associada à imagem
+                    },
+                    estoques: {
+                        include: {
+                            tamanho: true,
+                            cor: true,
+                        },
+                    },
+                    criadoPor: true,
+                    atualizadoPor: true,
+                },
+                orderBy: {
+                    createdAt: "desc",
+                },
+            });
+            const produtosComStatus = produtos.map(formatarProduto);
+            return res.status(200).json(produtosComStatus);
+        }
+        catch (error) {
+            console.error('Erro ao listar produtos:', error);
+            return res.status(500).json({ message: 'Erro interno ao buscar produtos.' });
+        }
+    },
+    async buscarPorId(req, res) {
+        try {
+            const id = String(req.params);
+            const produto = await prisma_1.prisma.produto.findUnique({
+                where: { id },
+                include: {
+                    categoria: true,
+                    imagens: {
+                        include: { cor: true } // Inclui a cor associada à imagem
+                    },
+                    estoques: {
+                        include: {
+                            tamanho: true,
+                            cor: true,
+                        },
+                    },
+                    criadoPor: true,
+                    atualizadoPor: true,
+                },
+            });
+            if (!produto) {
+                return res.status(404).json({ message: 'Produto não encontrado.' });
+            }
+            const produtoComStatus = formatarProduto(produto);
+            return res.status(200).json(produtoComStatus);
+        }
+        catch (error) {
+            console.error('Erro ao buscar produto por ID:', error);
+            return res.status(500).json({ message: 'Erro interno ao buscar produto.' });
+        }
+    },
+    async atualizar(req, res) {
+        try {
+            const id = Array.isArray(req.params.id) ? req.params.id[0] : String(req.params.id);
+            // 1. Extraindo os campos, incluindo isNovidade
+            const { nome, preco, descricao, categoryId, genero, tamanhos, coresMapeamentoImagens, isVisible, isNovidade } = req.body;
+            const arquivos = req.files || [];
+            const rawAdminId = req.admin?.id || req.admin?.adminId || req.user?.id || req.user?.adminId;
+            const adminId = rawAdminId ? Number(rawAdminId) : null;
+            if (!id) {
+                return res.status(400).json({ message: 'ID do produto não informado.' });
+            }
+            const produtoExistente = await prisma_1.prisma.produto.findUnique({
+                where: { id },
+                include: { imagens: true, estoques: true, categoria: true }
+            });
+            if (!produtoExistente) {
+                return res.status(404).json({ message: 'Produto não encontrado.' });
+            }
+            if (!nome || preco === undefined || !categoryId) {
+                return res.status(400).json({ message: 'Nome, preço e categoria são obrigatórios.' });
+            }
+            const precoNumerico = Number(preco);
+            if (isNaN(precoNumerico) || precoNumerico <= 0) {
+                return res.status(400).json({ message: 'O preço do produto deve ser maior que zero.' });
+            }
+            const tamanhosParsed = typeof tamanhos === 'string' ? JSON.parse(tamanhos) : tamanhos;
+            if (!tamanhosParsed || !Array.isArray(tamanhosParsed) || tamanhosParsed.length === 0) {
+                return res.status(400).json({ message: 'O produto deve conter pelo menos uma variação válida.' });
+            }
+            const coresUnicasSet = new Set();
+            tamanhosParsed.forEach((item) => {
+                if (item.corId)
+                    coresUnicasSet.add(String(item.corId));
+            });
+            const coresIdsArray = Array.from(coresUnicasSet);
+            const imagensMantidasParsed = typeof coresMapeamentoImagens === 'string'
+                ? JSON.parse(coresMapeamentoImagens)
+                : (coresMapeamentoImagens || {});
+            const baseUrl = `${req.protocol}://${req.get('host')}`;
+            const novasImagensCreatePayload = [];
+            for (const corId of coresIdsArray) {
+                const keyFiles = `imagens_${corId}`;
+                const arquivosDaCor = arquivos.filter(file => file.fieldname === keyFiles);
+                const mantidasDaCor = imagensMantidasParsed[corId] || [];
+                const listaFinalUrlsDaCor = [...mantidasDaCor];
+                let ordemGlobalCor = 0;
+                mantidasDaCor.forEach((urlMantida) => {
+                    novasImagensCreatePayload.push({
+                        url: urlMantida,
+                        corId: corId,
+                        ordem: ordemGlobalCor++
+                    });
+                });
+                arquivosDaCor.forEach(file => {
+                    novasImagensCreatePayload.push({
+                        url: `${baseUrl}/uploads/${file.filename}`,
+                        corId: corId,
+                        ordem: ordemGlobalCor++
+                    });
+                });
+                const totalImagensCor = novasImagensCreatePayload.filter(img => img.corId === corId).length;
+                if (totalImagensCor === 0) {
+                    return res.status(400).json({ message: `A cor selecionada precisa ter pelo menos 1 imagem obrigatória.` });
+                }
+                if (totalImagensCor > 6) {
+                    return res.status(400).json({ message: `Cada cor pode ter no máximo 6 imagens.` });
+                }
+            }
+            // Tratamento seguro para os booleanos vindos do FormData
+            const isVisibleParsed = isVisible !== undefined
+                ? (isVisible === 'true' || isVisible === true)
+                : produtoExistente.isVisible;
+            // 2. Garante que se o campo não for enviado, o valor anterior do banco seja mantido
+            const isNovidadeParsed = isNovidade !== undefined
+                ? (isNovidade === 'true' || isNovidade === true)
+                : produtoExistente.isNovidade;
+            const produtoAtualizado = await prisma_1.prisma.$transaction(async (tx) => {
+                await tx.produtoImagem.deleteMany({
+                    where: { produtoId: id }
+                });
+                await tx.produtoEstoque.deleteMany({
+                    where: { produtoId: id }
+                });
+                return await tx.produto.update({
+                    where: { id },
+                    data: {
+                        nome,
+                        preco: precoNumerico,
+                        descricao: descricao || null,
+                        categoryId: String(categoryId),
+                        genero: genero || produtoExistente.genero || 'Unissex',
+                        isVisible: isVisibleParsed,
+                        isNovidade: isNovidadeParsed, // 3. Atualiza no banco
+                        atualizadoPorId: adminId,
+                        estoques: {
+                            create: tamanhosParsed.map((item) => ({
+                                tamanhoId: String(item.tamanhoId),
+                                corId: item.corId ? String(item.corId) : null,
+                                estoque: Number(item.estoque || item.quantidade || 0),
+                            })),
+                        },
+                        imagens: {
+                            create: novasImagensCreatePayload,
+                        },
+                    },
+                    include: {
+                        categoria: true,
+                        estoques: { include: { tamanho: true, cor: true } },
+                        imagens: { include: { cor: true }, orderBy: { ordem: 'asc' } },
+                        criadoPor: true,
+                        atualizadoPor: true,
+                    },
+                });
+            });
+            if (adminId) {
+                await prisma_1.prisma.logAtividade.create({
+                    data: {
+                        adminId: adminId,
+                        acao: `Atualizou o produto "${nome}" com novas cores/estoques e ordenação de imagens`
+                    }
+                });
+            }
+            const produtoFormatado = global.formatarProduto ? global.formatarProduto(produtoAtualizado) : produtoAtualizado;
+            const io = req.io;
+            if (io) {
+                io.emit('produtoAtualizado', produtoFormatado);
+            }
+            return res.status(200).json(produtoFormatado);
+        }
+        catch (error) {
+            console.error('Erro ao atualizar produto:', error);
+            return res.status(500).json({ message: 'Erro interno ao atualizar produto.' });
+        }
+    },
+    async configurarOferta(req, res) {
+        try {
+            const id = String(req.params.id);
+            const { discountType, promoValue } = req.body;
+            // 1. Busca o produto atual para saber o preço original
+            const produto = await prisma_1.prisma.produto.findUnique({
+                where: { id },
+            });
+            if (!produto) {
+                return res.status(404).json({ message: 'Produto não encontrado.' });
+            }
+            const precoOriginal = Number(produto.preco);
+            let precoPromocional = 0;
+            let percentualCalculado = 0; // Já declarada aqui
+            // 2. Calcula o preço promocional com base no tipo escolhido
+            if (discountType === 'percentual') {
+                const percentual = Number(promoValue);
+                if (isNaN(percentual) || percentual < 0 || percentual > 100) {
+                    return res.status(400).json({ message: 'Percentual de desconto inválido.' });
+                }
+                precoPromocional = precoOriginal * (1 - percentual / 100);
+                percentualCalculado = percentual;
+            }
+            else if (discountType === 'fixo') {
+                precoPromocional = Number(promoValue);
+                if (isNaN(precoPromocional) || precoPromocional < 0 || precoPromocional >= precoOriginal) {
+                    return res.status(400).json({ message: 'Preço promocional fixo inválido.' });
+                }
+                percentualCalculado = Math.round(((precoOriginal - precoPromocional) / precoOriginal) * 100);
+            }
+            else {
+                return res.status(400).json({ message: 'Tipo de desconto inválido.' });
+            }
+            // 3. Atualiza o produto na base de dados persistindo os campos de oferta
+            const produtoAtualizado = await prisma_1.prisma.produto.update({
+                where: { id },
+                data: {
+                    temOferta: true,
+                    precoPromocional: precoPromocional.toFixed(2)
+                },
+                include: {
+                    categoria: true,
+                    imagens: true,
+                    estoques: {
+                        include: {
+                            tamanho: true,
+                            cor: true
+                        }
+                    }
+                }
+            });
+            // Monta o objeto incluindo a porcentagem já calculada (sem redeclarar com const)
+            const produtoComDesconto = {
+                ...produtoAtualizado,
+                percentualDesconto: percentualCalculado
+            };
+            // 4. Dispara o evento via WebSocket com o objeto completo contendo a porcentagem
+            const io = (0, socket_1.getIO)();
+            if (io) {
+                io.emit('produtoAtualizado', produtoComDesconto);
+                io.emit('produto-atualizado', produtoComDesconto);
+            }
+            return res.status(200).json({
+                message: 'Oferta configurada com sucesso!',
+                produto: produtoComDesconto
+            });
+        }
+        catch (error) {
+            console.error('Erro ao configurar oferta:', error);
+            return res.status(500).json({ message: 'Erro interno ao salvar oferta.' });
+        }
+    },
+    async atualizarVisibilidade(req, res) {
+        try {
+            const id = Array.isArray(req.params.id) ? req.params.id[0] : String(req.params.id);
+            const { isVisible } = req.body;
+            if (!id) {
+                return res.status(400).json({ message: 'ID do produto não informado.' });
+            }
+            const produtoAtualizado = await prisma_1.prisma.produto.update({
+                where: { id },
+                data: {
+                    isVisible: Boolean(isVisible)
+                },
+                include: {
+                    categoria: true,
+                    estoques: { include: { tamanho: true, cor: true } },
+                    imagens: { include: { cor: true } },
+                    criadoPor: true,
+                    atualizadoPor: true,
+                },
+            });
+            const io = req.io;
+            if (io) {
+                io.emit('produtoAtualizado', produtoAtualizado);
+            }
+            return res.status(200).json({
+                message: 'Visibilidade atualizada com sucesso!',
+                produto: produtoAtualizado
+            });
+        }
+        catch (error) {
+            console.error('Erro ao atualizar visibilidade:', error);
+            return res.status(500).json({ message: 'Erro interno ao atualizar visibilidade.' });
+        }
+    },
+    async excluir(req, res) {
+        try {
+            // ✅ Força a conversão para string pura para satisfazer o PrismaWhereUniqueInput
+            const id = Array.isArray(req.params.id) ? req.params.id[0] : String(req.params.id);
+            if (!id) {
+                return res.status(400).json({ message: 'ID do produto não informado.' });
+            }
+            // Verifica se o produto existe
+            const produtoExiste = await prisma_1.prisma.produto.findUnique({
+                where: { id },
+                include: { estoques: true }
+            });
+            if (!produtoExiste) {
+                return res.status(404).json({ message: 'Produto não encontrado.' });
+            }
+            // Verifica se existem movimentações de estoque registradas para este produto
+            const movimentacoesCount = await prisma_1.prisma.movimentacaoEstoque.count({
+                where: { produtoId: id }
+            });
+            if (movimentacoesCount === 0) {
+                // Sem movimentação: Exclusão permanente direta do banco de dados
+                await prisma_1.prisma.produto.delete({
+                    where: { id }
+                });
+                return res.status(200).json({ message: 'Produto excluído permanentemente com sucesso.' });
+            }
+            else {
+                // Com movimentação: Apenas inativa o produto para preservar o histórico contábil/fiscal
+                const produtoInativado = await prisma_1.prisma.produto.update({
+                    where: { id },
+                    data: {
+                        ativo: false,
+                        isVisible: false
+                    }
+                });
+                return res.status(200).json({
+                    message: 'O produto possui histórico de movimentações e foi desativado com sucesso.',
+                    produto: produtoInativado
+                });
+            }
+        }
+        catch (error) {
+            console.error('Erro ao excluir produto:', error);
+            return res.status(500).json({ message: 'Erro interno ao processar a exclusão do produto.' });
+        }
+    },
+    async reativar(req, res) {
+        try {
+            const id = Array.isArray(req.params.id) ? req.params.id[0] : String(req.params.id);
+            if (!id) {
+                return res.status(400).json({ message: 'ID do produto não informado.' });
+            }
+            // Executa a reativação alterando ativo e visibilidade no banco de dados
+            const produtoReativado = await prisma_1.prisma.produto.update({
+                where: { id },
+                data: {
+                    ativo: true,
+                    isVisible: true
+                }
+            });
+            return res.status(200).json({
+                message: 'Produto reativado com sucesso!',
+                produto: produtoReativado
+            });
+        }
+        catch (error) {
+            console.error('Erro ao reativar produto:', error);
+            return res.status(500).json({ message: 'Erro interno ao reativar produto.' });
+        }
+    },
+};

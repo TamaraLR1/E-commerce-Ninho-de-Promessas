@@ -29,70 +29,6 @@ function formatarProduto(produto: any) {
 
 export const produtoController = {
 
-  async listar(req: Request, res: Response) {
-    try {
-      const produtos = await prisma.produto.findMany({
-        include: {
-          categoria: true,
-          imagens: {
-            include: { cor: true } // Inclui a cor associada à imagem
-          },
-          estoques: {
-            include: {
-              tamanho: true,
-              cor: true,
-            },
-          },
-          criadoPor: true,    
-          atualizadoPor: true,
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
-      });
-
-      const produtosComStatus = produtos.map(formatarProduto);
-      return res.status(200).json(produtosComStatus);
-    } catch (error) {
-      console.error('Erro ao listar produtos:', error);
-      return res.status(500).json({ message: 'Erro interno ao buscar produtos.' });
-    }
-  },
-
-  async buscarPorId(req: Request, res: Response) {
-    try {
-      const id = String(req.params);
-
-      const produto = await prisma.produto.findUnique({
-        where: { id },
-        include: {
-          categoria: true,
-          imagens: {
-            include: { cor: true } // Inclui a cor associada à imagem
-          },
-          estoques: {
-            include: {
-              tamanho: true,
-              cor: true,
-            },
-          },
-          criadoPor: true,    
-          atualizadoPor: true,
-        },
-      });
-
-      if (!produto) {
-        return res.status(404).json({ message: 'Produto não encontrado.' });
-      }
-
-      const produtoComStatus = formatarProduto(produto);
-      return res.status(200).json(produtoComStatus);
-    } catch (error) {
-      console.error('Erro ao buscar produto por ID:', error);
-      return res.status(500).json({ message: 'Erro interno ao buscar produto.' });
-    }
-  },
-
   async criar(req: Request, res: Response) {
     try {
       // 1. Extrair os campos do req.body, incluindo o isNovidade
@@ -213,6 +149,70 @@ export const produtoController = {
     } catch (error) {
       console.error('Erro ao criar produto:', error);
       return res.status(500).json({ message: 'Erro interno ao cadastrar produto.' });
+    }
+  },
+
+  async listar(req: Request, res: Response) {
+    try {
+      const produtos = await prisma.produto.findMany({
+        include: {
+          categoria: true,
+          imagens: {
+            include: { cor: true } // Inclui a cor associada à imagem
+          },
+          estoques: {
+            include: {
+              tamanho: true,
+              cor: true,
+            },
+          },
+          criadoPor: true,    
+          atualizadoPor: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+
+      const produtosComStatus = produtos.map(formatarProduto);
+      return res.status(200).json(produtosComStatus);
+    } catch (error) {
+      console.error('Erro ao listar produtos:', error);
+      return res.status(500).json({ message: 'Erro interno ao buscar produtos.' });
+    }
+  },
+
+  async buscarPorId(req: Request, res: Response) {
+    try {
+      const id = String(req.params);
+
+      const produto = await prisma.produto.findUnique({
+        where: { id },
+        include: {
+          categoria: true,
+          imagens: {
+            include: { cor: true } // Inclui a cor associada à imagem
+          },
+          estoques: {
+            include: {
+              tamanho: true,
+              cor: true,
+            },
+          },
+          criadoPor: true,    
+          atualizadoPor: true,
+        },
+      });
+
+      if (!produto) {
+        return res.status(404).json({ message: 'Produto não encontrado.' });
+      }
+
+      const produtoComStatus = formatarProduto(produto);
+      return res.status(200).json(produtoComStatus);
+    } catch (error) {
+      console.error('Erro ao buscar produto por ID:', error);
+      return res.status(500).json({ message: 'Erro interno ao buscar produto.' });
     }
   },
 

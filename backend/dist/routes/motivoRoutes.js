@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const motivoController_1 = require("../controllers/motivoController");
+const authAdminMiddleware_1 = require("../middlewares/authAdminMiddleware");
+const router = (0, express_1.Router)();
+router.post('/motivos-estoque', authAdminMiddleware_1.ensureAdminAuthenticated, motivoController_1.motivoController.criar);
+router.get('/motivos-estoque', authAdminMiddleware_1.ensureAdminAuthenticated, motivoController_1.motivoController.listarMotivos);
+router.put('/motivos-estoque/:id', authAdminMiddleware_1.ensureAdminAuthenticated, motivoController_1.motivoController.editar);
+router.patch('/motivos-estoque/:id/inativar', authAdminMiddleware_1.ensureAdminAuthenticated, motivoController_1.motivoController.inativar);
+exports.default = router;

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import ReactGA from 'react-ga4';
 
+import { CartProvider } from './features/ecommerce/components/CartContext/CartContext'; // 👈 Importação do Provider do Carrinho
 import { Home } from './features/ecommerce/components/Home/Home';
 import { LoginForm } from './features/auth/components/LoginForm/LoginForm';
 import { RegisterForm } from './features/auth/components/LoginForm/RegisterForm';
@@ -9,16 +10,14 @@ import { Perfil } from './features/ecommerce/components/Perfil/Perfil';
 import { ProductDetail } from './features/ecommerce/components/ProductDetail/ProductDetail';
 import './index.css';
 
-const GA_TRACKING_ID = 'G-RE1HWQNZY4'; // 👈 O seu ID do Google Analytics
+const GA_TRACKING_ID = 'G-RE1HWQNZY4';
 
-// 🔹 Inicializa o GA4 imediatamente ao carregar a aplicação
 ReactGA.initialize(GA_TRACKING_ID);
 
 function PageTracker() {
   const location = useLocation();
 
   useEffect(() => {
-    // Envia o pageview após garantir que a sessão iniciou
     ReactGA.send({ 
       hitType: 'pageview', 
       page: location.pathname + location.search 
@@ -30,16 +29,18 @@ function PageTracker() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <PageTracker />
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/produto/:id" element={<ProductDetail />} />
-        <Route path="/login" element={<LoginForm />} />
-        <Route path="/cadastro" element={<RegisterForm />} />
-        <Route path="/perfil" element={<Perfil />} />
-      </Routes>
-    </BrowserRouter>
+    <CartProvider>
+      <BrowserRouter>
+        <PageTracker />
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/produto/:id" element={<ProductDetail />} />
+          <Route path="/login" element={<LoginForm />} />
+          <Route path="/cadastro" element={<RegisterForm />} />
+          <Route path="/perfil" element={<Perfil />} />
+        </Routes>
+      </BrowserRouter>
+    </CartProvider>
   );
 }
 

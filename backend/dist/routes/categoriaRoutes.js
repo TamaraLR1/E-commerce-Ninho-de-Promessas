@@ -1,0 +1,12 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const categoriaController_1 = require("../controllers/categoriaController");
+const authAdminMiddleware_1 = require("../middlewares/authAdminMiddleware");
+const router = (0, express_1.Router)();
+router.get('/categorias', categoriaController_1.categoriaController.listar);
+router.post('/categorias', authAdminMiddleware_1.ensureAdminAuthenticated, categoriaController_1.categoriaController.criar);
+router.put('/categorias/:id', authAdminMiddleware_1.ensureAdminAuthenticated, categoriaController_1.categoriaController.atualizar);
+router.patch('/categorias/:id/inativar', authAdminMiddleware_1.ensureAdminAuthenticated, categoriaController_1.categoriaController.inativar);
+router.patch('/categorias/:id/ativar', authAdminMiddleware_1.ensureAdminAuthenticated, categoriaController_1.categoriaController.ativar);
+exports.default = router;

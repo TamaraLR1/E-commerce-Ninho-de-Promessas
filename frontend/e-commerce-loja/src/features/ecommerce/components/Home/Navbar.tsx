@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './Navbar.module.css';
+import { useCart } from '../../components/CartContext/CartContext';
 
 interface Category {
   id: string;
@@ -15,7 +16,7 @@ interface NavbarProps {
   onSelectCategory: (categoryName: string) => void;
   searchTerm: string;
   onSearchChange: (term: string) => void;
-  cartItemCount: number;
+  cartItemCount?: number;
   onOpenCart: () => void;
 }
 
@@ -26,10 +27,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectCategory,
   searchTerm,
   onSearchChange,
-  cartItemCount,
   onOpenCart
 }) => {
   const navigate = useNavigate();
+  const { quantidadeTotal } = useCart();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   return (
@@ -66,7 +67,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
 
           <button className={styles.iconButton} onClick={onOpenCart}>
-            🛒 ({cartItemCount})
+            🛒 ({quantidadeTotal})
           </button>
         </div>
       </div>

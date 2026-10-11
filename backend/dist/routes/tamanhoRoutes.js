@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const tamanhoController_1 = require("../controllers/tamanhoController");
+const authAdminMiddleware_1 = require("../middlewares/authAdminMiddleware");
+const router = (0, express_1.Router)();
+router.get('/tamanhos', tamanhoController_1.tamanhoController.listar);
+router.post('/tamanhos', authAdminMiddleware_1.ensureAdminAuthenticated, tamanhoController_1.tamanhoController.criar);
+router.put('/tamanhos/:id', authAdminMiddleware_1.ensureAdminAuthenticated, tamanhoController_1.tamanhoController.atualizar);
+router.delete('/tamanhos/:id', authAdminMiddleware_1.ensureAdminAuthenticated, tamanhoController_1.tamanhoController.excluir);
+router.patch('/tamanhos/:id/inativar', authAdminMiddleware_1.ensureAdminAuthenticated, tamanhoController_1.tamanhoController.inativar);
+router.patch('/tamanhos/:id/ativar', authAdminMiddleware_1.ensureAdminAuthenticated, tamanhoController_1.tamanhoController.ativar);
+exports.default = router;
