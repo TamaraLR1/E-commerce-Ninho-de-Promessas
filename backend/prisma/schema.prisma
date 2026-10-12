@@ -231,7 +231,7 @@ model Endereco {
 enum StatusPedido {
   PENDENTE
   PAGO
-  EM_PROCESSAMENTO
+  EM_SEPARACAO
   RECUSADO
   CANCELADO
   ENVIADO

@@ -1603,9 +1603,9 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className={styles.listSectionWrapper} style={{ marginTop: '30px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                  <div className={styles.listSectionWrapper} style={{ marginTop: '30px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     
-                    <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', gridColumn: '1 / -1' }}>
+                    <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
                       <h4 className={styles.listSubheading}>📈 Evolução Diária de Entradas vs Saídas</h4>
                       <div style={{ width: '100%', height: 280 }}>
                         <ResponsiveContainer width="100%" height="100%">
@@ -1621,7 +1621,7 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', gridColumn: '1 / -1' }}>
+                    <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
                       <h4 className={styles.listSubheading}>📅 Volume Total por Mês (Entradas vs Saídas)</h4>
                       <div style={{ width: '100%', height: 280 }}>
                         <ResponsiveContainer width="100%" height="100%">
@@ -1637,37 +1637,54 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                      <h4 className={styles.listSubheading}>🥧 Estoque por Categoria</h4>
-                      <div style={{ width: '100%', height: 260 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie data={dashboardData.distribuicaoCategorias} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#6366f1" label>
-                              {dashboardData.distribuicaoCategorias?.map((_, index) => (
-                                <Cell key={`cell-${index}`} fill={['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'][index % 5]} />
-                              ))}
-                            </Pie>
-                            <Tooltip />
-                          </PieChart>
-                        </ResponsiveContainer>
+                    {/* BLOCO DOS DOIS GRÁFICOS LADO A LADO NO DESKTOP E EMPILHADOS NO CELULAR */}
+                    <div className={styles.chartsGridRow} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', width: '100%' }}>
+                      
+                      <div style={{ background: '#fff', padding: '16px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', minWidth: 0 }}>
+                        <h4 className={styles.listSubheading} style={{ marginBottom: '12px', fontSize: '1rem' }}>🥧 Estoque por Categoria</h4>
+                        <div style={{ width: '100%', height: 260 }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie 
+                                data={dashboardData.distribuicaoCategorias || []} 
+                                dataKey="value" 
+                                nameKey="name" 
+                                cx="50%" 
+                                cy="50%" 
+                                outerRadius={70} 
+                                fill="#6366f1" 
+                                label={({ name, percent }: { name?: string; percent?: number }) => 
+                                  `${name || ''}: ${((percent || 0) * 100).toFixed(0)}%`
+                                }
+                              >
+                                {dashboardData.distribuicaoCategorias?.map((_, index) => (
+                                  <Cell key={`cell-${index}`} fill={['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'][index % 5]} />
+                                ))}
+                              </Pie>
+                              <Tooltip formatter={(value: any) => [`${value} un`, 'Estoque']} />
+                              <Legend />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
+
+                      <div style={{ background: '#fff', padding: '16px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', minWidth: 0 }}>
+                        <h4 className={styles.listSubheading} style={{ marginBottom: '12px', fontSize: '1rem' }}>⚠️ Top Produtos com Menor Estoque</h4>
+                        <div style={{ width: '100%', height: 260 }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={dashboardData.produtosCriticos} layout="vertical" margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                              <XAxis type="number" stroke="#64748b" />
+                              <YAxis dataKey="nome" type="category" width={90} stroke="#64748b" tick={{ fontSize: 10 }} />
+                              <Tooltip contentStyle={{ background: '#1e293b', color: '#fff', borderRadius: '6px' }} />
+                              <Bar dataKey="estoque" name="Qtd Atual" fill="#f59e0b" radius={[0, 4, 4, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+
                     </div>
 
                     <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-                      <h4 className={styles.listSubheading}>⚠️ Top Produtos com Menor Estoque</h4>
-                      <div style={{ width: '100%', height: 260 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={dashboardData.produtosCriticos} layout="vertical">
-                            <XAxis type="number" stroke="#64748b" />
-                            <YAxis dataKey="nome" type="category" width={110} stroke="#64748b" tick={{ fontSize: 11 }} />
-                            <Tooltip contentStyle={{ background: '#1e293b', color: '#fff', borderRadius: '6px' }} />
-                            <Bar dataKey="estoque" name="Qtd Atual" fill="#f59e0b" radius={[0, 4, 4, 0]} />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-
-                    <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', gridColumn: '1 / -1' }}>
                       <h4 className={styles.listSubheading}>📤 Volume de Saídas por Motivo (Mês Atual)</h4>
                       <div style={{ width: '100%', height: 260 }}>
                         <ResponsiveContainer width="100%" height="100%">

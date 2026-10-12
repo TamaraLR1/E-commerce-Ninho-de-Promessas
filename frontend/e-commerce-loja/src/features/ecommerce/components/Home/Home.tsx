@@ -7,6 +7,7 @@ import { CheckoutModal } from '../CheckoutModal/CheckoutModal';
 import { CartDrawer } from '../../components/CartContext/CartDrawer';
 import { useCart } from '../../components/CartContext/CartContext';
 import { AuthModal } from '../../../ecommerce/components/AuthModal/AuthModal';
+import { OrdersModal } from '../../components/OrdersModal/OrdersModal';
 
 axios.defaults.withCredentials = true;
 
@@ -122,6 +123,7 @@ export const Home: React.FC = () => {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCategoryDrawerOpen, setIsCategoryDrawerOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isOrdersOpen, setIsOrdersOpen] = useState(false);
   
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -290,7 +292,6 @@ export const Home: React.FC = () => {
   };
 
   const handleAddToCart = async (product: Product, size: string, corId?: string) => {
-    // 🔴 Exibe o Pop-up de Autenticação se não houver usuário logado
     if (!user) {
       setIsAuthModalOpen(true);
       return;
@@ -476,6 +477,30 @@ export const Home: React.FC = () => {
                     overflow: 'hidden'
                   }}
                 >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      setIsOrdersOpen(true);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      textAlign: 'left',
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: '1px solid #f1f1f1',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      color: '#333',
+                      fontWeight: 600
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    📦 Meus Pedidos
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => {
@@ -995,6 +1020,7 @@ export const Home: React.FC = () => {
         </div>
       </main>
 
+      {/* DRAWER LATERAL DE NAVEGAÇÃO E MEUS PEDIDOS */}
       {isCategoryDrawerOpen && (
         <div 
           onClick={() => setIsCategoryDrawerOpen(false)}
@@ -1011,7 +1037,7 @@ export const Home: React.FC = () => {
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.2rem 1.5rem', borderBottom: '1px solid #eee' }}>
-              <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#222', fontWeight: 700 }}>Categorias</h3>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#222', fontWeight: 700 }}>Menu da Loja</h3>
               <button 
                 type="button" 
                 onClick={() => setIsCategoryDrawerOpen(false)}
@@ -1022,6 +1048,44 @@ export const Home: React.FC = () => {
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '1rem 0' }}>
+              
+              {/* BOTÃO EM DESTAQUE: MEUS PEDIDOS */}
+              <div style={{ padding: '0 15px 12px 15px', borderBottom: '1px solid #f1f5f9', marginBottom: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCategoryDrawerOpen(false);
+                    if (!user) {
+                      setIsAuthModalOpen(true);
+                    } else {
+                      setIsOrdersOpen(true);
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    backgroundColor: '#D7B796',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontWeight: 700,
+                    fontSize: '0.95rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 2px 6px rgba(215, 183, 150, 0.4)'
+                  }}
+                >
+                  📦 Meus Pedidos
+                </button>
+              </div>
+
+              <span style={{ display: 'block', padding: '8px 20px', fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>
+                Categorias
+              </span>
+
               <button
                 type="button"
                 onClick={() => {
@@ -1072,6 +1136,13 @@ export const Home: React.FC = () => {
       <AuthModal 
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
+      />
+
+      {/* Modal Acompanhamento de Pedidos */}
+      <OrdersModal 
+        isOpen={isOrdersOpen}
+        onClose={() => setIsOrdersOpen(false)}
+        apiUrl={API_URL}
       />
 
       {/* CartDrawer Responsivo com Cálculo de Frete */}

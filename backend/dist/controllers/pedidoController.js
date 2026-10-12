@@ -77,10 +77,19 @@ exports.pedidoController = {
             return res.status(500).json({ message: 'Erro ao buscar lista global de pedidos.' });
         }
     },
-    // 2. Método para a Área do Cliente
+    // 2. Método para a Área do Cliente (listarMeusPedidos)
     async listarMeusPedidos(req, res) {
         try {
-            const userId = Number(req.user?.id || req.user?.userId);
+            // Procura o ID em todas as propriedades possíveis do middleware
+            const rawUserId = req.user?.id || req.userId || req.user?.userId;
+            if (!rawUserId) {
+                return res.status(401).json({ message: 'Usuário não autenticado.' });
+            }
+            const userId = Number(rawUserId);
+            if (isNaN(userId)) {
+                return res.status(400).json({ message: 'ID de usuário inválido.' });
+            }
+            // Busca os pedidos do utilizador
             const pedidos = await prisma_1.prisma.pedido.findMany({
                 where: { userId },
                 include: {
@@ -89,13 +98,41 @@ exports.pedidoController = {
                             produto: {
                                 include: { imagens: true },
                             },
+                            cor: true,
+                            tamanho: true,
                         },
                     },
                     endereco: true,
                 },
                 orderBy: { createdAt: 'desc' },
             });
-            return res.status(200).json(pedidos);
+            if (!pedidos || pedidos.length === 0) {
+                return res.status(200).json([]);
+            }
+            // Formatação limpa para o Modal / Tela de Pedidos do Cliente
+            const pedidosFormatados = pedidos.map((p) => ({
+                id: p.id,
+                codigoPedido: p.codigoPedido || p.numeroPedido ? String(p.numeroPedido) : p.id.slice(0, 8),
+                status: p.status,
+                total: Number(p.total || p.valorTotal || 0),
+                valorFrete: Number(p.valorFrete || p.freteValor || 0),
+                servicoFrete: p.servicoFrete || p.metodoFrete || 'Entrega Padrão',
+                codigoRastreio: p.codigoRastreio || p.rastreioCodigo || '',
+                createdAt: p.createdAt,
+                itens: p.itens.map((item) => {
+                    const primeiraImagem = item.produto?.imagens?.[0]?.url || '';
+                    return {
+                        id: item.id,
+                        nomeProduto: item.produto?.nome || item.nomeProduto || 'Produto',
+                        corNome: item.cor?.nome || item.corNome || '',
+                        tamanho: item.tamanho?.nome || item.tamanho || item.tamanhoNome || '',
+                        quantidade: item.quantidade,
+                        precoUnitario: Number(item.precoUnitario),
+                        imagemUrl: primeiraImagem || item.imagemUrl || '',
+                    };
+                }),
+            }));
+            return res.status(200).json(pedidosFormatados);
         }
         catch (error) {
             console.error('Erro ao buscar pedidos do usuário:', error);
@@ -136,25 +173,62 @@ exports.pedidoController = {
     async atualizarStatus(req, res) {
         try {
             const id = String(req.params.id);
-            const { status, codigoRastreio } = req.body;
+            const { status, codigoRastreio, rastreioCodigo } = req.body;
+            const codigoFinal = codigoRastreio || rastreioCodigo;
+            // 1. Atualiza no Banco de Dados via Prisma
             const pedidoAtualizado = await prisma_1.prisma.pedido.update({
                 where: { id },
                 data: {
                     ...(status && { status }),
-                    ...(codigoRastreio && { codigoRastreio }),
+                    ...(codigoFinal && { codigoRastreio: codigoFinal }),
                 },
                 include: {
-                    itens: true,
+                    itens: {
+                        include: {
+                            produto: {
+                                include: { imagens: true },
+                            },
+                            cor: true,
+                            tamanho: true,
+                        },
+                    },
                     endereco: true,
                 },
             });
+            // 2. Formata a resposta para garantir compatibilidade com o front-end
+            const pedidoFormatado = {
+                id: pedidoAtualizado.id,
+                codigoPedido: pedidoAtualizado.codigoPedido || pedidoAtualizado.numeroPedido ? String(pedidoAtualizado.numeroPedido) : pedidoAtualizado.id.slice(0, 8),
+                status: pedidoAtualizado.status,
+                total: Number(pedidoAtualizado.total || pedidoAtualizado.valorTotal || 0),
+                valorFrete: Number(pedidoAtualizado.valorFrete || pedidoAtualizado.freteValor || 0),
+                servicoFrete: pedidoAtualizado.servicoFrete || pedidoAtualizado.metodoFrete || 'Entrega Padrão',
+                codigoRastreio: pedidoAtualizado.codigoRastreio || pedidoAtualizado.rastreioCodigo || '',
+                createdAt: pedidoAtualizado.createdAt,
+                userId: pedidoAtualizado.userId,
+                itens: pedidoAtualizado.itens.map((item) => ({
+                    id: item.id,
+                    nomeProduto: item.produto?.nome || item.nomeProduto || 'Produto',
+                    corNome: item.cor?.nome || item.corNome || '',
+                    tamanho: item.tamanho?.nome || item.tamanho || '',
+                    quantidade: item.quantidade,
+                    precoUnitario: Number(item.precoUnitario),
+                    imagemUrl: item.produto?.imagens?.[0]?.url || item.imagemUrl || '',
+                })),
+            };
+            // 3. Emite os eventos via Socket.IO para atualizar o cliente e o admin em tempo real
             const io = (0, socket_1.getIO)();
             if (io) {
-                io.emit('pedidoAtualizado', pedidoAtualizado);
+                // Notifica o canal do usuário específico (ex: "usuario_123")
+                if (pedidoAtualizado.userId) {
+                    io.to(`usuario_${pedidoAtualizado.userId}`).emit('pedidoAtualizado', pedidoFormatado);
+                }
+                // Broadcast geral para atualizar o Admin Dashboard e outros clientes conectados
+                io.emit('pedidoAtualizado', pedidoFormatado);
             }
             return res.status(200).json({
                 message: 'Status do pedido atualizado com sucesso!',
-                pedido: pedidoAtualizado,
+                pedido: pedidoFormatado,
             });
         }
         catch (error) {
@@ -176,6 +250,9 @@ exports.pedidoController = {
             });
             const io = (0, socket_1.getIO)();
             if (io) {
+                if (pedidoAtualizado.userId) {
+                    io.to(`usuario_${pedidoAtualizado.userId}`).emit('pedidoRastreioAtualizado', pedidoAtualizado);
+                }
                 io.emit('pedidoRastreioAtualizado', pedidoAtualizado);
             }
             return res.status(200).json({

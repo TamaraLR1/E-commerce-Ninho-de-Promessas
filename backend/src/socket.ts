@@ -20,6 +20,28 @@ export function initSocket(server: http.Server) {
 
   io.on('connection', (socket) => {
     console.log('Novo cliente conectado ao WebSocket:', socket.id);
+
+    // Evento para o cliente (ou admin) entrar em uma sala individual de usuário
+    socket.on('joinUserRoom', (userId: number | string) => {
+      if (userId) {
+        const room = `usuario_${userId}`;
+        socket.join(room);
+        console.log(`Socket ${socket.id} entrou na sala: ${room}`);
+      }
+    });
+
+    // Evento para o cliente sair da sala ao desconectar/deslogar (opcional)
+    socket.on('leaveUserRoom', (userId: number | string) => {
+      if (userId) {
+        const room = `usuario_${userId}`;
+        socket.leave(room);
+        console.log(`Socket ${socket.id} saiu da sala: ${room}`);
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Cliente desconectado do WebSocket:', socket.id);
+    });
   });
 
   return io;

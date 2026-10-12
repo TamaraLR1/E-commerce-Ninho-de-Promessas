@@ -1,0 +1,230 @@
+.modalOverlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 4000;
+  padding: 12px;
+}
+
+.modalContent {
+  background: #ffffff;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 600px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.2rem 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.modalHeader h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #1e293b;
+  font-weight: 700;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  color: #64748b;
+}
+
+.loadingNotice, .emptyNotice {
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: #64748b;
+}
+
+.emptyNotice span {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.ordersList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.orderCard {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 1.2rem;
+}
+
+.orderCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.orderCode {
+  display: block;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.orderDate {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.orderTotal {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #D7B796;
+}
+
+/* Barra de progresso visual de status */
+.progressContainer {
+  position: relative;
+  margin: 1.2rem 0;
+}
+
+.progressTrack {
+  position: absolute;
+  top: 14px;
+  left: 10%;
+  right: 10%;
+  height: 4px;
+  background: #cbd5e1;
+  z-index: 1;
+}
+
+.progressBarFill {
+  height: 100%;
+  background: #10b981;
+  transition: width 0.3s ease;
+}
+
+.stepsRow {
+  display: flex;
+  justify-content: space-between;
+  position: relative;
+  z-index: 2;
+}
+
+.stepDot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.stepDot span {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  border: 2px solid #ffffff;
+}
+
+.stepDot p {
+  margin: 0;
+  font-size: 0.7rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.stepActive span {
+  background: #10b981;
+  color: #ffffff;
+}
+
+.stepActive p {
+  color: #0f172a;
+}
+
+.statusCanceledBadge {
+  background: #fef2f2;
+  color: #ef4444;
+  border: 1px solid #fca5a5;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: center;
+  margin: 1rem 0;
+}
+
+.trackingBox {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  color: #166534;
+}
+
+.itemsSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px dashed #cbd5e1;
+  padding-top: 10px;
+}
+
+.itemRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.itemThumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid #e2e8f0;
+}
+
+.itemMeta {
+  flex: 1;
+}
+
+.itemName {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.itemSub {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.itemPrice {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+}

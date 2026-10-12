@@ -2257,3 +2257,24 @@
   color: #16a34a;
   font-size: 0.9rem;
 }
+
+.chartsGridRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+
+@media (max-width: 768px) {
+  .chartsGridRow {
+    grid-template-columns: 1fr !important; /* Força 1 coluna em telas menores */
+    gap: 16px !important;
+  }
+  /* Garante que o contêiner do Recharts não transborde na tela do telemóvel */
+  .chartCardBox {
+    width: 100% !important;
+    overflow-x: hidden;
+    padding: 12px !important;
+  }
+}

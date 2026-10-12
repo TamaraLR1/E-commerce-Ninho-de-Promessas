@@ -85,11 +85,23 @@ export const pedidoController = {
     }
   },
 
-  // 2. Método para a Área do Cliente
+  // 2. Método para a Área do Cliente (listarMeusPedidos)
   async listarMeusPedidos(req: Request, res: Response) {
     try {
-      const userId = Number((req as any).user?.id || (req as any).user?.userId);
+      // Procura o ID em todas as propriedades possíveis do middleware
+      const rawUserId = (req as any).user?.id || (req as any).userId || (req as any).user?.userId;
 
+      if (!rawUserId) {
+        return res.status(401).json({ message: 'Usuário não autenticado.' });
+      }
+
+      const userId = Number(rawUserId);
+
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: 'ID de usuário inválido.' });
+      }
+
+      // Busca os pedidos do utilizador
       const pedidos = await prisma.pedido.findMany({
         where: { userId },
         include: {
@@ -98,6 +110,8 @@ export const pedidoController = {
               produto: {
                 include: { imagens: true },
               },
+              cor: true,
+              tamanho: true,
             },
           },
           endereco: true,
@@ -105,7 +119,35 @@ export const pedidoController = {
         orderBy: { createdAt: 'desc' },
       });
 
-      return res.status(200).json(pedidos);
+      if (!pedidos || pedidos.length === 0) {
+        return res.status(200).json([]);
+      }
+
+      // Formatação limpa para o Modal / Tela de Pedidos do Cliente
+      const pedidosFormatados = pedidos.map((p) => ({
+        id: p.id,
+        codigoPedido: (p as any).codigoPedido || (p as any).numeroPedido ? String((p as any).numeroPedido) : p.id.slice(0, 8),
+        status: p.status,
+        total: Number((p as any).total || (p as any).valorTotal || 0),
+        valorFrete: Number((p as any).valorFrete || (p as any).freteValor || 0),
+        servicoFrete: (p as any).servicoFrete || (p as any).metodoFrete || 'Entrega Padrão',
+        codigoRastreio: (p as any).codigoRastreio || (p as any).rastreioCodigo || '',
+        createdAt: p.createdAt,
+        itens: p.itens.map((item) => {
+          const primeiraImagem = item.produto?.imagens?.[0]?.url || '';
+          return {
+            id: item.id,
+            nomeProduto: item.produto?.nome || (item as any).nomeProduto || 'Produto',
+            corNome: item.cor?.nome || (item as any).corNome || '',
+            tamanho: item.tamanho?.nome || (item as any).tamanho || (item as any).tamanhoNome || '',
+            quantidade: item.quantidade,
+            precoUnitario: Number(item.precoUnitario),
+            imagemUrl: primeiraImagem || (item as any).imagemUrl || '',
+          };
+        }),
+      }));
+
+      return res.status(200).json(pedidosFormatados);
     } catch (error) {
       console.error('Erro ao buscar pedidos do usuário:', error);
       return res.status(500).json({ message: 'Erro ao buscar histórico de pedidos.' });
@@ -149,28 +191,68 @@ export const pedidoController = {
   async atualizarStatus(req: Request, res: Response) {
     try {
       const id = String(req.params.id);
-      const { status, codigoRastreio } = req.body;
+      const { status, codigoRastreio, rastreioCodigo } = req.body;
 
+      const codigoFinal = codigoRastreio || rastreioCodigo;
+
+      // 1. Atualiza no Banco de Dados via Prisma
       const pedidoAtualizado = await prisma.pedido.update({
         where: { id },
         data: {
           ...(status && { status }),
-          ...(codigoRastreio && { codigoRastreio }),
+          ...(codigoFinal && { codigoRastreio: codigoFinal }),
         },
         include: {
-          itens: true,
+          itens: {
+            include: {
+              produto: {
+                include: { imagens: true },
+              },
+              cor: true,
+              tamanho: true,
+            },
+          },
           endereco: true,
         },
       });
 
+      // 2. Formata a resposta para garantir compatibilidade com o front-end
+      const pedidoFormatado = {
+        id: pedidoAtualizado.id,
+        codigoPedido: (pedidoAtualizado as any).codigoPedido || (pedidoAtualizado as any).numeroPedido ? String((pedidoAtualizado as any).numeroPedido) : pedidoAtualizado.id.slice(0, 8),
+        status: pedidoAtualizado.status,
+        total: Number((pedidoAtualizado as any).total || (pedidoAtualizado as any).valorTotal || 0),
+        valorFrete: Number((pedidoAtualizado as any).valorFrete || (pedidoAtualizado as any).freteValor || 0),
+        servicoFrete: (pedidoAtualizado as any).servicoFrete || (pedidoAtualizado as any).metodoFrete || 'Entrega Padrão',
+        codigoRastreio: (pedidoAtualizado as any).codigoRastreio || (pedidoAtualizado as any).rastreioCodigo || '',
+        createdAt: pedidoAtualizado.createdAt,
+        userId: pedidoAtualizado.userId,
+        itens: pedidoAtualizado.itens.map((item) => ({
+          id: item.id,
+          nomeProduto: item.produto?.nome || (item as any).nomeProduto || 'Produto',
+          corNome: item.cor?.nome || (item as any).corNome || '',
+          tamanho: item.tamanho?.nome || (item as any).tamanho || '',
+          quantidade: item.quantidade,
+          precoUnitario: Number(item.precoUnitario),
+          imagemUrl: item.produto?.imagens?.[0]?.url || (item as any).imagemUrl || '',
+        })),
+      };
+
+      // 3. Emite os eventos via Socket.IO para atualizar o cliente e o admin em tempo real
       const io = getIO();
       if (io) {
-        io.emit('pedidoAtualizado', pedidoAtualizado);
+        // Notifica o canal do usuário específico (ex: "usuario_123")
+        if (pedidoAtualizado.userId) {
+          io.to(`usuario_${pedidoAtualizado.userId}`).emit('pedidoAtualizado', pedidoFormatado);
+        }
+        
+        // Broadcast geral para atualizar o Admin Dashboard e outros clientes conectados
+        io.emit('pedidoAtualizado', pedidoFormatado);
       }
 
       return res.status(200).json({
         message: 'Status do pedido atualizado com sucesso!',
-        pedido: pedidoAtualizado,
+        pedido: pedidoFormatado,
       });
     } catch (error) {
       console.error('Erro ao atualizar status do pedido:', error);
@@ -195,6 +277,9 @@ export const pedidoController = {
 
       const io = getIO();
       if (io) {
+        if (pedidoAtualizado.userId) {
+          io.to(`usuario_${pedidoAtualizado.userId}`).emit('pedidoRastreioAtualizado', pedidoAtualizado);
+        }
         io.emit('pedidoRastreioAtualizado', pedidoAtualizado);
       }
 
