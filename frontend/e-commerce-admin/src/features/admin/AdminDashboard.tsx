@@ -73,6 +73,61 @@ interface LogAtividade {
   admin: { nome: string };
 }
 
+interface ItemPedido {
+  id: string;
+  produtoId?: string;
+  nomeProduto?: string;
+  produtoNome?: string;
+  corNome?: string;
+  tamanho?: string;
+  tamanhoNome?: string;
+  quantidade: number;
+  precoUnitario: number;
+  imagemUrl?: string;
+}
+
+interface EnderecoEntrega {
+  logradouro?: string;
+  rua?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cidade?: string;
+  uf?: string;
+  estado?: string;
+  cep?: string;
+}
+
+interface Pedido {
+  id: string;
+  codigoPedido?: string;
+  clienteNome: string;
+  clienteEmail: string;
+  clienteTelefone?: string;
+  clienteFone?: string;
+  cpf?: string;
+  clienteCpf?: string;
+  status: 'PENDENTE' | 'PAGO' | 'EM_SEPARACAO' | 'ENVIADO' | 'ENTREGUE' | 'CANCELADO';
+  total?: number;
+  valorTotal?: number;
+  freteValor?: number;
+  valorFrete?: number;
+  metodoPagamento?: string;
+  servicoFrete?: string;
+  rastreioCodigo?: string;
+  codigoRastreio?: string;
+  dataCriacao?: string;
+  createdAt?: string;
+  pesoTotal?: number;
+  alturaCaixa?: number;
+  larguraCaixa?: number;
+  comprimentoCaixa?: number;
+  enderecoEntrega?: EnderecoEntrega;
+  endereco?: EnderecoEntrega;
+  itens: ItemPedido[];
+  isEditingRastreio?: boolean;
+}
+
 interface ColorSizeConfig {
   corId: string;
   tamanhosIds: string[];
@@ -123,13 +178,19 @@ interface DashboardData {
 
 export const AdminDashboard: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cadastro' | 'lista' | 'oferta' | 'estoque' | 'historico-estoque' | 'categorias' | 'tamanhos' | 'cores' | 'motivos' | 'logs'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'cadastro' | 'lista' | 'oferta' | 'estoque' | 'historico-estoque' | 'pedidos' | 'categorias' | 'tamanhos' | 'cores' | 'motivos' | 'logs'>('dashboard');
 
   const [products, setProducts] = useState<ProductMaster[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [motivosEstoqueList, setMotivosEstoqueList] = useState<MotivoEstoque[]>([]);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [dashboardLoading, setDashboardLoading] = useState(false);
+
+  const [pedidosList, setPedidosList] = useState<Pedido[]>([]);
+  const [pedidosLoading, setPedidosLoading] = useState(false);
+  const [pedidoSearchQuery, setPedidoSearchQuery] = useState('');
+  const [pedidoStatusFilter, setPedidoStatusFilter] = useState<string>('todos');
+  const [selectedOrderDetails, setSelectedOrderDetails] = useState<Pedido | null>(null);
 
   const [logsList, setLogsList] = useState<LogAtividade[]>([]);
   const [logSearchQuery, setLogSearchQuery] = useState('');
@@ -196,13 +257,10 @@ export const AdminDashboard: React.FC = () => {
   const [loadingMovimentacao, setLoadingMovimentacao] = useState<{ [key: string]: boolean }>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   
-  // Definição dinâmica da API_URL suportando tanto ambiente local quanto de produção
   const API_URL = (() => {
-    // 1. Prioriza variável de ambiente caso configurada no build (.env / Vite)
     if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) {
       return import.meta.env.VITE_API_URL;
     }
-    // 2. Se executando no navegador, verifica se o hostname atual é localhost
     if (typeof window !== 'undefined') {
       const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
       return isLocalhost
@@ -222,12 +280,16 @@ export const AdminDashboard: React.FC = () => {
     carregarDashboard();
     carregarPerfilAdmin();
     carregarLogsAtividade();
+    carregarPedidos();
   }, []);
 
   useEffect(() => {
     if (activeTab === 'dashboard' || activeTab === 'logs') {
       carregarDashboard();
       carregarLogsAtividade();
+    }
+    if (activeTab === 'pedidos') {
+      carregarPedidos();
     }
   }, [activeTab]);
 
@@ -268,6 +330,43 @@ export const AdminDashboard: React.FC = () => {
       }
     } catch (err) {
       console.error('Erro ao carregar logs de atividade', err);
+    }
+  };
+
+  const carregarPedidos = async () => {
+    setPedidosLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/pedidos`, { credentials: 'include' });
+      if (response.ok) {
+        const data = await response.json();
+        setPedidosList(data);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar lista de pedidos', err);
+    } finally {
+      setPedidosLoading(false);
+    }
+  };
+
+  const handleUpdateStatusPedido = async (pedidoId: string, novoStatus: Pedido['status']) => {
+    try {
+      const response = await fetch(`${API_URL}/pedidos/${pedidoId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ status: novoStatus }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Erro ao atualizar status do pedido.');
+
+      setPedidosList(prev => prev.map(p => p.id === pedidoId ? { ...p, status: novoStatus } : p));
+      if (selectedOrderDetails && selectedOrderDetails.id === pedidoId) {
+        setSelectedOrderDetails(prev => prev ? { ...prev, status: novoStatus } : null);
+      }
+      alert('Status do pedido atualizado com sucesso!');
+    } catch (err: any) {
+      alert(err.message || 'Erro ao conectar com o servidor.');
     }
   };
 
@@ -489,7 +588,7 @@ export const AdminDashboard: React.FC = () => {
         if (!window.confirm(`Esta categoria não possui vínculos com produtos. Deseja excluí-la permanentemente do banco de dados?`)) return;
 
         try {
-            const response = await fetch(`${API_URL}/categorias/${cat.id}/inativar`, {            
+          const response = await fetch(`${API_URL}/categorias/${cat.id}/inativar`, {            
             method: 'PATCH',
             credentials: 'include',
           });
@@ -1309,6 +1408,20 @@ export const AdminDashboard: React.FC = () => {
     return nomeProduto.includes(query) || idProduto.includes(query);
   });
 
+  const filteredPedidos = pedidosList.filter(pedido => {
+    const codPed = pedido.codigoPedido || pedido.id;
+    const matchesSearch = 
+      (pedido.clienteNome || '').toLowerCase().includes(pedidoSearchQuery.toLowerCase()) ||
+      (pedido.clienteEmail || '').toLowerCase().includes(pedidoSearchQuery.toLowerCase()) ||
+      codPed.toLowerCase().includes(pedidoSearchQuery.toLowerCase());
+
+    if (!matchesSearch) return false;
+    if (pedidoStatusFilter !== 'todos' && pedido.status !== pedidoStatusFilter) {
+      return false;
+    }
+    return true;
+  });
+
   const filteredLogs = logsList.filter(log => {
     if (!logSearchQuery.trim()) return true;
     const q = logSearchQuery.toLowerCase();
@@ -1343,6 +1456,50 @@ export const AdminDashboard: React.FC = () => {
     }, 1500);
   };    
 
+  const renderBadgeStatusPedido = (status: Pedido['status']) => {
+    switch (status) {
+      case 'PENDENTE':
+        return <span className={`${styles.orderStatusBadge} ${styles.statusPendente}`}>⏳ Pendente</span>;
+      case 'PAGO':
+        return <span className={`${styles.orderStatusBadge} ${styles.statusPago}`}>💳 Pago</span>;
+      case 'EM_SEPARACAO':
+        return <span className={`${styles.orderStatusBadge} ${styles.statusSeparacao}`}>📦 Em Separação</span>;
+      case 'ENVIADO':
+        return <span className={`${styles.orderStatusBadge} ${styles.statusEnviado}`}>🚚 Enviado</span>;
+      case 'ENTREGUE':
+        return <span className={`${styles.orderStatusBadge} ${styles.statusEntregue}`}>✅ Entregue</span>;
+      case 'CANCELADO':
+        return <span className={`${styles.orderStatusBadge} ${styles.statusCancelado}`}>❌ Cancelado</span>;
+      default:
+        return <span className={styles.orderStatusBadge}>{status}</span>;
+    }
+  };
+
+  // Funções Utilitárias para leitura dos dados do Pedido
+  const getValorTotalPedido = (p: Pedido): number => {
+    const val = p.total ?? p.valorTotal ?? 0;
+    const num = Number(val);
+    return isNaN(num) ? 0 : num;
+  };
+
+  const getFretePedido = (p: Pedido): number => {
+    const val = p.freteValor ?? p.valorFrete ?? 0;
+    const num = Number(val);
+    return isNaN(num) ? 0 : num;
+  };
+
+  const formatarDataPedido = (p: Pedido): string => {
+    const dataString = p.dataCriacao || p.createdAt;
+    if (!dataString) return 'Data não informada';
+    const dataObj = new Date(dataString);
+    if (isNaN(dataObj.getTime())) return 'Data inválida';
+    return dataObj.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const totalVendasRealizadas = pedidosList
+    .filter(p => p.status !== 'CANCELADO' && p.status !== 'PENDENTE')
+    .reduce((acc, p) => acc + getValorTotalPedido(p), 0);
+
   return (
     <div className={styles.adminContainer}>
       <div className={styles.mobileHeader}>
@@ -1365,6 +1522,7 @@ export const AdminDashboard: React.FC = () => {
 
           <nav>
             <div className={`${styles.navItem} ${activeTab === 'dashboard' ? styles.active : ''}`} onClick={() => { setActiveTab('dashboard'); setIsMenuOpen(false); }}>📊 Dashboard</div>
+            <div className={`${styles.navItem} ${activeTab === 'pedidos' ? styles.active : ''}`} onClick={() => { setActiveTab('pedidos'); setIsMenuOpen(false); }}>🛍️ Gerenciador de Pedidos ({pedidosList.length})</div>
             <div 
               className={`${styles.navItem} ${activeTab === 'cadastro' && !editingProductId ? styles.active : ''}`} 
               onClick={() => { 
@@ -1609,6 +1767,389 @@ export const AdminDashboard: React.FC = () => {
                 <p className={`${styles.emptyNotice} ${styles.dashboardErrorNotice}`}>Erro ao carregar dados do dashboard.</p>
               )}
             </section>
+          </div>
+        )}
+
+        {activeTab === 'pedidos' && (
+          <div className={styles.singleContainer}>
+            <section className={styles.card}>
+              <div className={styles.headerBetween}>
+                <div>
+                  <h3>🛍️ Gerenciador de Pedidos e Vendas</h3>
+                  <p className={styles.infoText} style={{ margin: '4px 0 0 0' }}>Acompanhe as compras realizadas na e-commerce e gerencie a expedição dos pedidos.</p>
+                </div>
+                <button type="button" onClick={carregarPedidos} className={styles.btnSecondary} disabled={pedidosLoading}>
+                  {pedidosLoading ? 'Atualizando...' : '🔄 Atualizar Pedidos'}
+                </button>
+              </div>
+
+              <div className={styles.orderSummaryCards} style={{ marginTop: '20px' }}>
+                <div className={styles.orderSummaryCard}>
+                  <span className={styles.orderSummaryLabel}>Total de Pedidos</span>
+                  <span className={styles.orderSummaryValue}>{pedidosList.length}</span>
+                </div>
+                <div className={styles.orderSummaryCard}>
+                  <span className={styles.orderSummaryLabel}>Pagos / Confirmados</span>
+                  <span className={styles.orderSummaryValue} style={{ color: '#2563eb' }}>
+                    {pedidosList.filter(p => p.status === 'PAGO').length}
+                  </span>
+                </div>
+                <div className={styles.orderSummaryCard}>
+                  <span className={styles.orderSummaryLabel}>Em Separação</span>
+                  <span className={styles.orderSummaryValue} style={{ color: '#d97706' }}>
+                    {pedidosList.filter(p => p.status === 'EM_SEPARACAO').length}
+                  </span>
+                </div>
+                <div className={styles.orderSummaryCard}>
+                  <span className={styles.orderSummaryLabel}>Faturamento Vendas</span>
+                  <span className={styles.orderSummaryValue} style={{ color: '#059669' }}>
+                    R$ {totalVendasRealizadas.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              <div className={styles.orderFilterBar}>
+                <input 
+                  type="text" 
+                  className={styles.orderSearchInput} 
+                  placeholder="🔍 Buscar por nome do cliente, e-mail ou código do pedido..." 
+                  value={pedidoSearchQuery} 
+                  onChange={e => setPedidoSearchQuery(e.target.value)} 
+                />
+
+                <select 
+                  value={pedidoStatusFilter} 
+                  onChange={e => setPedidoStatusFilter(e.target.value)}
+                  className={styles.listSelectDropdown}
+                >
+                  <option value="todos">👁️ Todos os Status</option>
+                  <option value="PENDENTE">⏳ Pendentes</option>
+                  <option value="PAGO">💳 Pagos</option>
+                  <option value="EM_SEPARACAO">📦 Em Separação</option>
+                  <option value="ENVIADO">🚚 Enviados</option>
+                  <option value="ENTREGUE">✅ Entregues</option>
+                  <option value="CANCELADO">❌ Cancelados</option>
+                </select>
+              </div>
+
+              {filteredPedidos.length === 0 ? (
+                <p className={styles.emptyNotice}>Nenhum pedido encontrado com os filtros selecionados.</p>
+              ) : (
+                <div className={styles.dashboardTableWrapper}>
+                  <table className={styles.orderTable}>
+                    <thead>
+                      <tr>
+                        <th>Cód. Pedido</th>
+                        <th>Data</th>
+                        <th>Cliente</th>
+                        <th>Valor Total</th>
+                        <th>Status Atual</th>
+                        <th>Alterar Status</th>
+                        <th>Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredPedidos.map(pedido => {
+                        const valorTotal = getValorTotalPedido(pedido);
+                        const dataFormatada = formatarDataPedido(pedido);
+                        const codExibicao = pedido.codigoPedido || (pedido.id ? pedido.id.slice(0, 8) : '—');
+
+                        return (
+                          <tr key={pedido.id}>
+                            <td>
+                              <strong>#{codExibicao}</strong>
+                            </td>
+                            <td>
+                              {dataFormatada}
+                            </td>
+                            <td>
+                              <strong>{pedido.clienteNome || 'Cliente Não Identificado'}</strong>
+                              <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>{pedido.clienteEmail}</span>
+                            </td>
+                            <td>
+                              <strong style={{ color: '#0f172a' }}>R$ {valorTotal.toFixed(2)}</strong>
+                            </td>
+                            <td>
+                              {renderBadgeStatusPedido(pedido.status)}
+                            </td>
+                            <td>
+                              <select 
+                                value={pedido.status} 
+                                onChange={(e) => handleUpdateStatusPedido(pedido.id, e.target.value as Pedido['status'])}
+                                className={styles.orderSelectStatus}
+                              >
+                                <option value="PENDENTE">Pendente</option>
+                                <option value="PAGO">Pago</option>
+                                <option value="EM_SEPARACAO">Em Separação</option>
+                                <option value="ENVIADO">Enviado</option>
+                                <option value="ENTREGUE">Entregue</option>
+                                <option value="CANCELADO">Cancelado</option>
+                              </select>
+                            </td>
+                            <td>
+                              <button 
+                                type="button" 
+                                className={styles.btnEditTable} 
+                                onClick={() => setSelectedOrderDetails(pedido)}
+                              >
+                                👁️ Ver Detalhes
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            {selectedOrderDetails && (
+              <div className={styles.modalOverlay} onClick={() => setSelectedOrderDetails(null)}>
+                <div className={styles.modalContentBox} onClick={e => e.stopPropagation()} style={{ maxWidth: '800px' }}>
+                  <button className={styles.modalCloseButton} onClick={() => setSelectedOrderDetails(null)}>✕</button>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <div>
+                      <h3 style={{ fontSize: '1.3rem', color: '#0f172a', margin: 0 }}>
+                        Detalhes do Pedido #{selectedOrderDetails.codigoPedido || selectedOrderDetails.id}
+                      </h3>
+                      <p className={styles.infoText} style={{ margin: '2px 0 0 0' }}>
+                        Realizado em {formatarDataPedido(selectedOrderDetails)}
+                      </p>
+                    </div>
+                    <div>
+                      {renderBadgeStatusPedido(selectedOrderDetails.status)}
+                    </div>
+                  </div>
+
+                  <div className={styles.orderDetailsGrid}>
+                    
+                    {/* BLOCO 1: DADOS DO CLIENTE E DESTINATÁRIO */}
+                    <div className={styles.orderInfoBlock}>
+                      <h4 className={styles.orderInfoTitle}>👤 Dados do Destinatário / Cliente</h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', fontSize: '0.875rem' }}>
+                        <p style={{ margin: 0 }}>
+                          <strong>Nome Completo:</strong> {selectedOrderDetails.clienteNome || 'Não informado'}
+                        </p>
+                        <p style={{ margin: 0 }}>
+                          <strong>E-mail:</strong> {selectedOrderDetails.clienteEmail || 'Não informado'}
+                        </p>
+                        <p style={{ margin: 0 }}>
+                          <strong>CPF:</strong> {selectedOrderDetails.cpf || selectedOrderDetails.clienteCpf || 'Não informado'}
+                        </p>
+                        <p style={{ margin: 0 }}>
+                          <strong>Telefone/WhatsApp:</strong> {selectedOrderDetails.clienteTelefone || selectedOrderDetails.clienteFone || 'Não informado'}
+                        </p>
+                      </div>
+
+                      {(() => {
+                        const end = selectedOrderDetails.enderecoEntrega || selectedOrderDetails.endereco;
+                        if (!end) return null;
+
+                        const logr = end.logradouro || end.rua || '';
+                        const uf = end.uf || end.estado || '';
+
+                        return (
+                          <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #e2e8f0', fontSize: '0.875rem' }}>
+                            <strong style={{ display: 'block', marginBottom: '4px', color: '#334155' }}>📍 Endereço de Entrega:</strong>
+                            <p style={{ margin: '2px 0' }}>
+                              {logr}{end.numero ? `, ${end.numero}` : ''}
+                              {end.complemento ? ` - ${end.complemento}` : ''}
+                            </p>
+                            <p style={{ margin: '2px 0' }}>
+                              {end.bairro ? `Bairro ${end.bairro} — ` : ''}{end.cidade}/{uf}
+                            </p>
+                            <p style={{ margin: '2px 0' }}>
+                              <strong>CEP:</strong> {end.cep || 'Não informado'}
+                            </p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* BLOCO 2: DADOS DE EXPEDIÇÃO, FRETE E PAGAMENTO */}
+                    <div className={styles.orderInfoBlock} style={{ backgroundColor: '#f0f9ff', borderColor: '#bae6fd' }}>
+                      <h4 className={styles.orderInfoTitle} style={{ color: '#0369a1', borderColor: '#bae6fd' }}>
+                        🚚 Dados de Envio, Embalagem e Rastreio
+                      </h4>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '14px', fontSize: '0.875rem' }}>
+                        <div>
+                          <strong style={{ color: '#0369a1', display: 'block', marginBottom: '2px' }}>Transportadora / Serviço:</strong>
+                          <span style={{ fontWeight: 700, color: '#0284c7', fontSize: '0.95rem' }}>
+                            {selectedOrderDetails.servicoFrete || 'Retirar na Loja'}
+                          </span>
+                        </div>
+
+                        <div>
+                          <strong style={{ color: '#0369a1', display: 'block', marginBottom: '2px' }}>Forma de Pagamento:</strong>
+                          <span style={{ fontWeight: 600, color: '#0f172a', background: '#e0f2fe', padding: '2px 8px', borderRadius: '4px' }}>
+                            💳 {selectedOrderDetails.metodoPagamento || 'PIX / Cartão'}
+                          </span>
+                        </div>
+
+                        <div>
+                          <strong style={{ color: '#0369a1', display: 'block', marginBottom: '2px' }}>Dimensões (A x L x C):</strong>
+                          <span>
+                            {selectedOrderDetails.alturaCaixa ?? 8}cm x {selectedOrderDetails.larguraCaixa ?? 16}cm x {selectedOrderDetails.comprimentoCaixa ?? 24}cm ({selectedOrderDetails.pesoTotal ?? 0.3} kg)
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* MELHORIA UX DO CÓDIGO DE RASTREIO */}
+                      <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                          📦 Código de Rastreio da Encomenda:
+                        </label>
+
+                        {(() => {
+                          const codigoExistente = selectedOrderDetails.rastreioCodigo || selectedOrderDetails.codigoRastreio;
+
+                          if (codigoExistente && !selectedOrderDetails.isEditingRastreio) {
+                            return (
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f0fdf4', border: '1px solid #86efac', padding: '8px 12px', borderRadius: '6px' }}>
+                                <div>
+                                  <span style={{ fontSize: '0.75rem', color: '#166534', display: 'block', fontWeight: 600 }}>✅ CÓDIGO SALVO E REGISTRADO:</span>
+                                  <strong style={{ fontSize: '1.05rem', color: '#15803d', letterSpacing: '1px' }}>
+                                    {codigoExistente}
+                                  </strong>
+                                </div>
+
+                                <button 
+                                  type="button" 
+                                  style={{ background: '#e2e8f0', color: '#334155', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
+                                  onClick={() => {
+                                    setSelectedOrderDetails(prev => prev ? { ...prev, isEditingRastreio: true } : null);
+                                  }}
+                                >
+                                  ✏️ Editar Rastreio
+                                </button>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <input 
+                                type="text" 
+                                placeholder="Ex: NL123456789BR ou LOG12983" 
+                                defaultValue={codigoExistente || ''}
+                                id={`input-rastreio-${selectedOrderDetails.id}`}
+                                className={styles.orderSearchInput}
+                                style={{ padding: '8px 12px', fontSize: '0.85rem' }}
+                              />
+                              <button 
+                                type="button" 
+                                className={styles.btnPrimary}
+                                style={{ width: 'auto', padding: '8px 16px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}
+                                onClick={async () => {
+                                  const input = document.getElementById(`input-rastreio-${selectedOrderDetails.id}`) as HTMLInputElement;
+                                  const novoCodigo = input?.value || '';
+
+                                  try {
+                                    const response = await fetch(`${API_URL}/pedidos/${selectedOrderDetails.id}/rastreio`, {
+                                      method: 'PATCH',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      credentials: 'include',
+                                      body: JSON.stringify({ codigoRastreio: novoCodigo, rastreioCodigo: novoCodigo })
+                                    });
+
+                                    const data = await response.json();
+                                    if (!response.ok) throw new Error(data.message || 'Erro ao salvar código de rastreio.');
+
+                                    alert('Código de rastreio salvo com sucesso!');
+                                    
+                                    setSelectedOrderDetails(prev => prev ? { 
+                                      ...prev, 
+                                      codigoRastreio: novoCodigo, 
+                                      rastreioCodigo: novoCodigo,
+                                      isEditingRastreio: false 
+                                    } : null);
+
+                                    carregarPedidos();
+                                  } catch (err: any) {
+                                    alert(err.message || 'Erro ao conectar com o servidor.');
+                                  }
+                                }}
+                              >
+                                💾 Salvar Rastreio
+                              </button>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* BLOCO 3: ITENS DO PEDIDO */}
+                    <div className={styles.orderInfoBlock}>
+                      <h4 className={styles.orderInfoTitle}>🛍️ Produtos Comprados ({selectedOrderDetails.itens?.length || 0})</h4>
+                      <div className={styles.orderItemList}>
+                        {selectedOrderDetails.itens?.map((item, idx) => {
+                          const nomeProd = item.nomeProduto || item.produtoNome || 'Produto sem nome';
+                          const produtoRelacionado = products.find(p => p.name === nomeProd || p.id === (item as any).produtoId);
+                          const imagemCapa = item.imagemUrl || produtoRelacionado?.images[0] || 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?q=80&w=200';
+                          const produtoIdExibicao = item.produtoId || produtoRelacionado?.id || '—';
+                          const tamanhoExibicao = item.tamanho || item.tamanhoNome || 'Único';
+
+                          return (
+                            <div key={item.id || idx} className={styles.orderItemRow} style={{ padding: '10px 0', borderBottom: '1px solid #e2e8f0' }}>
+                              <img 
+                                src={imagemCapa} 
+                                alt={nomeProd} 
+                                className={styles.orderItemThumb}
+                                style={{ width: '60px', height: '60px', borderRadius: '8px', objectFit: 'cover', border: '1px solid #cbd5e1' }}
+                              />
+                              
+                              <div className={styles.orderItemDetails} style={{ marginLeft: '8px' }}>
+                                <div className={styles.orderItemName} style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a' }}>
+                                  {nomeProd}
+                                </div>
+                                
+                                <div style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0 4px 0' }}>
+                                  <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                                    ID Produto: {produtoIdExibicao}
+                                  </code>
+                                </div>
+
+                                <div className={styles.orderItemSub} style={{ fontSize: '0.82rem', color: '#334155' }}>
+                                  Cor: <strong>{item.corNome || 'Padrão'}</strong> &nbsp;|&nbsp; Tam: <strong>{tamanhoExibicao}</strong> &nbsp;|&nbsp; Qtd: <strong>{item.quantidade} un</strong>
+                                </div>
+                              </div>
+
+                              <div className={styles.orderItemPrice} style={{ fontSize: '1rem', fontWeight: 700, color: '#16a34a' }}>
+                                R$ {(Number(item.precoUnitario) * Number(item.quantidade)).toFixed(2)}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {(() => {
+                        const totalGeral = getValorTotalPedido(selectedOrderDetails);
+                        const valorFrete = getFretePedido(selectedOrderDetails);
+                        const subtotalCalculado = Math.max(0, totalGeral - valorFrete);
+
+                        return (
+                          <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '2px dashed #cbd5e1', display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
+                            <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                              Subtotal dos produtos: R$ {subtotalCalculado.toFixed(2)}
+                            </span>
+                            <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                              Frete / Envio: R$ {valorFrete.toFixed(2)}
+                            </span>
+                            <span style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0f172a', marginTop: '4px' }}>
+                              Total Pago: R$ {totalGeral.toFixed(2)}
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -2195,7 +2736,7 @@ export const AdminDashboard: React.FC = () => {
                           </div>
                           <div className={styles.categoryActionsGroup}>
                             <button type="button" onClick={() => handleStartEditCor(cor)} className={styles.btnEditTable}>
-                              ✏️️ Editar
+                              ✏️ Editar
                             </button>
                             <button 
                               type="button" 
@@ -2539,7 +3080,6 @@ export const AdminDashboard: React.FC = () => {
                         setSelectedColorForDetails(primeiraCorId);
                       }}
                     >
-                      {/* BARRA DE SELOS NO TOPO DO CARD (FORA DA IMAGEM) */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '8px 12px 0 12px', minHeight: '28px' }}>
                         {prod.isNovidade ? (
                           <span style={{ backgroundColor: '#fef08a', color: '#854d0e', fontSize: '0.75rem', fontWeight: 600, padding: '3px 8px', borderRadius: '6px', textTransform: 'uppercase' }}>
@@ -2570,7 +3110,6 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                         <h4>{prod.name}</h4>
 
-                        {/* Exibição dos preços (Antigo riscado e Novo) */}
                         <div className={styles.priceDisplayArea}>
                           {temOfertaAtiva && precoPromo > 0 ? (
                             <div className={styles.priceContainer}>

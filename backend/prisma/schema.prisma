@@ -230,7 +230,7 @@ model Endereco {
 
 enum StatusPedido {
   PENDENTE
-  APROVADO
+  PAGO
   EM_PROCESSAMENTO
   RECUSADO
   CANCELADO
@@ -252,6 +252,12 @@ model Pedido {
   servicoFrete   String? // Ex: "Sedex", "Loggi", "Melhor Envio"
   prazoEntrega   String? // Ex: "3 dias úteis"
   codigoRastreio String? // Código de rastreamento para o cliente
+
+  // Dimensões do Pacote (para emissão no Melhor Envio)
+  pesoTotal        Float? @default(0.3)  // em Kg (ex: 0.3 = 300g)
+  alturaCaixa      Float? @default(8.0)  // em cm
+  larguraCaixa     Float? @default(16.0) // em cm
+  comprimentoCaixa Float? @default(24.0) // em cm
 
   // Integração com Mercado Pago
   metodoPagamento String? // Ex: "credit_card", "pix", "ticket"

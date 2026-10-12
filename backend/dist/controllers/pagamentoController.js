@@ -34,7 +34,6 @@ exports.pagamentoController = {
             const cpfLimpo = user.cpf ? user.cpf.replace(/\D/g, '') : '';
             const isSandbox = mpAccessToken.startsWith('TEST-');
             let paymentBody = {
-                // Envia a URL para o Mercado Pago saber para onde disparar a notificação de pagamento recebido
                 notification_url: `${BACKEND_URL}/api/webhooks/mercadopago`,
             };
             if (payment_method_id === 'pix') {
@@ -54,7 +53,6 @@ exports.pagamentoController = {
                 };
             }
             else {
-                // Configuração de payload para Cartão de Crédito
                 const bandeiraFinal = (payment_method_id && payment_method_id !== 'credit_card')
                     ? payment_method_id
                     : 'master';
@@ -79,13 +77,11 @@ exports.pagamentoController = {
                     paymentBody.issuer_id = issuer_id;
             }
             console.log('Payload enviado ao Mercado Pago:', JSON.stringify(paymentBody, null, 2));
-            // Dispara a criação da transação junto ao Mercado Pago com retentativa resiliente
             let mpResponse;
             try {
                 mpResponse = await paymentClient.create({ body: paymentBody });
             }
             catch (firstErr) {
-                // Se houver conflito do payment_method_id com o token (erro 2006), tenta omitir a chave
                 const isTokenErr = firstErr?.causes?.some((c) => c.code === 2006 || String(c.description).includes('Card Token'));
                 if (isTokenErr && paymentBody.payment_method_id && payment_method_id !== 'pix') {
                     console.warn('Alerta 2006 detectado: tentando autorização do token sem payment_method_id explícito...');
@@ -96,9 +92,10 @@ exports.pagamentoController = {
                     throw firstErr;
                 }
             }
+            // Mapeamento alterado para 'PAGO'
             let statusPedido = 'PENDENTE';
             if (mpResponse.status === 'approved')
-                statusPedido = 'APROVADO';
+                statusPedido = 'PAGO';
             else if (mpResponse.status === 'in_process')
                 statusPedido = 'EM_PROCESSAMENTO';
             else if (mpResponse.status === 'rejected')
@@ -150,8 +147,8 @@ exports.pagamentoController = {
                         endereco: true,
                     },
                 });
-                // Decrementa estoque se já nascer aprovado
-                if (statusPedido === 'APROVADO') {
+                // Decrementa estoque se o pedido for criado como PAGO
+                if (statusPedido === 'PAGO') {
                     for (const item of items) {
                         if (item.tamanhoId || item.corId) {
                             await tx.produtoEstoque.updateMany({
@@ -174,7 +171,6 @@ exports.pagamentoController = {
             if (io) {
                 io.emit('novoPedido', resultado);
             }
-            // Devolve a resposta com as chaves do Pix para o frontend exibir o QR Code
             return res.status(201).json({
                 success: true,
                 sucesso: true,
@@ -208,12 +204,13 @@ exports.pagamentoController = {
                         where: { mpPaymentId },
                         include: { itens: true },
                     });
-                    if (pedidoExistente && pedidoExistente.status !== 'APROVADO') {
+                    // Atualizado para comparar e salvar como 'PAGO'
+                    if (pedidoExistente && pedidoExistente.status !== 'PAGO') {
                         await prisma_1.prisma.$transaction(async (tx) => {
-                            // 1. Atualiza status do pedido
+                            // 1. Atualiza status do pedido para PAGO
                             await tx.pedido.update({
                                 where: { id: pedidoExistente.id },
-                                data: { status: 'APROVADO' },
+                                data: { status: 'PAGO' },
                             });
                             // 2. Dá baixa no estoque
                             for (const item of pedidoExistente.itens) {
@@ -234,7 +231,7 @@ exports.pagamentoController = {
                         // 3. Notifica via WebSocket
                         const io = (0, socket_1.getIO)();
                         if (io) {
-                            io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: 'APROVADO' });
+                            io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: 'PAGO' });
                         }
                     }
                 }

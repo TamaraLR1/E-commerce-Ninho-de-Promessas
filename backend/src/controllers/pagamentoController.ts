@@ -56,7 +56,6 @@ export const pagamentoController = {
       const isSandbox = mpAccessToken.startsWith('TEST-');
 
       let paymentBody: any = {
-        // Envia a URL para o Mercado Pago saber para onde disparar a notificação de pagamento recebido
         notification_url: `${BACKEND_URL}/api/webhooks/mercadopago`,
       };
 
@@ -77,7 +76,6 @@ export const pagamentoController = {
           },
         };
       } else {
-        // Configuração de payload para Cartão de Crédito
         const bandeiraFinal = (payment_method_id && payment_method_id !== 'credit_card')
           ? payment_method_id
           : 'master';
@@ -104,12 +102,10 @@ export const pagamentoController = {
 
       console.log('Payload enviado ao Mercado Pago:', JSON.stringify(paymentBody, null, 2));
 
-      // Dispara a criação da transação junto ao Mercado Pago com retentativa resiliente
       let mpResponse;
       try {
         mpResponse = await paymentClient.create({ body: paymentBody });
       } catch (firstErr: any) {
-        // Se houver conflito do payment_method_id com o token (erro 2006), tenta omitir a chave
         const isTokenErr = firstErr?.causes?.some((c: any) => c.code === 2006 || String(c.description).includes('Card Token'));
         if (isTokenErr && paymentBody.payment_method_id && payment_method_id !== 'pix') {
           console.warn('Alerta 2006 detectado: tentando autorização do token sem payment_method_id explícito...');
@@ -120,8 +116,9 @@ export const pagamentoController = {
         }
       }
 
-      let statusPedido: 'PENDENTE' | 'APROVADO' | 'EM_PROCESSAMENTO' | 'RECUSADO' = 'PENDENTE';
-      if (mpResponse.status === 'approved') statusPedido = 'APROVADO';
+      // Mapeamento alterado para 'PAGO'
+      let statusPedido: 'PENDENTE' | 'PAGO' | 'EM_PROCESSAMENTO' | 'RECUSADO' = 'PENDENTE';
+      if (mpResponse.status === 'approved') statusPedido = 'PAGO';
       else if (mpResponse.status === 'in_process') statusPedido = 'EM_PROCESSAMENTO';
       else if (mpResponse.status === 'rejected') statusPedido = 'RECUSADO';
 
@@ -177,8 +174,8 @@ export const pagamentoController = {
           },
         });
 
-        // Decrementa estoque se já nascer aprovado
-        if (statusPedido === 'APROVADO') {
+        // Decrementa estoque se o pedido for criado como PAGO
+        if (statusPedido === 'PAGO') {
           for (const item of items) {
             if (item.tamanhoId || item.corId) {
               await tx.produtoEstoque.updateMany({
@@ -204,7 +201,6 @@ export const pagamentoController = {
         io.emit('novoPedido', resultado);
       }
 
-      // Devolve a resposta com as chaves do Pix para o frontend exibir o QR Code
       return res.status(201).json({
         success: true,
         sucesso: true,
@@ -244,12 +240,13 @@ export const pagamentoController = {
             include: { itens: true },
           });
 
-          if (pedidoExistente && pedidoExistente.status !== 'APROVADO') {
+          // Atualizado para comparar e salvar como 'PAGO'
+          if (pedidoExistente && pedidoExistente.status !== 'PAGO') {
             await prisma.$transaction(async (tx) => {
-              // 1. Atualiza status do pedido
+              // 1. Atualiza status do pedido para PAGO
               await tx.pedido.update({
                 where: { id: pedidoExistente.id },
-                data: { status: 'APROVADO' },
+                data: { status: 'PAGO' },
               });
 
               // 2. Dá baixa no estoque
@@ -272,7 +269,7 @@ export const pagamentoController = {
             // 3. Notifica via WebSocket
             const io = getIO();
             if (io) {
-              io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: 'APROVADO' });
+              io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: 'PAGO' });
             }
           }
         }
