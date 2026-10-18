@@ -362,3 +362,17 @@ model ItemCarrinho {
   @@unique([carrinhoId, produtoId, tamanhoId, corId])
   @@map("itens_carrinho")
 }
+
+model Cupom {
+  id               String    @id @default(uuid())
+  codigo           String    @unique // Ex: PRIMEIRACOMPRA ou VERAO2026
+  tipo             String    // 'PERCENTUAL' ou 'FIXO'
+  valor            Decimal   @db.Decimal(10, 2) // Ex: 10.00 (%) ou 50.00 (R$)
+  isPrimeiraCompra Boolean   @default(false) @map("is_primeira_compra")
+  dataValidade     DateTime? @map("data_validade") // Opcional (para campanhas sazonais)
+  ativo            Boolean   @default(true)
+  criadoEm         DateTime  @default(now()) @map("criado_em")
+  atualizadoEm     DateTime  @updatedAt @map("atualizado_em")
+
+  @@map("cupons")
+}

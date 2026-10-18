@@ -1,0 +1,12 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.cupomRoutes = void 0;
+const express_1 = require("express");
+const cupomController_1 = require("../controllers/cupomController");
+const authAdminMiddleware_1 = require("../middlewares/authAdminMiddleware");
+const router = (0, express_1.Router)();
+exports.cupomRoutes = router;
+router.get('/cupons', authAdminMiddleware_1.ensureAdminAuthenticated, cupomController_1.cupomController.listar);
+router.post('/cupons', authAdminMiddleware_1.ensureAdminAuthenticated, cupomController_1.cupomController.criar);
+router.patch('/cupons/:id/status', authAdminMiddleware_1.ensureAdminAuthenticated, cupomController_1.cupomController.alternarStatus);
+router.post('/cupons/validar', cupomController_1.cupomController.validarCupom);

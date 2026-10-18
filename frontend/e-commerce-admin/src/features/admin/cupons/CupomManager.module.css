@@ -1,0 +1,176 @@
+.singleContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+}
+
+.card {
+  background: #ffffff;
+  padding: 24px;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.infoText {
+  color: #64748b;
+  font-size: 0.9rem;
+  margin-bottom: 20px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gridContainerPrice {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.group label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.group input,
+.group select {
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.group input:focus,
+.group select:focus {
+  border-color: #3b82f6;
+}
+
+.slugPreviewText {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.sizeCheckboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  color: #334155;
+  cursor: pointer;
+}
+
+.btnPrimary {
+  background-color: #2563eb;
+  color: #ffffff;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  width: fit-content;
+}
+
+.btnPrimary:hover {
+  background-color: #1d4ed8;
+}
+
+.btnPrimary:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.listSectionWrapper {
+  margin-top: 30px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 20px;
+}
+
+.listSubheading {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 14px;
+}
+
+.emptyNotice {
+  color: #64748b;
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+.dashboardTableWrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.dashboardTableElement {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.dashboardTableHeaderRow {
+  background-color: #f8fafc;
+  border-bottom: 2px solid #e2e8f0;
+  color: #475569;
+}
+
+.dashboardTableCell {
+  padding: 12px;
+}
+
+.badgePrimeiraCompra {
+  background: #fef08a;
+  color: #854d0e;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.textGeralCampanha {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.statusAtivo {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.statusInativo {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.btnActionTable {
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: #fff;
+}
+
+.btnAtivar {
+  background-color: #10b981;
+}
+
+.btnDesativar {
+  background-color: #ef4444;
+}

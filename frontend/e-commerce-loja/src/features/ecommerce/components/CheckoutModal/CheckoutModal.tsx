@@ -9,10 +9,8 @@ const API_URL = isLocal
   ? 'http://localhost:3333' 
   : 'https://ninhoback.tamaralr.com.br';
 
-// Substitua pela sua nova Public Key de Produção ou Teste gerada no painel
 const MP_PUBLIC_KEY = import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY || 'APP_USR-b123bab4-983f-4921-8c65-009fe7158446';
 
-// Inicializa o SDK do Mercado Pago
 initMercadoPago(MP_PUBLIC_KEY, { locale: 'pt-BR' });
 
 interface CheckoutModalProps {
@@ -51,6 +49,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
 
   const [step, setStep] = useState<number>(1);
 
+  // Armazena o ID ou E-mail do cliente logado para validação de cupons
+  const [clienteLogadoId, setClienteLogadoId] = useState<string>('');
+
   // Etapa 1: Endereço
   const [endereco, setEndereco] = useState<EnderecoEntrega>({
     cep: '',
@@ -69,6 +70,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
   const [freteSelecionado, setFreteSelecionado] = useState<OpcaoFrete | null>(null);
   const [loadingFrete, setLoadingFrete] = useState<boolean>(false);
 
+  // Estados do Cupom de Desconto
+  const [codigoCupomInput, setCodigoCupomInput] = useState<string>('');
+  const [cupomAplicado, setCupomAplicado] = useState<{ codigo: string; tipo: 'PERCENTUAL' | 'FIXO'; valor: number } | null>(null);
+  const [loadingCupom, setLoadingCupom] = useState<boolean>(false);
+  const [erroCupom, setErroCupom] = useState<string>('');
+
   // Etapa 3: Pagamento
   const [metodoPagamento, setMetodoPagamento] = useState<'pix' | 'credit_card'>('pix');
   const [loadingPagamento, setLoadingPagamento] = useState<boolean>(false);
@@ -79,38 +86,40 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
   const [copiado, setCopiado] = useState<boolean>(false);
 
   // ==========================================
-  // BUSCA O ENDEREÇO SALVO DO USUÁRIO AO ABRIR
+  // BUSCA O PERFIL E ENDEREÇO SALVO DO USUÁRIO
   // ==========================================
   useEffect(() => {
-    const carregarEnderecoSalvo = async () => {
+    const carregarPerfilUsuario = async () => {
       try {
         const res = await axios.get(`${API_URL}/api/perfil`, { 
           withCredentials: true 
         });
 
-        // Acessa res.data.user.enderecos conforme o retorno do backend
         const dadosUsuario = res.data?.user;
-        const enderecos = dadosUsuario?.enderecos;
+        if (dadosUsuario) {
+          setClienteLogadoId(dadosUsuario.id || dadosUsuario.email || '');
 
-        if (enderecos && enderecos.length > 0) {
-          const endSalvo = enderecos[0]; // Pega o endereço mais recente
+          const enderecos = dadosUsuario.enderecos;
+          if (enderecos && enderecos.length > 0) {
+            const endSalvo = enderecos[0];
 
-          setEndereco({
-            cep: endSalvo.cep || '',
-            logradouro: endSalvo.rua || '',
-            numero: endSalvo.numero || '',
-            complemento: endSalvo.complemento || '',
-            bairro: endSalvo.bairro || '',
-            cidade: endSalvo.cidade || '',
-            uf: endSalvo.estado || '',
-          });
+            setEndereco({
+              cep: endSalvo.cep || '',
+              logradouro: endSalvo.rua || '',
+              numero: endSalvo.numero || '',
+              complemento: endSalvo.complemento || '',
+              bairro: endSalvo.bairro || '',
+              cidade: endSalvo.cidade || '',
+              uf: endSalvo.estado || '',
+            });
+          }
         }
       } catch (error) {
-        console.log('Nenhum endereço prévio encontrado ou usuário não logado.');
+        console.log('Nenhum usuário logado ou perfil não encontrado.');
       }
     };
 
-    carregarEnderecoSalvo();
+    carregarPerfilUsuario();
   }, []);
 
   // Auto-completar ViaCEP
@@ -145,6 +154,61 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
       }
     }
   };
+
+  // Validar e Aplicar Cupom com tratamento robusto para evitar NaN
+  const handleAplicarCupom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!codigoCupomInput.trim()) return;
+
+    try {
+      setLoadingCupom(true);
+      setErroCupom('');
+
+      const response = await axios.post(`${API_URL}/api/cupons/validar`, {
+        codigo: codigoCupomInput.trim().toUpperCase(),
+        clienteId: clienteLogadoId,
+        subtotal: total
+      }, { withCredentials: true });
+
+      const dadosCupom = response.data?.cupom || response.data;
+
+      if (dadosCupom && dadosCupom.tipo && dadosCupom.valor !== undefined) {
+        const valorNumerico = Number(dadosCupom.valor);
+
+        setCupomAplicado({
+          codigo: dadosCupom.codigo || codigoCupomInput.trim().toUpperCase(),
+          tipo: dadosCupom.tipo,
+          valor: isNaN(valorNumerico) ? 0 : valorNumerico
+        });
+        setCodigoCupomInput('');
+      } else {
+        setErroCupom('Resposta inválida do servidor ao validar cupom.');
+      }
+    } catch (err: any) {
+      setErroCupom(err.response?.data?.message || 'Cupom inválido ou expirado.');
+    } finally {
+      setLoadingCupom(false);
+    }
+  };
+
+  const handleRemoverCupom = () => {
+    setCupomAplicado(null);
+    setErroCupom('');
+  };
+
+  // Cálculo seguro do desconto e totais estritamente arredondados a 2 casas decimais
+  let valorDesconto = 0;
+  if (cupomAplicado) {
+    const valCupom = Number(cupomAplicado.valor) || 0;
+    if (cupomAplicado.tipo === 'PERCENTUAL') {
+      valorDesconto = Number(((total * valCupom) / 100).toFixed(2));
+    } else {
+      valorDesconto = Number(valCupom.toFixed(2));
+    }
+  }
+  const subtotalComDesconto = Number(Math.max(0, total - valorDesconto).toFixed(2));
+  const valorFreteNum = freteSelecionado ? Number(parseFloat(freteSelecionado.price || '0').toFixed(2)) : 0;
+  const totalGeral = Number((subtotalComDesconto + valorFreteNum).toFixed(2));
 
   // Etapa 1 -> Etapa 2
   const handleAvancarParaFrete = async (e: React.FormEvent) => {
@@ -196,9 +260,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
     }
   };
 
-  const valorFreteNum = freteSelecionado ? parseFloat(freteSelecionado.price) : 0;
-  const totalGeral = total + valorFreteNum;
-
   // Envia pedido para o Backend
   const enviarPedidoParaBackend = async (payloadCard: any = null) => {
     try {
@@ -213,6 +274,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
         payment_method_id: metodoPagamento === 'pix' ? 'pix' : (payloadCard?.payment_method_id || 'master'),
         issuer_id: payloadCard?.issuer_id || null,
         subtotal: total,
+        descontoCupom: valorDesconto,
+        cupomCodigo: cupomAplicado?.codigo || null,
         valorFrete: valorFreteNum,
         servicoFrete: freteSelecionado?.name || 'Padrão',
         prazoEntrega: freteSelecionado?.id === 'pickup_store' 
@@ -481,11 +544,58 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
                   </div>
                 )}
 
+                {/* CAMPO DE CUPOM DE DESCONTO */}
+                <div style={{ marginTop: '0.8rem', background: '#f8fafc', padding: '0.8rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '6px' }}>
+                    🎟️ Possui cupom de desconto?
+                  </label>
+                  {cupomAplicado ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '6px 10px', borderRadius: '6px' }}>
+                      <span style={{ fontSize: '0.85rem', color: '#166534', fontWeight: 600 }}>
+                        Cupom <strong>{cupomAplicado.codigo}</strong> aplicado ({cupomAplicado.tipo === 'PERCENTUAL' ? `${cupomAplicado.valor}% OFF` : `R$ ${cupomAplicado.valor.toFixed(2)} OFF`})
+                      </span>
+                      <button 
+                        type="button" 
+                        onClick={handleRemoverCupom}
+                        style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleAplicarCupom} style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        type="text"
+                        placeholder="Digite o código (ex: PRIMEIRACOMPRA)"
+                        value={codigoCupomInput}
+                        onChange={(e) => setCodigoCupomInput(e.target.value)}
+                        className={styles.selectInput}
+                        style={{ flex: 1, padding: '0.5rem 0.8rem', fontSize: '0.85rem' }}
+                      />
+                      <button
+                        type="submit"
+                        className={styles.secondaryButton}
+                        disabled={loadingCupom || !codigoCupomInput.trim()}
+                        style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+                      >
+                        {loadingCupom ? 'Aplicando...' : 'Aplicar'}
+                      </button>
+                    </form>
+                  )}
+                  {erroCupom && <p className={styles.errorText} style={{ marginTop: '4px' }}>{erroCupom}</p>}
+                </div>
+
                 <div className={styles.summaryFooter}>
                   <div className={styles.summaryRow}>
                     <span>Subtotal:</span>
                     <span>R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                   </div>
+                  {cupomAplicado && (
+                    <div className={styles.summaryRow} style={{ color: '#166534', fontWeight: 600 }}>
+                      <span>Desconto ({cupomAplicado.codigo}):</span>
+                      <span>- R$ {valorDesconto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
                   <div className={styles.summaryRow}>
                     <span>Frete ({freteSelecionado?.name || 'Não selecionado'}):</span>
                     <span>
@@ -590,6 +700,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
                     <span>Subtotal:</span>
                     <span>R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                   </div>
+                  {cupomAplicado && (
+                    <div className={styles.summaryRow} style={{ color: '#166534', fontWeight: 600 }}>
+                      <span>Desconto ({cupomAplicado.codigo}):</span>
+                      <span>- R$ {valorDesconto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
                   <div className={styles.summaryRow}>
                     <span>Frete ({freteSelecionado?.name}):</span>
                     <span>

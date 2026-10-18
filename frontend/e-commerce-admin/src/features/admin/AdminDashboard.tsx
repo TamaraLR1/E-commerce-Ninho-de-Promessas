@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styles from './AdminDashboard.module.css';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { CupomManager } from './cupons/CupomManager';
 
 interface ProductMaster {
   id: string;
@@ -184,7 +185,21 @@ interface DashboardData {
 
 export const AdminDashboard: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cadastro' | 'lista' | 'oferta' | 'estoque' | 'historico-estoque' | 'pedidos' | 'categorias' | 'tamanhos' | 'cores' | 'motivos' | 'logs'>('dashboard');
+  const [activeTab, setActiveTab] = useState<
+    | 'dashboard'
+    | 'cadastro'
+    | 'lista'
+    | 'oferta'
+    | 'estoque'
+    | 'historico-estoque'
+    | 'pedidos'
+    | 'categorias'
+    | 'tamanhos'
+    | 'cores'
+    | 'motivos'
+    | 'logs'
+    | 'cupons'
+  >('dashboard');
 
   const [products, setProducts] = useState<ProductMaster[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
@@ -366,9 +381,6 @@ export const AdminDashboard: React.FC = () => {
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Erro ao atualizar status do pedido.');
 
-      // O segredo está aqui: Em vez de atualizar apenas a string de status, 
-      // nós substituímos o pedido inteiro no estado do React pelo pedido atualizado
-      // que o backend acabou de nos devolver (data.pedido), que já contém o historicoStatus preenchido!
       if (data.pedido) {
         setPedidosList(prev => prev.map(p => p.id === pedidoId ? data.pedido : p));
         
@@ -376,7 +388,6 @@ export const AdminDashboard: React.FC = () => {
           setSelectedOrderDetails(data.pedido);
         }
       } else {
-        // Fallback de segurança
         setPedidosList(prev => prev.map(p => p.id === pedidoId ? { ...p, status: novoStatus } : p));
         if (selectedOrderDetails && selectedOrderDetails.id === pedidoId) {
           setSelectedOrderDetails(prev => prev ? { ...prev, status: novoStatus } : null);
@@ -1494,7 +1505,6 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Funções Utilitárias para leitura dos dados do Pedido
   const getValorTotalPedido = (p: Pedido): number => {
     const val = p.total ?? p.valorTotal ?? 0;
     const num = Number(val);
@@ -1564,6 +1574,7 @@ export const AdminDashboard: React.FC = () => {
             <div className={`${styles.navItem} ${activeTab === 'tamanhos' ? styles.active : ''}`} onClick={() => { setActiveTab('tamanhos'); setIsMenuOpen(false); }}>📏 Gerenciar Tamanhos</div>
             <div className={`${styles.navItem} ${activeTab === 'cores' ? styles.active : ''}`} onClick={() => { setActiveTab('cores'); setIsMenuOpen(false); }}>🎨 Gerenciar Cores</div>
             <div className={`${styles.navItem} ${activeTab === 'motivos' ? styles.active : ''}`} onClick={() => { setActiveTab('motivos'); setIsMenuOpen(false); }}>📝 Gerenciar Motivos</div>
+            <div className={`${styles.navItem} ${activeTab === 'cupons' ? styles.active : ''}`} onClick={() => { setActiveTab('cupons'); setIsMenuOpen(false); }}>🎟️ Gerenciar Cupons</div>
             <div className={`${styles.navItem} ${activeTab === 'oferta' ? styles.active : ''}`} onClick={() => { setActiveTab('oferta'); setIsMenuOpen(false); }}>🏷️ Configurar Oferta</div>
             <div className={`${styles.navItem} ${activeTab === 'lista' ? styles.active : ''}`} onClick={() => { setActiveTab('lista'); setIsMenuOpen(false); }}>📋 Lista & Vitrine ({products.length})</div>
             <div className={`${styles.navItem} ${activeTab === 'estoque' ? styles.active : ''}`} onClick={() => { setActiveTab('estoque'); setIsMenuOpen(false); }}>📦 Controle de Estoque</div>
@@ -1656,7 +1667,6 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* BLOCO DOS DOIS GRÁFICOS LADO A LADO NO DESKTOP E EMPILHADOS NO CELULAR */}
                     <div className={styles.chartsGridRow} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', width: '100%' }}>
                       
                       <div style={{ background: '#fff', padding: '16px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', minWidth: 0 }}>
@@ -1961,7 +1971,6 @@ export const AdminDashboard: React.FC = () => {
 
                   <div className={styles.orderDetailsGrid}>
                     
-                    {/* BLOCO 1: DADOS DO CLIENTE E DESTINATÁRIO */}
                     <div className={styles.orderInfoBlock}>
                       <h4 className={styles.orderInfoTitle}>👤 Dados do Destinatário / Cliente</h4>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', fontSize: '0.875rem' }}>
@@ -2004,7 +2013,6 @@ export const AdminDashboard: React.FC = () => {
                       })()}
                     </div>
 
-                    {/* BLOCO 2: DADOS DE EXPEDIÇÃO, FRETE E PAGAMENTO */}
                     <div className={styles.orderInfoBlock} style={{ backgroundColor: '#f0f9ff', borderColor: '#bae6fd' }}>
                       <h4 className={styles.orderInfoTitle} style={{ color: '#0369a1', borderColor: '#bae6fd' }}>
                         🚚 Dados de Envio, Embalagem e Rastreio
@@ -2033,7 +2041,6 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* MELHORIA UX DO CÓDIGO DE RASTREIO */}
                       <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
                         <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
                           📦 Código de Rastreio da Encomenda:
@@ -2117,7 +2124,6 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* BLOCO 3: ITENS DO PEDIDO */}
                     <div className={styles.orderInfoBlock}>
                       <h4 className={styles.orderInfoTitle}>🛍️ Produtos Comprados ({selectedOrderDetails.itens?.length || 0})</h4>
                       <div className={styles.orderItemList}>
@@ -2182,7 +2188,6 @@ export const AdminDashboard: React.FC = () => {
                       })()}
                     </div>
 
-                    {/* BLOCO 4: HISTÓRICO DE STATUS */}
                     <div className={styles.orderInfoBlock}>
                       <h4 className={styles.orderInfoTitle}>⏱️ Histórico de Status</h4>
                       {selectedOrderDetails.historicoStatus && selectedOrderDetails.historicoStatus.length > 0 ? (
@@ -2271,6 +2276,8 @@ export const AdminDashboard: React.FC = () => {
             </section>
           </div>
         )}
+
+        {activeTab === 'cupons' && <CupomManager apiUrl={API_URL} />}
 
         {activeTab === 'cadastro' && (
           <div className={styles.singleContainer}>
