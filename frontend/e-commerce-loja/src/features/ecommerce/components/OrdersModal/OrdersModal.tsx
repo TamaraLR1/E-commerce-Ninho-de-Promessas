@@ -14,6 +14,13 @@ interface ItemPedido {
   imagemUrl?: string;
 }
 
+interface HistoricoStatus {
+  id?: string;
+  status: string;
+  data: string;
+  observacao?: string;
+}
+
 interface Pedido {
   id: string;
   userId?: number;
@@ -26,6 +33,7 @@ interface Pedido {
   createdAt?: string;
   dataCriacao?: string;
   itens: ItemPedido[];
+  historicoStatus?: HistoricoStatus[];
 }
 
 interface OrdersModalProps {
@@ -37,11 +45,45 @@ interface OrdersModalProps {
 
 const statusSteps = ['PENDENTE', 'PAGO', 'EM_SEPARACAO', 'ENVIADO', 'ENTREGUE'];
 
+// Função para deixar o status mais amigável para o cliente final
+const formatarStatusAmigavel = (status: string) => {
+  const mapa: Record<string, string> = {
+    PENDENTE: 'Aguardando Pagamento',
+    PAGO: 'Pagamento Aprovado',
+    EM_SEPARACAO: 'Em Separação',
+    ENVIADO: 'Pedido Enviado',
+    ENTREGUE: 'Pedido Entregue',
+    CANCELADO: 'Pedido Cancelado'
+  };
+  return mapa[status] || status;
+};
+
+// Nova função para calcular a estimativa de entrega baseada na data de compra
+const calcularPrevisaoEntrega = (dataCriacao: string | undefined) => {
+  if (!dataCriacao) return null;
+  const data = new Date(dataCriacao);
+  if (isNaN(data.getTime())) return null;
+
+  // Ajuste estes valores conforme a realidade da sua loja e transportadora
+  const DIAS_PROCESSAMENTO = 5; // Tempo até despachar
+  const TRANSPORTADORA_MIN = 3; // Prazo mínimo da transportadora
+  const TRANSPORTADORA_MAX = 7; // Prazo máximo da transportadora
+
+  const minDate = new Date(data);
+  minDate.setDate(minDate.getDate() + DIAS_PROCESSAMENTO + TRANSPORTADORA_MIN);
+
+  const maxDate = new Date(data);
+  maxDate.setDate(maxDate.getDate() + DIAS_PROCESSAMENTO + TRANSPORTADORA_MAX);
+
+  const formatOptions: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit' };
+  return `${minDate.toLocaleDateString('pt-BR', formatOptions)} a ${maxDate.toLocaleDateString('pt-BR', formatOptions)}`;
+};
+
 export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUrl, userId }) => {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Instancia o Socket usando a apiUrl dinâmica (http://localhost:3333 em dev ou https://ninhoback.tamaralr.com.br em produção)
+  // Instancia o Socket usando a apiUrl dinâmica
   const socket = useMemo(() => {
     return io(apiUrl, {
       transports: ['polling', 'websocket'],
@@ -163,11 +205,15 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
           <div className={styles.ordersList}>
             {pedidos.map((pedido) => {
               const codExibicao = pedido.codigoPedido || pedido.id.slice(0, 8);
-              const dataFormatada = new Date(pedido.createdAt || pedido.dataCriacao || '').toLocaleDateString('pt-BR', {
+              const dataCriacaoBase = pedido.createdAt || pedido.dataCriacao;
+              const dataFormatada = new Date(dataCriacaoBase || '').toLocaleDateString('pt-BR', {
                 day: '2-digit', month: '2-digit', year: 'numeric'
               });
               const valorFinal = Number(pedido.total || pedido.valorTotal || 0);
               const codigoRastreio = pedido.codigoRastreio || pedido.rastreioCodigo;
+              
+              // Calcula a previsão apenas uma vez por pedido
+              const previsao = calcularPrevisaoEntrega(dataCriacaoBase);
 
               return (
                 <div key={pedido.id} className={styles.orderCard}>
@@ -181,10 +227,44 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
 
                   {renderProgressBar(pedido.status)}
 
+                  {/* BLOCO DA PREVISÃO DE ENTREGA */}
+                  {pedido.status !== 'CANCELADO' && pedido.status !== 'ENTREGUE' && previsao && (
+                    <div className={styles.trackingBox} style={{ backgroundColor: '#f0fdf4', borderColor: '#bbf7d0', color: '#166534', marginTop: '12px' }}>
+                      <span style={{ color: '#15803d' }}>🗓️ Previsão de Entrega:</span>
+                      <strong>Entre {previsao}</strong>
+                    </div>
+                  )}
+
                   {codigoRastreio && (
-                    <div className={styles.trackingBox}>
+                    <div className={styles.trackingBox} style={{ marginTop: '8px' }}>
                       <span>🚚 Código de Rastreio:</span>
                       <strong>{codigoRastreio}</strong>
+                    </div>
+                  )}
+
+                  {/* BLOCO DO HISTÓRICO DE STATUS (LINHA DO TEMPO) */}
+                  {pedido.historicoStatus && pedido.historicoStatus.length > 0 && (
+                    <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <h4 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        ⏱️ Histórico do Pedido
+                      </h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {pedido.historicoStatus.map((hist, idx) => (
+                          <div key={hist.id || idx} style={{ display: 'flex', gap: '10px', fontSize: '0.85rem', borderLeft: '2px solid #cbd5e1', paddingLeft: '10px' }}>
+                            <span style={{ color: '#64748b', minWidth: '115px', fontWeight: 500 }}>
+                              {new Date(hist.data).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <strong style={{ color: '#0f172a' }}>{formatarStatusAmigavel(hist.status)}</strong>
+                              {hist.observacao && !hist.observacao.includes('via Painel Admin') && (
+                                <span style={{ color: '#64748b', fontSize: '0.8rem', fontStyle: 'italic', marginTop: '2px' }}>
+                                  {hist.observacao}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
 

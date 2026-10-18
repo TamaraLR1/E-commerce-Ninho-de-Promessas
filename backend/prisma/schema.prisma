@@ -278,11 +278,25 @@ model Pedido {
   endereco   Endereco @relation(fields: [enderecoId], references: [id], onDelete: Restrict)
 
   itens ItemPedido[]
+  
+  // Histórico de status do pedido
+  historicoStatus HistoricoStatusPedido[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("pedidos")
+}
+
+model HistoricoStatusPedido {
+  id         String       @id @default(uuid())
+  pedidoId   String
+  pedido     Pedido       @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  status     StatusPedido
+  data       DateTime     @default(now())
+  observacao String?
+
+  @@map("historico_status_pedido")
 }
 
 model ItemPedido {

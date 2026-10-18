@@ -13,6 +13,10 @@ export const pedidoController = {
             select: { nome: true, email: true, telefone: true, cpf: true },
           },
           endereco: true,
+          // --- ADICIONADO: Traz o histórico ordenado ---
+          historicoStatus: {
+            orderBy: { data: 'asc' }
+          },
           itens: {
             include: {
               produto: {
@@ -66,6 +70,10 @@ export const pedidoController = {
               cep: p.endereco.cep || '',
             }
           : undefined,
+        
+        // --- ADICIONADO: Envia o histórico para o frontend ---
+        historicoStatus: p.historicoStatus || [],
+
         itens: (p.itens || []).map((i: any) => ({
           id: i.id,
           produtoId: i.produtoId,
@@ -115,6 +123,10 @@ export const pedidoController = {
             },
           },
           endereco: true,
+          // --- ADICIONADO: Traz o histórico para a área do cliente também ---
+          historicoStatus: {
+            orderBy: { data: 'asc' }
+          }
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -133,6 +145,10 @@ export const pedidoController = {
         servicoFrete: (p as any).servicoFrete || (p as any).metodoFrete || 'Entrega Padrão',
         codigoRastreio: (p as any).codigoRastreio || (p as any).rastreioCodigo || '',
         createdAt: p.createdAt,
+        
+        // --- ADICIONADO: Envia o histórico formatado ---
+        historicoStatus: (p as any).historicoStatus || [],
+
         itens: p.itens.map((item) => {
           const primeiraImagem = item.produto?.imagens?.[0]?.url || '';
           return {
@@ -173,6 +189,10 @@ export const pedidoController = {
           },
           endereco: true,
           user: true,
+          // --- ADICIONADO ---
+          historicoStatus: {
+            orderBy: { data: 'asc' }
+          }
         },
       });
 
@@ -191,17 +211,40 @@ export const pedidoController = {
   async atualizarStatus(req: Request, res: Response) {
     try {
       const id = String(req.params.id);
-      const { status, codigoRastreio, rastreioCodigo } = req.body;
+      // Recebe também a observação opcional
+      const { status, codigoRastreio, rastreioCodigo, observacao } = req.body;
 
       const codigoFinal = codigoRastreio || rastreioCodigo;
+
+      // Busca o pedido atual para verificar se o status realmente mudou
+      const pedidoExistente = await prisma.pedido.findUnique({
+        where: { id }
+      });
+
+      if (!pedidoExistente) {
+        return res.status(404).json({ message: 'Pedido não encontrado.' });
+      }
+
+      // Monta os dados de atualização de forma dinâmica
+      const dataUpdate: any = {
+        ...(codigoFinal && { codigoRastreio: codigoFinal }),
+      };
+
+      // Se um status foi passado E é diferente do status atual, nós atualizamos o campo e criamos o histórico
+      if (status && status !== pedidoExistente.status) {
+        dataUpdate.status = status;
+        dataUpdate.historicoStatus = {
+          create: {
+            status: status,
+            observacao: observacao || `Status atualizado para ${status}`
+          }
+        };
+      }
 
       // 1. Atualiza no Banco de Dados via Prisma
       const pedidoAtualizado = await prisma.pedido.update({
         where: { id },
-        data: {
-          ...(status && { status }),
-          ...(codigoFinal && { codigoRastreio: codigoFinal }),
-        },
+        data: dataUpdate,
         include: {
           itens: {
             include: {
@@ -213,6 +256,10 @@ export const pedidoController = {
             },
           },
           endereco: true,
+          // --- ADICIONADO: Traz o histórico atualizado na resposta ---
+          historicoStatus: {
+            orderBy: { data: 'asc' }
+          }
         },
       });
 
@@ -227,6 +274,10 @@ export const pedidoController = {
         codigoRastreio: (pedidoAtualizado as any).codigoRastreio || (pedidoAtualizado as any).rastreioCodigo || '',
         createdAt: pedidoAtualizado.createdAt,
         userId: pedidoAtualizado.userId,
+        
+        // --- ADICIONADO ---
+        historicoStatus: (pedidoAtualizado as any).historicoStatus || [],
+
         itens: pedidoAtualizado.itens.map((item) => ({
           id: item.id,
           nomeProduto: item.produto?.nome || (item as any).nomeProduto || 'Produto',

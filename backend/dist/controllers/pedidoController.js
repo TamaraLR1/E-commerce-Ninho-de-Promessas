@@ -14,6 +14,10 @@ exports.pedidoController = {
                         select: { nome: true, email: true, telefone: true, cpf: true },
                     },
                     endereco: true,
+                    // --- ADICIONADO: Traz o histórico ordenado ---
+                    historicoStatus: {
+                        orderBy: { data: 'asc' }
+                    },
                     itens: {
                         include: {
                             produto: {
@@ -59,6 +63,8 @@ exports.pedidoController = {
                         cep: p.endereco.cep || '',
                     }
                     : undefined,
+                // --- ADICIONADO: Envia o histórico para o frontend ---
+                historicoStatus: p.historicoStatus || [],
                 itens: (p.itens || []).map((i) => ({
                     id: i.id,
                     produtoId: i.produtoId,
@@ -103,6 +109,10 @@ exports.pedidoController = {
                         },
                     },
                     endereco: true,
+                    // --- ADICIONADO: Traz o histórico para a área do cliente também ---
+                    historicoStatus: {
+                        orderBy: { data: 'asc' }
+                    }
                 },
                 orderBy: { createdAt: 'desc' },
             });
@@ -119,6 +129,8 @@ exports.pedidoController = {
                 servicoFrete: p.servicoFrete || p.metodoFrete || 'Entrega Padrão',
                 codigoRastreio: p.codigoRastreio || p.rastreioCodigo || '',
                 createdAt: p.createdAt,
+                // --- ADICIONADO: Envia o histórico formatado ---
+                historicoStatus: p.historicoStatus || [],
                 itens: p.itens.map((item) => {
                     const primeiraImagem = item.produto?.imagens?.[0]?.url || '';
                     return {
@@ -157,6 +169,10 @@ exports.pedidoController = {
                     },
                     endereco: true,
                     user: true,
+                    // --- ADICIONADO ---
+                    historicoStatus: {
+                        orderBy: { data: 'asc' }
+                    }
                 },
             });
             if (!pedido) {
@@ -173,15 +189,34 @@ exports.pedidoController = {
     async atualizarStatus(req, res) {
         try {
             const id = String(req.params.id);
-            const { status, codigoRastreio, rastreioCodigo } = req.body;
+            // Recebe também a observação opcional
+            const { status, codigoRastreio, rastreioCodigo, observacao } = req.body;
             const codigoFinal = codigoRastreio || rastreioCodigo;
+            // Busca o pedido atual para verificar se o status realmente mudou
+            const pedidoExistente = await prisma_1.prisma.pedido.findUnique({
+                where: { id }
+            });
+            if (!pedidoExistente) {
+                return res.status(404).json({ message: 'Pedido não encontrado.' });
+            }
+            // Monta os dados de atualização de forma dinâmica
+            const dataUpdate = {
+                ...(codigoFinal && { codigoRastreio: codigoFinal }),
+            };
+            // Se um status foi passado E é diferente do status atual, nós atualizamos o campo e criamos o histórico
+            if (status && status !== pedidoExistente.status) {
+                dataUpdate.status = status;
+                dataUpdate.historicoStatus = {
+                    create: {
+                        status: status,
+                        observacao: observacao || `Status atualizado para ${status}`
+                    }
+                };
+            }
             // 1. Atualiza no Banco de Dados via Prisma
             const pedidoAtualizado = await prisma_1.prisma.pedido.update({
                 where: { id },
-                data: {
-                    ...(status && { status }),
-                    ...(codigoFinal && { codigoRastreio: codigoFinal }),
-                },
+                data: dataUpdate,
                 include: {
                     itens: {
                         include: {
@@ -193,6 +228,10 @@ exports.pedidoController = {
                         },
                     },
                     endereco: true,
+                    // --- ADICIONADO: Traz o histórico atualizado na resposta ---
+                    historicoStatus: {
+                        orderBy: { data: 'asc' }
+                    }
                 },
             });
             // 2. Formata a resposta para garantir compatibilidade com o front-end
@@ -206,6 +245,8 @@ exports.pedidoController = {
                 codigoRastreio: pedidoAtualizado.codigoRastreio || pedidoAtualizado.rastreioCodigo || '',
                 createdAt: pedidoAtualizado.createdAt,
                 userId: pedidoAtualizado.userId,
+                // --- ADICIONADO ---
+                historicoStatus: pedidoAtualizado.historicoStatus || [],
                 itens: pedidoAtualizado.itens.map((item) => ({
                     id: item.id,
                     nomeProduto: item.produto?.nome || item.nomeProduto || 'Produto',

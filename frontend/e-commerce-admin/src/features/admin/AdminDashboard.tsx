@@ -126,6 +126,12 @@ interface Pedido {
   endereco?: EnderecoEntrega;
   itens: ItemPedido[];
   isEditingRastreio?: boolean;
+  historicoStatus?: Array<{
+    id?: string;
+    status: string;
+    data: string;
+    observacao?: string;
+  }>;
 }
 
 interface ColorSizeConfig {
@@ -360,10 +366,23 @@ export const AdminDashboard: React.FC = () => {
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Erro ao atualizar status do pedido.');
 
-      setPedidosList(prev => prev.map(p => p.id === pedidoId ? { ...p, status: novoStatus } : p));
-      if (selectedOrderDetails && selectedOrderDetails.id === pedidoId) {
-        setSelectedOrderDetails(prev => prev ? { ...prev, status: novoStatus } : null);
+      // O segredo está aqui: Em vez de atualizar apenas a string de status, 
+      // nós substituímos o pedido inteiro no estado do React pelo pedido atualizado
+      // que o backend acabou de nos devolver (data.pedido), que já contém o historicoStatus preenchido!
+      if (data.pedido) {
+        setPedidosList(prev => prev.map(p => p.id === pedidoId ? data.pedido : p));
+        
+        if (selectedOrderDetails && selectedOrderDetails.id === pedidoId) {
+          setSelectedOrderDetails(data.pedido);
+        }
+      } else {
+        // Fallback de segurança
+        setPedidosList(prev => prev.map(p => p.id === pedidoId ? { ...p, status: novoStatus } : p));
+        if (selectedOrderDetails && selectedOrderDetails.id === pedidoId) {
+          setSelectedOrderDetails(prev => prev ? { ...prev, status: novoStatus } : null);
+        }
       }
+
       alert('Status do pedido atualizado com sucesso!');
     } catch (err: any) {
       alert(err.message || 'Erro ao conectar com o servidor.');
@@ -2161,6 +2180,32 @@ export const AdminDashboard: React.FC = () => {
                           </div>
                         );
                       })()}
+                    </div>
+
+                    {/* BLOCO 4: HISTÓRICO DE STATUS */}
+                    <div className={styles.orderInfoBlock}>
+                      <h4 className={styles.orderInfoTitle}>⏱️ Histórico de Status</h4>
+                      {selectedOrderDetails.historicoStatus && selectedOrderDetails.historicoStatus.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
+                          {selectedOrderDetails.historicoStatus.map((hist, idx) => (
+                            <div key={hist.id || idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.875rem', borderLeft: '2px solid #cbd5e1', paddingLeft: '12px' }}>
+                              <span style={{ color: '#64748b', minWidth: '130px' }}>
+                                {new Date(hist.data).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              {renderBadgeStatusPedido(hist.status as Pedido['status'])}
+                              {hist.observacao && (
+                                <span style={{ color: '#475569', fontStyle: 'italic' }}>
+                                  - {hist.observacao}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p style={{ fontSize: '0.875rem', color: '#64748b', margin: 0 }}>
+                          O histórico detalhado de status não está disponível para este pedido.
+                        </p>
+                      )}
                     </div>
 
                   </div>
