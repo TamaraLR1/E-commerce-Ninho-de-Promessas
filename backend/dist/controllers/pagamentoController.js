@@ -92,29 +92,55 @@ exports.pagamentoController = {
                     throw firstErr;
                 }
             }
-            // Mapeamento alterado para 'PAGO'
+            // Mapeamento do status do pedido com tipagem correta
             let statusPedido = 'PENDENTE';
             if (mpResponse.status === 'approved')
                 statusPedido = 'PAGO';
             else if (mpResponse.status === 'in_process')
-                statusPedido = 'EM_PROCESSAMENTO';
+                statusPedido = 'EM_SEPARACAO';
             else if (mpResponse.status === 'rejected')
                 statusPedido = 'RECUSADO';
-            // 3. Salva Endereço, Pedido e Itens em uma transação com o banco MySQL
+            // 3. Salva ou Atualiza Endereço (evitando duplicações), Cria Pedido e Itens em uma transação
             const resultado = await prisma_1.prisma.$transaction(async (tx) => {
-                const novoEndereco = await tx.endereco.create({
-                    data: {
-                        cep: String(endereco.cep).replace(/\D/g, ''),
-                        rua: endereco.rua,
-                        numero: String(endereco.numero),
-                        complemento: endereco.complemento || null,
-                        bairro: endereco.bairro,
-                        cidade: endereco.cidade,
-                        estado: endereco.estado,
-                        destinatario: endereco.destinatario || `${user.nome} ${user.sobrenome}`,
-                        userId: user.id,
-                    },
+                // Procura primeiro se já existe um endereço ligado a este userId
+                let enderecoExistente = await tx.endereco.findFirst({
+                    where: { userId: user.id },
+                    orderBy: { createdAt: 'desc' },
                 });
+                // Se não encontrar por userId (caso existam registos antigos órfãos), procura o último sem dono
+                if (!enderecoExistente) {
+                    enderecoExistente = await tx.endereco.findFirst({
+                        where: { userId: null },
+                        orderBy: { createdAt: 'desc' },
+                    });
+                }
+                let enderecoId;
+                const dadosTratados = {
+                    cep: String(endereco.cep).replace(/\D/g, ''),
+                    rua: endereco.rua,
+                    numero: String(endereco.numero),
+                    complemento: endereco.complemento || null,
+                    bairro: endereco.bairro,
+                    cidade: endereco.cidade,
+                    estado: endereco.estado,
+                    destinatario: endereco.destinatario || `${user.nome} ${user.sobrenome}`,
+                    userId: user.id, // Amarra firmemente ao utilizador logado
+                };
+                if (enderecoExistente) {
+                    // Atualiza o registo existente (mantém o mesmo UUID, sem duplicar linhas)
+                    const enderecoAtualizado = await tx.endereco.update({
+                        where: { id: enderecoExistente.id },
+                        data: dadosTratados,
+                    });
+                    enderecoId = enderecoAtualizado.id;
+                }
+                else {
+                    // Cria apenas se não existir absolutamente nenhum registo elegível
+                    const novoEndereco = await tx.endereco.create({
+                        data: dadosTratados,
+                    });
+                    enderecoId = novoEndereco.id;
+                }
                 const novoPedido = await tx.pedido.create({
                     data: {
                         status: statusPedido,
@@ -130,7 +156,7 @@ exports.pagamentoController = {
                         clienteCpf: user.cpf,
                         clienteFone: user.telefone,
                         userId: user.id,
-                        enderecoId: novoEndereco.id,
+                        enderecoId: enderecoId,
                         itens: {
                             create: items.map((item) => ({
                                 produtoId: String(item.produtoId),
@@ -204,7 +230,6 @@ exports.pagamentoController = {
                         where: { mpPaymentId },
                         include: { itens: true },
                     });
-                    // Atualizado para comparar e salvar como 'PAGO'
                     if (pedidoExistente && pedidoExistente.status !== 'PAGO') {
                         await prisma_1.prisma.$transaction(async (tx) => {
                             // 1. Atualiza status do pedido para PAGO

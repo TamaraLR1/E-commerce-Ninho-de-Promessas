@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { initMercadoPago, CardPayment } from '@mercadopago/sdk-react';
 import { useCart } from '../../components/CartContext/CartContext';
@@ -77,6 +77,41 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
   // Resultado PIX
   const [dadosPix, setDadosPix] = useState<{ qrCode: string; qrCodeBase64: string } | null>(null);
   const [copiado, setCopiado] = useState<boolean>(false);
+
+  // ==========================================
+  // BUSCA O ENDEREÇO SALVO DO USUÁRIO AO ABRIR
+  // ==========================================
+  useEffect(() => {
+    const carregarEnderecoSalvo = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/api/perfil`, { 
+          withCredentials: true 
+        });
+
+        // Acessa res.data.user.enderecos conforme o retorno do backend
+        const dadosUsuario = res.data?.user;
+        const enderecos = dadosUsuario?.enderecos;
+
+        if (enderecos && enderecos.length > 0) {
+          const endSalvo = enderecos[0]; // Pega o endereço mais recente
+
+          setEndereco({
+            cep: endSalvo.cep || '',
+            logradouro: endSalvo.rua || '',
+            numero: endSalvo.numero || '',
+            complemento: endSalvo.complemento || '',
+            bairro: endSalvo.bairro || '',
+            cidade: endSalvo.cidade || '',
+            uf: endSalvo.estado || '',
+          });
+        }
+      } catch (error) {
+        console.log('Nenhum endereço prévio encontrado ou usuário não logado.');
+      }
+    };
+
+    carregarEnderecoSalvo();
+  }, []);
 
   // Auto-completar ViaCEP
   const handleBuscarCep = async (cepInput: string) => {
@@ -479,7 +514,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
               </div>
             )}
 
-            {/* ETAPA 3: PAGAMENTO (RENDERIZAÇÃO GARANTIDA NO DOM) */}
+            {/* ETAPA 3: PAGAMENTO */}
             {step === 3 && (
               <div className={styles.stepForm}>
                 <h3>💳 Etapa 3: Pagamento</h3>
@@ -526,7 +561,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
                   </div>
                 )}
 
-                {/* ABA CARTÃO DE CRÉDITO: O container fica sempre montado visivelmente no DOM com display: block/none */}
+                {/* ABA CARTÃO DE CRÉDITO */}
                 <div style={{ display: metodoPagamento === 'credit_card' ? 'block' : 'none', minHeight: '350px' }}>
                   <CardPayment
                     initialization={{

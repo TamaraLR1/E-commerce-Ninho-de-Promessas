@@ -153,7 +153,11 @@ export class AuthController {
           telefone: true, 
           dataNascimento: true, 
           sexo: true, 
-          receberNovidades: true 
+          receberNovidades: true,
+          enderecos: {
+            orderBy: { createdAt: 'desc' },
+            take: 1 // Traz o endereço mais recente do usuário
+          }
         }
       });
 
@@ -163,6 +167,7 @@ export class AuthController {
 
       return res.json({ user });
     } catch (error) {
+      console.error('Erro ao buscar perfil:', error);
       return res.status(500).json({ error: 'Erro interno no servidor.' });
     }
   }
