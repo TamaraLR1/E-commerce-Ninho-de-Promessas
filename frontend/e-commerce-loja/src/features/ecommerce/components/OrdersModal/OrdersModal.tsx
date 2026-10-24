@@ -45,7 +45,7 @@ interface OrdersModalProps {
   isOpen: boolean;
   onClose: () => void;
   apiUrl: string;
-  userId?: number;
+  userId?: number | string; // Permitir number ou string resolve o erro  
   onRefazerPagamento?: (pedido: Pedido) => void;
 }
 

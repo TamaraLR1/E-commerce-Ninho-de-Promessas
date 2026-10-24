@@ -395,7 +395,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
               </div>
             </div>
 
-            <button type="button" className={styles.primaryButton} onClick={onClose} style={{ marginTop: '0.5rem' }}>
+            <button 
+              type="button" 
+              className={styles.primaryButton} 
+              onClick={() => {
+                if (typeof onClose === 'function') {
+                  onClose();
+                }
+              }} 
+              style={{ marginTop: '0.5rem' }}
+            >
               Entendi, já fiz o pagamento
             </button>
           </div>

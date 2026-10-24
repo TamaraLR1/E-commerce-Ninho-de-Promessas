@@ -1232,7 +1232,7 @@ export const Home: React.FC = () => {
         isOpen={isOrdersOpen}
         onClose={() => setIsOrdersOpen(false)}
         apiUrl={API_URL}
-        userId={user?.id}
+        userId={user?.id ? Number(user.id) : undefined}
         onRefazerPagamento={handleRefazerPagamento}
       />
 
@@ -1246,7 +1246,10 @@ export const Home: React.FC = () => {
 
       {isCheckoutOpen && (
         <CheckoutModal 
-          onClose={() => setIsCheckoutOpen(false)} 
+          onClose={() => {
+            setIsCheckoutOpen(false);
+            setIsOrdersOpen(true);
+          }} 
           total={subtotal} 
         />
       )}
