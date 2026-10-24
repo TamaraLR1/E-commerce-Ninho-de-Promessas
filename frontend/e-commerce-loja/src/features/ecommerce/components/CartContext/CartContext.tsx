@@ -11,12 +11,15 @@ export interface ItemCarrinho {
   tamanho: { id: string; nome: string } | null;
   cor: { id: string; nome: string; hex?: string } | null;
   imagemUrl: string | null;
+  selecionado: boolean;
 }
 
 interface CartContextData {
   itens: ItemCarrinho[];
   quantidadeTotal: number;
+  quantidadeTotalSelecionados: number;
   subtotal: number;
+  subtotalSelecionados: number;
   loading: boolean;
   carregarCarrinho: () => Promise<void>;
   adicionarAoCarrinho: (params: {
@@ -28,6 +31,8 @@ interface CartContextData {
   atualizarQuantidade: (itemId: string, novaQuantidade: number) => Promise<void>;
   removerDoCarrinho: (itemId: string) => Promise<void>;
   limparCarrinho: () => Promise<void>;
+  toggleItemSelecao: (itemId: string) => void;
+  toggleTodosItens: (selecionar: boolean) => void;
 }
 
 const CartContext = createContext<CartContextData>({} as CartContextData);
@@ -44,7 +49,12 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setLoading(true);
       const response = await api.get('/api/carrinho');
       
-      setItens(response.data.itens || []);
+      const itensDoBanco: ItemCarrinho[] = (response.data.itens || []).map((item: any) => ({
+        ...item,
+        selecionado: true // Marca como selecionado por padrão ao carregar
+      }));
+
+      setItens(itensDoBanco);
       setQuantidadeTotal(response.data.quantidadeTotal || 0);
       setSubtotal(response.data.subtotal || 0);
     } catch (error) {
@@ -60,6 +70,29 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     carregarCarrinho();
   }, [carregarCarrinho]);
+
+  // Alterna a seleção individual de um item
+  const toggleItemSelecao = (itemId: string) => {
+    setItens(prev =>
+      prev.map(item =>
+        item.id === itemId ? { ...item, selecionado: !item.selecionado } : item
+      )
+    );
+  };
+
+  // Seleciona ou desmarca todos os itens (CORRIGIDO AQUI)
+  const toggleTodosItens = (selecionar: boolean) => {
+    setItens(prev => prev.map(item => ({ ...item, selecionado: selecionar })));
+  };
+
+  // Cálculos baseados apenas nos itens marcados
+  const subtotalSelecionados = itens
+    .filter(item => item.selecionado)
+    .reduce((acc, item) => acc + item.totalItem, 0);
+
+  const quantidadeTotalSelecionados = itens
+    .filter(item => item.selecionado)
+    .reduce((acc, item) => acc + item.quantidade, 0);
 
   // 2. POST /api/carrinho/item - Adiciona produto
   const adicionarAoCarrinho = async (params: {
@@ -79,7 +112,6 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // 3. PUT /api/carrinho/item/:itemId - Atualiza quantidade (+ / -)
   const atualizarQuantidade = async (itemId: string, novaQuantidade: number) => {
-    // TRAVA: Se a nova quantidade for menor que 1, ignora a operação e não faz requisição
     if (novaQuantidade < 1) {
       return;
     }
@@ -120,13 +152,17 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       value={{
         itens,
         quantidadeTotal,
+        quantidadeTotalSelecionados,
         subtotal,
+        subtotalSelecionados,
         loading,
         carregarCarrinho,
         adicionarAoCarrinho,
         atualizarQuantidade,
         removerDoCarrinho,
         limparCarrinho,
+        toggleItemSelecao,
+        toggleTodosItens,
       }}
     >
       {children}

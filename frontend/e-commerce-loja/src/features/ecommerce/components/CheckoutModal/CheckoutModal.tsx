@@ -13,8 +13,9 @@ const MP_PUBLIC_KEY = import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY || 'APP_USR-b1
 
 initMercadoPago(MP_PUBLIC_KEY, { locale: 'pt-BR' });
 
-interface CheckoutModalProps {
+export interface CheckoutModalProps {
   onClose: () => void;
+  onPaymentSuccess?: () => void;
   total: number;
 }
 
@@ -44,12 +45,13 @@ const OPCAO_RETIRADA: OpcaoFrete = {
   custom_delivery_time: 0,
 };
 
-export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) => {
-  const { itens, limparCarrinho } = useCart();
+export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPaymentSuccess, total }) => {
+  const { itens, subtotalSelecionados, carregarCarrinho } = useCart();
+
+  const itensParaCompra = itens.filter(item => item.selecionado);
+  const valorTotalBase = subtotalSelecionados || total;
 
   const [step, setStep] = useState<number>(1);
-
-  // Armazena o ID ou E-mail do cliente logado para validação de cupons
   const [clienteLogadoId, setClienteLogadoId] = useState<string>('');
 
   // Etapa 1: Endereço
@@ -70,7 +72,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
   const [freteSelecionado, setFreteSelecionado] = useState<OpcaoFrete | null>(null);
   const [loadingFrete, setLoadingFrete] = useState<boolean>(false);
 
-  // Estados do Cupom de Desconto
+  // Cupons
   const [codigoCupomInput, setCodigoCupomInput] = useState<string>('');
   const [cupomAplicado, setCupomAplicado] = useState<{ codigo: string; tipo: 'PERCENTUAL' | 'FIXO'; valor: number } | null>(null);
   const [loadingCupom, setLoadingCupom] = useState<boolean>(false);
@@ -85,9 +87,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
   const [dadosPix, setDadosPix] = useState<{ qrCode: string; qrCodeBase64: string } | null>(null);
   const [copiado, setCopiado] = useState<boolean>(false);
 
-  // ==========================================
-  // BUSCA O PERFIL E ENDEREÇO SALVO DO USUÁRIO
-  // ==========================================
   useEffect(() => {
     const carregarPerfilUsuario = async () => {
       try {
@@ -122,7 +121,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
     carregarPerfilUsuario();
   }, []);
 
-  // Auto-completar ViaCEP
   const handleBuscarCep = async (cepInput: string) => {
     setEndereco(prev => ({ ...prev, cep: cepInput }));
     const cepLimpo = cepInput.replace(/\D/g, '');
@@ -155,7 +153,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
     }
   };
 
-  // Validar e Aplicar Cupom com tratamento robusto para evitar NaN
   const handleAplicarCupom = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!codigoCupomInput.trim()) return;
@@ -167,7 +164,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
       const response = await axios.post(`${API_URL}/api/cupons/validar`, {
         codigo: codigoCupomInput.trim().toUpperCase(),
         clienteId: clienteLogadoId,
-        subtotal: total
+        subtotal: valorTotalBase
       }, { withCredentials: true });
 
       const dadosCupom = response.data?.cupom || response.data;
@@ -196,21 +193,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
     setErroCupom('');
   };
 
-  // Cálculo seguro do desconto e totais estritamente arredondados a 2 casas decimais
   let valorDesconto = 0;
   if (cupomAplicado) {
     const valCupom = Number(cupomAplicado.valor) || 0;
     if (cupomAplicado.tipo === 'PERCENTUAL') {
-      valorDesconto = Number(((total * valCupom) / 100).toFixed(2));
+      valorDesconto = Number(((valorTotalBase * valCupom) / 100).toFixed(2));
     } else {
       valorDesconto = Number(valCupom.toFixed(2));
     }
   }
-  const subtotalComDesconto = Number(Math.max(0, total - valorDesconto).toFixed(2));
+  const subtotalComDesconto = Number(Math.max(0, valorTotalBase - valorDesconto).toFixed(2));
   const valorFreteNum = freteSelecionado ? Number(parseFloat(freteSelecionado.price || '0').toFixed(2)) : 0;
   const totalGeral = Number((subtotalComDesconto + valorFreteNum).toFixed(2));
 
-  // Etapa 1 -> Etapa 2
   const handleAvancarParaFrete = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -225,7 +220,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
       setLoadingFrete(true);
       setStep(2);
 
-      const produtosParaEnvio = itens.map((item) => ({
+      const produtosParaEnvio = itensParaCompra.map((item) => ({
         produtoId: (item as any).produtoId || (item as any).product?.id || (item as any).id,
         quantidade: item.quantidade,
       }));
@@ -260,7 +255,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
     }
   };
 
-  // Envia pedido para o Backend
   const enviarPedidoParaBackend = async (payloadCard: any = null) => {
     try {
       setLoadingPagamento(true);
@@ -273,7 +267,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
         installments: Number(payloadCard?.installments || 1),
         payment_method_id: metodoPagamento === 'pix' ? 'pix' : (payloadCard?.payment_method_id || 'master'),
         issuer_id: payloadCard?.issuer_id || null,
-        subtotal: total,
+        subtotal: valorTotalBase,
         descontoCupom: valorDesconto,
         cupomCodigo: cupomAplicado?.codigo || null,
         valorFrete: valorFreteNum,
@@ -290,7 +284,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
           cidade: endereco.cidade,
           estado: endereco.uf,
         },
-        items: itens.map((item) => ({
+        items: itensParaCompra.map((item) => ({
           produtoId: (item as any).produtoId || (item as any).product?.id || (item as any).id,
           tamanhoId: (item as any).tamanhoId || (item as any).tamanho?.id || null,
           corId: (item as any).corId || (item as any).cor?.id || null,
@@ -313,11 +307,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
             qrCode: qrCodePix,
             qrCodeBase64: qrCodeBase64Pix,
           });
-          if (limparCarrinho) limparCarrinho();
+          if (carregarCarrinho) await carregarCarrinho();
         } else {
-          if (limparCarrinho) limparCarrinho();
-          alert('🎉 Pagamento Aprovado com Sucesso!');
-          onClose();
+          if (carregarCarrinho) await carregarCarrinho();
+          alert('🎉 Pedido gerado com sucesso!');
+          if (onPaymentSuccess) {
+            onPaymentSuccess();
+          } else {
+            onClose();
+          }
         }
       }
     } catch (err: any) {
@@ -340,13 +338,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         
-        {/* Cabeçalho */}
         <div className={styles.header}>
           <h2>Finalizar Compra</h2>
           <button type="button" className={styles.closeBtn} onClick={onClose}>✕</button>
         </div>
 
-        {/* Indicador de Etapas */}
         {!dadosPix && (
           <div className={styles.stepper}>
             <div className={`${styles.stepItem} ${step >= 1 ? styles.stepActive : ''}`}>
@@ -363,7 +359,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
           </div>
         )}
 
-        {/* EXIBIÇÃO DO PIX GERADO PELO MERCADO PAGO */}
         {dadosPix ? (
           <div className={styles.pixResultContainer}>
             <div className={styles.pixHeader}>
@@ -399,13 +394,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
               type="button" 
               className={styles.primaryButton} 
               onClick={() => {
-                if (typeof onClose === 'function') {
+                if (onPaymentSuccess) {
+                  onPaymentSuccess();
+                } else {
                   onClose();
                 }
               }} 
               style={{ marginTop: '0.5rem' }}
             >
-              Entendi, já fiz o pagamento
+              Entendi, ir para Meus Pedidos
             </button>
           </div>
         ) : (
@@ -553,7 +550,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
                   </div>
                 )}
 
-                {/* CAMPO DE CUPOM DE DESCONTO */}
+                {/* CUPOM */}
                 <div style={{ marginTop: '0.8rem', background: '#f8fafc', padding: '0.8rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                   <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '6px' }}>
                     🎟️ Possui cupom de desconto?
@@ -596,8 +593,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
 
                 <div className={styles.summaryFooter}>
                   <div className={styles.summaryRow}>
-                    <span>Subtotal:</span>
-                    <span>R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    <span>Subtotal ({itensParaCompra.length} itens selecionados):</span>
+                    <span>R$ {valorTotalBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                   </div>
                   {cupomAplicado && (
                     <div className={styles.summaryRow} style={{ color: '#166534', fontWeight: 600 }}>
@@ -638,7 +635,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
               <div className={styles.stepForm}>
                 <h3>💳 Etapa 3: Pagamento</h3>
 
-                {/* Botões lado a lado das Opções de Pagamento */}
                 <div className={styles.paymentMethodsGrid}>
                   <button
                     type="button"
@@ -661,7 +657,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
                   </button>
                 </div>
 
-                {/* ABA PIX */}
                 {metodoPagamento === 'pix' && (
                   <div className={styles.pixContainer}>
                     <p className={styles.pixInfo}>
@@ -680,7 +675,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
                   </div>
                 )}
 
-                {/* ABA CARTÃO DE CRÉDITO */}
                 <div style={{ display: metodoPagamento === 'credit_card' ? 'block' : 'none', minHeight: '350px' }}>
                   <CardPayment
                     initialization={{
@@ -707,7 +701,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, total }) 
                 <div className={styles.summaryFooter}>
                   <div className={styles.summaryRow}>
                     <span>Subtotal:</span>
-                    <span>R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                    <span>R$ {valorTotalBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                   </div>
                   {cupomAplicado && (
                     <div className={styles.summaryRow} style={{ color: '#166534', fontWeight: 600 }}>

@@ -31,7 +31,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   user,
 }) => {
   const navigate = useNavigate();
-  const { itens, quantidadeTotal, subtotal, atualizarQuantidade, removerDoCarrinho } = useCart();
+  const { 
+    itens, 
+    quantidadeTotal, 
+    quantidadeTotalSelecionados, 
+    subtotalSelecionados, 
+    atualizarQuantidade, 
+    removerDoCarrinho,
+    toggleItemSelecao,
+    toggleTodosItens
+  } = useCart();
 
   // Estados locais para o Cálculo de Frete
   const [cep, setCep] = useState('');
@@ -42,7 +51,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   if (!isOpen) return null;
 
-  // Função para calcular o frete chamando a API do backend
+  const itensSelecionados = itens.filter(item => item.selecionado);
+  const todosSelecionados = itens.length > 0 && itens.every(i => i.selecionado);
+
+  // Função para calcular o frete enviando apenas itens selecionados
   const handleCalcularFrete = async () => {
     const cepLimpo = cep.replace(/\D/g, '');
     if (cepLimpo.length !== 8) {
@@ -50,8 +62,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       return;
     }
 
-    if (!itens || itens.length === 0) {
-      setErroFrete('Seu carrinho está vazio.');
+    if (itensSelecionados.length === 0) {
+      setErroFrete('Selecione pelo menos um item para calcular o frete.');
       return;
     }
 
@@ -60,10 +72,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       setErroFrete('');
       setFreteSelecionado(null);
 
-      // ✅ Mapeia os itens do carrinho para o formato esperado pelo backend usando API_URL e axios
       const response = await axios.post(`${API_URL}/api/frete/calcular`, {
         cepDestino: cepLimpo,
-        itens: itens.map((item) => ({
+        itens: itensSelecionados.map((item) => ({
           produtoId: (item as any).produtoId || (item as any).product?.id || (item as any).id,
           quantidade: item.quantidade,
         })),
@@ -87,7 +98,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   };
 
   const valorFreteNum = freteSelecionado ? parseFloat(freteSelecionado.price) : 0;
-  const valorTotalGeral = subtotal + valorFreteNum;
+  const valorTotalGeral = subtotalSelecionados + valorFreteNum;
 
   return (
     <div className={styles.overlay} onClick={onClose}>
@@ -101,7 +112,22 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           </button>
         </div>
 
-        {/* Lista de Produtos (Scrollável) */}
+        {/* Opção "Selecionar Todos" */}
+        {itens.length > 0 && (
+          <div className={styles.selectAllRow}>
+            <input
+              type="checkbox"
+              className={styles.checkboxInput}
+              checked={todosSelecionados}
+              onChange={(e) => toggleTodosItens(e.target.checked)}
+            />
+            <label onClick={() => toggleTodosItens(!todosSelecionados)} style={{ cursor: 'pointer' }}>
+              Selecionar todos os itens ({quantidadeTotalSelecionados} selecionados)
+            </label>
+          </div>
+        )}
+
+        {/* Lista de Produtos */}
         <div className={styles.itemList}>
           {itens.length === 0 ? (
             <div className={styles.emptyCart}>
@@ -110,7 +136,18 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             </div>
           ) : (
             itens.map((item) => (
-              <div key={item.id} className={styles.cartItem}>
+              <div 
+                key={item.id} 
+                className={`${styles.cartItem} ${!item.selecionado ? styles.cartItemUnselected : ''}`}
+              >
+                {/* Checkbox de Seleção */}
+                <input
+                  type="checkbox"
+                  className={styles.checkboxInput}
+                  checked={item.selecionado}
+                  onChange={() => toggleItemSelecao(item.id)}
+                />
+
                 <img
                   src={item.imagemUrl || '/placeholder.png'}
                   alt={item.nome}
@@ -125,7 +162,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     </span>
                   </div>
 
-                  {/* Variações de Tamanho e Cor */}
+                  {/* Variações */}
                   <div className={styles.variations}>
                     {item.tamanho && <span className={styles.badge}>Tam: {item.tamanho.nome}</span>}
                     {item.cor && (
@@ -144,7 +181,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       Remover
                     </button>
 
-                    {/* Controle de Quantidade */}
                     <div className={styles.qtyControls}>
                       <button
                         type="button"
@@ -166,8 +202,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             ))
           )}
 
-          {/* Seção de Cálculo de Frete */}
-          {itens.length > 0 && (
+          {/* Seção de Frete */}
+          {itensSelecionados.length > 0 && (
             <div className={styles.freteSection}>
               <label className={styles.freteLabel}>🚚 Calcular Frete e Prazo</label>
               <div className={styles.freteInputRow}>
@@ -191,7 +227,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
               {erroFrete && <p className={styles.erroText}>{erroFrete}</p>}
 
-              {/* Opções de Frete Retornadas da API */}
               {opcoesFrete.length > 0 && (
                 <div className={styles.freteOptionsList}>
                   {opcoesFrete.map((opcao, idx) => (
@@ -222,12 +257,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           )}
         </div>
 
-        {/* Rodapé Fixo do Carrinho */}
+        {/* Rodapé Fixo */}
         {itens.length > 0 && (
           <div className={styles.footer}>
             <div className={styles.subtotalRow}>
-              <span>Subtotal:</span>
-              <strong>R$ {subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+              <span>Subtotal ({quantidadeTotalSelecionados} itens):</span>
+              <strong>R$ {subtotalSelecionados.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
             </div>
 
             {freteSelecionado && (
@@ -245,6 +280,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             <button
               type="button"
               className={styles.checkoutButton}
+              disabled={itensSelecionados.length === 0}
               onClick={() => {
                 onClose();
                 if (!user) {
@@ -254,7 +290,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 }
               }}
             >
-              Confirmar e Finalizar Compra
+              {itensSelecionados.length === 0 
+                ? 'Selecione ao menos 1 item' 
+                : `Comprar (${quantidadeTotalSelecionados} ${quantidadeTotalSelecionados === 1 ? 'item' : 'itens'})`}
             </button>
 
             <button type="button" className={styles.continueButton} onClick={onClose}>

@@ -119,8 +119,7 @@ interface User {
 
 export const Home: React.FC = () => {
   const navigate = useNavigate();
-  const { quantidadeTotal, subtotal, adicionarAoCarrinho } = useCart();
-
+  const { quantidadeTotal, subtotalSelecionados, adicionarAoCarrinho } = useCart();
   const [user, setUser] = useState<User | null>(null);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -1246,11 +1245,12 @@ export const Home: React.FC = () => {
 
       {isCheckoutOpen && (
         <CheckoutModal 
-          onClose={() => {
+          onClose={() => setIsCheckoutOpen(false)} 
+          onPaymentSuccess={() => {
             setIsCheckoutOpen(false);
             setIsOrdersOpen(true);
-          }} 
-          total={subtotal} 
+          }}
+          total={subtotalSelecionados} 
         />
       )}
 
