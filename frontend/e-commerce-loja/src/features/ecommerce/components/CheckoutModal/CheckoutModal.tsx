@@ -114,7 +114,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
           }
         }
       } catch (error) {
-        console.log('Nenhum usuário logado ou perfil não encontrado.');
+        console.log('Nenhum utilizador logado ou perfil não encontrado.');
       }
     };
 
@@ -320,7 +320,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
       }
     } catch (err: any) {
       console.error('Erro ao processar pagamento:', err);
-      setErroPagamento(err.response?.data?.message || 'Erro ao processar o pagamento.');
+      const mensagemErro = err.response?.data?.message || 'Erro ao processar o pagamento.';
+      
+      setErroPagamento(mensagemErro);
+      alert(mensagemErro);
+
+      if (mensagemErro.toLowerCase().includes('esgotou') || mensagemErro.toLowerCase().includes('stock') || mensagemErro.toLowerCase().includes('estoque')) {
+        if (carregarCarrinho) await carregarCarrinho();
+        onClose();
+      }
     } finally {
       setLoadingPagamento(false);
     }
@@ -635,68 +643,92 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
               <div className={styles.stepForm}>
                 <h3>💳 Etapa 3: Pagamento</h3>
 
-                <div className={styles.paymentMethodsGrid}>
-                  <button
-                    type="button"
-                    className={`${styles.paymentMethodCard} ${metodoPagamento === 'pix' ? styles.paymentMethodSelected : ''}`}
-                    onClick={() => setMetodoPagamento('pix')}
-                  >
-                    <span className={styles.paymentIcon}>⚡</span>
-                    <strong>PIX</strong>
-                    <small>Aprovação instantânea</small>
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`${styles.paymentMethodCard} ${metodoPagamento === 'credit_card' ? styles.paymentMethodSelected : ''}`}
-                    onClick={() => setMetodoPagamento('credit_card')}
-                  >
-                    <span className={styles.paymentIcon}>💳</span>
-                    <strong>Cartão de Crédito</strong>
-                    <small>Parcele em até 6x</small>
-                  </button>
-                </div>
-
-                {metodoPagamento === 'pix' && (
-                  <div className={styles.pixContainer}>
-                    <p className={styles.pixInfo}>
-                      Ao clicar em <strong>Finalizar Pedido</strong>, o código PIX Copia e Cola e o QR Code serão gerados em tempo real pelo Mercado Pago.
+                {itensParaCompra.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '2rem 1rem', background: '#fef2f2', borderRadius: '8px', border: '1px solid #fecaca', margin: '1rem 0' }}>
+                    <p style={{ color: '#991b1b', fontWeight: 'bold', fontSize: '1rem', marginBottom: '0.5rem' }}>
+                      ⚠️ Ops! O item selecionado esgotou no stock.
                     </p>
-                    
+                    <p style={{ color: '#7f1d1d', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
+                      Já não é possível concluir a compra deste produto porque ele ficou sem stock. Por favor, feche esta janela, atualize o carrinho e tente novamente.
+                    </p>
                     <button
                       type="button"
                       className={styles.primaryButton}
-                      onClick={() => enviarPedidoParaBackend()}
-                      disabled={loadingPagamento}
-                      style={{ marginTop: '1rem' }}
+                      onClick={async () => {
+                        if (carregarCarrinho) await carregarCarrinho();
+                        onClose();
+                      }}
+                      style={{ backgroundColor: '#dc2626' }}
                     >
-                      {loadingPagamento ? 'Gerando PIX...' : 'Finalizar Pedido'}
+                      Fechar e Atualizar Carrinho
                     </button>
                   </div>
-                )}
+                ) : (
+                  <>
+                    <div className={styles.paymentMethodsGrid}>
+                      <button
+                        type="button"
+                        className={`${styles.paymentMethodCard} ${metodoPagamento === 'pix' ? styles.paymentMethodSelected : ''}`}
+                        onClick={() => setMetodoPagamento('pix')}
+                      >
+                        <span className={styles.paymentIcon}>⚡</span>
+                        <strong>PIX</strong>
+                        <small>Aprovação instantânea</small>
+                      </button>
 
-                <div style={{ display: metodoPagamento === 'credit_card' ? 'block' : 'none', minHeight: '350px' }}>
-                  <CardPayment
-                    initialization={{
-                      amount: totalGeral,
-                    }}
-                    customization={{
-                      paymentMethods: {
-                        maxInstallments: 6,
-                      },
-                      visual: {
-                        style: {
-                          theme: 'default',
-                        },
-                      },
-                    }}
-                    onSubmit={async (param) => {
-                      await enviarPedidoParaBackend(param);
-                    }}
-                    onError={(error) => console.error('Erro no Card Brick:', error)}
-                    onReady={() => console.log('Card Payment Brick pronto e montado!')}
-                  />
-                </div>
+                      <button
+                        type="button"
+                        className={`${styles.paymentMethodCard} ${metodoPagamento === 'credit_card' ? styles.paymentMethodSelected : ''}`}
+                        onClick={() => setMetodoPagamento('credit_card')}
+                      >
+                        <span className={styles.paymentIcon}>💳</span>
+                        <strong>Cartão de Crédito</strong>
+                        <small>Parcele em até 6x</small>
+                      </button>
+                    </div>
+
+                    {metodoPagamento === 'pix' && (
+                      <div className={styles.pixContainer}>
+                        <p className={styles.pixInfo}>
+                          Ao clicar em <strong>Finalizar Pedido</strong>, o código PIX Copia e Cola e o QR Code serão gerados em tempo real pelo Mercado Pago.
+                        </p>
+                        
+                        <button
+                          type="button"
+                          className={styles.primaryButton}
+                          onClick={() => enviarPedidoParaBackend()}
+                          disabled={loadingPagamento}
+                          style={{ marginTop: '1rem' }}
+                        >
+                          {loadingPagamento ? 'Gerando PIX...' : 'Finalizar Pedido'}
+                        </button>
+                      </div>
+                    )}
+
+                    <div style={{ display: metodoPagamento === 'credit_card' ? 'block' : 'none', minHeight: '350px' }}>
+                      <CardPayment
+                        initialization={{
+                          amount: totalGeral,
+                        }}
+                        customization={{
+                          paymentMethods: {
+                            maxInstallments: 6,
+                          },
+                          visual: {
+                            style: {
+                              theme: 'default',
+                            },
+                          },
+                        }}
+                        onSubmit={async (param) => {
+                          await enviarPedidoParaBackend(param);
+                        }}
+                        onError={(error) => console.error('Erro no Card Brick:', error)}
+                        onReady={() => console.log('Card Payment Brick pronto e montado!')}
+                      />
+                    </div>
+                  </>
+                )}
 
                 <div className={styles.summaryFooter}>
                   <div className={styles.summaryRow}>
@@ -712,7 +744,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                   <div className={styles.summaryRow}>
                     <span>Frete ({freteSelecionado?.name}):</span>
                     <span>
-                      {valorFreteNum === 0 ? 'Grátis' : `R$ ${valorFreteNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
+                      {valorFreteNum === 0 ? 'Grátis' : `R$ {valorFreteNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
                     </span>
                   </div>
                   <div className={styles.totalRow}>

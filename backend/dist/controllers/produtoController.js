@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.produtoController = void 0;
+exports.formatarProduto = formatarProduto;
 const prisma_1 = require("../lib/prisma");
 const socket_1 = require("../socket"); // Ajuste o caminho relativo para onde está o seu arquivo socket.ts
 // 🧮 Função auxiliar para calcular estoque ativo, percentual de desconto e vendas de forma padronizada

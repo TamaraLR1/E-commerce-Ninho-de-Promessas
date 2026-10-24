@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import api from '../../../../api'; 
+import { socket } from '../../../../services/socket';
 
 export interface ItemCarrinho {
   id: string;
@@ -12,6 +13,8 @@ export interface ItemCarrinho {
   cor: { id: string; nome: string; hex?: string } | null;
   imagemUrl: string | null;
   selecionado: boolean;
+  esgotado?: boolean;         
+  estoqueDisponivel?: number; 
 }
 
 interface CartContextData {
@@ -43,18 +46,37 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [subtotal, setSubtotal] = useState(0);
   const [loading, setLoading] = useState(false);
 
-  // 1. GET /api/carrinho - Busca o carrinho do banco
+  // 1. GET /api/carrinho - Busca o carrinho preservando o estado de esgotado anterior
   const carregarCarrinho = useCallback(async () => {
     try {
       setLoading(true);
       const response = await api.get('/api/carrinho');
       
-      const itensDoBanco: ItemCarrinho[] = (response.data.itens || []).map((item: any) => ({
-        ...item,
-        selecionado: true // Marca como selecionado por padrão ao carregar
-      }));
+      setItens(prevItens => {
+        const itensDoBanco: ItemCarrinho[] = (response.data.itens || []).map((item: any) => {
+          const itemAnterior = prevItens.find(
+            p => p.id === item.id || (p.produtoId === item.produtoId && p.tamanho?.id === item.tamanho?.id && p.cor?.id === item.cor?.id)
+          );
 
-      setItens(itensDoBanco);
+          const saldoEstoque = item.estoque !== undefined 
+            ? Number(item.estoque) 
+            : (item.variacaoEstoque !== undefined 
+                ? Number(item.variacaoEstoque) 
+                : (itemAnterior?.estoqueDisponivel !== undefined ? itemAnterior.estoqueDisponivel : 999));
+
+          const estaEsgotado = saldoEstoque <= 0 || (itemAnterior?.esgotado === true && saldoEstoque === 999);
+
+          return {
+            ...item,
+            estoqueDisponivel: saldoEstoque,
+            esgotado: estaEsgotado,
+            selecionado: estaEsgotado ? false : (itemAnterior ? itemAnterior.selecionado : true),
+            quantidade: Math.min(item.quantidade, Math.max(saldoEstoque > 0 ? saldoEstoque : 1, item.quantidade))
+          };
+        });
+        return itensDoBanco;
+      });
+
       setQuantidadeTotal(response.data.quantidadeTotal || 0);
       setSubtotal(response.data.subtotal || 0);
     } catch (error) {
@@ -71,30 +93,66 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     carregarCarrinho();
   }, [carregarCarrinho]);
 
-  // Alterna a seleção individual de um item
+  // 🔌 2. Sincronização em Tempo Real via WebSocket (Atualização de Stock)
+  useEffect(() => {
+    const handleProdutoAtualizado = (produtoAtualizado: any) => {
+      setItens(prevItens =>
+        prevItens.map(item => {
+          if (item.produtoId === produtoAtualizado.id) {
+            const estoqueEncontrado = produtoAtualizado.estoques?.find((est: any) => {
+              const mesmoTamanho = item.tamanho ? est.tamanho?.id === item.tamanho.id || est.tamanho?.nome === item.tamanho.nome : true;
+              const mesmaCor = item.cor ? est.cor?.id === item.cor.id || est.cor?.nome === item.cor.nome : true;
+              return mesmoTamanho && mesmaCor;
+            });
+
+            const saldoDisponivel = estoqueEncontrado ? Number(estoqueEncontrado.estoque) : 0;
+            const estaEsgotado = saldoDisponivel <= 0;
+
+            return {
+              ...item,
+              estoqueDisponivel: saldoDisponivel,
+              esgotado: estaEsgotado,
+              selecionado: estaEsgotado ? false : item.selecionado,
+              quantidade: Math.min(item.quantidade, Math.max(saldoDisponivel, 0))
+            };
+          }
+          return item;
+        })
+      );
+    };
+
+    socket.on('produtoAtualizado', handleProdutoAtualizado);
+    socket.on('produto-atualizado', handleProdutoAtualizado);
+
+    return () => {
+      socket.off('produtoAtualizado', handleProdutoAtualizado);
+      socket.off('produto-atualizado', handleProdutoAtualizado);
+    };
+  }, []);
+
   const toggleItemSelecao = (itemId: string) => {
     setItens(prev =>
       prev.map(item =>
-        item.id === itemId ? { ...item, selecionado: !item.selecionado } : item
+        item.id === itemId && !item.esgotado ? { ...item, selecionado: !item.selecionado } : item
       )
     );
   };
 
-  // Seleciona ou desmarca todos os itens (CORRIGIDO AQUI)
   const toggleTodosItens = (selecionar: boolean) => {
-    setItens(prev => prev.map(item => ({ ...item, selecionado: selecionar })));
+    setItens(prev => prev.map(item => ({ 
+      ...item, 
+      selecionado: item.esgotado ? false : selecionar 
+    })));
   };
 
-  // Cálculos baseados apenas nos itens marcados
   const subtotalSelecionados = itens
-    .filter(item => item.selecionado)
+    .filter(item => item.selecionado && !item.esgotado)
     .reduce((acc, item) => acc + item.totalItem, 0);
 
   const quantidadeTotalSelecionados = itens
-    .filter(item => item.selecionado)
+    .filter(item => item.selecionado && !item.esgotado)
     .reduce((acc, item) => acc + item.quantidade, 0);
 
-  // 2. POST /api/carrinho/item - Adiciona produto
   const adicionarAoCarrinho = async (params: {
     produtoId: string;
     tamanhoId?: string | null;
@@ -110,11 +168,8 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // 3. PUT /api/carrinho/item/:itemId - Atualiza quantidade (+ / -)
   const atualizarQuantidade = async (itemId: string, novaQuantidade: number) => {
-    if (novaQuantidade < 1) {
-      return;
-    }
+    if (novaQuantidade < 1) return;
 
     try {
       await api.put(`/api/carrinho/item/${itemId}`, { quantidade: novaQuantidade });
@@ -125,7 +180,6 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // 4. DELETE /api/carrinho/item/:itemId - Remove um item
   const removerDoCarrinho = async (itemId: string) => {
     try {
       await api.delete(`/api/carrinho/item/${itemId}`);
@@ -136,7 +190,6 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // 5. DELETE /api/carrinho/limpar - Limpa o carrinho todo
   const limparCarrinho = async () => {
     try {
       await api.delete('/api/carrinho/limpar');

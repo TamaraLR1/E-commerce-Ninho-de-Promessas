@@ -1,9 +1,180 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { getIO } from '../socket';
+import { formatarProduto } from './produtoController';
 
 export const pedidoController = {
-  // 1. Método para o Painel Admin (Lista TODOS os pedidos da loja com as dimensões)
+
+  // 🛒 0. Método para Criar Pedido com Validação e Baixa de Stock em Tempo Real
+  async criarPedido(req: Request, res: Response) {
+    try {
+      const rawUserId = (req as any).user?.id || (req as any).userId || (req as any).user?.userId;
+      const userId = rawUserId ? Number(rawUserId) : null;
+      const { itens, enderecoId, valorTotal, valorFrete, servicoFrete, metodoPagamento } = req.body;
+
+      if (!itens || !Array.isArray(itens) || itens.length === 0) {
+        return res.status(400).json({ message: 'O carrinho está vazio.' });
+      }
+
+      // 🔍 PASSO 1: Validar se todos os itens possuem stock disponível no banco de dados
+      const produtosParaAtualizarIds = new Set<string>();
+
+      for (const item of itens) {
+        const produtoId = String(item.produtoId || item.id);
+        const corNome = item.corNome || 'Padrão';
+        const tamanhoNome = item.tamanho || item.tamanhoNome || 'Único';
+        const qtdSolicitada = Number(item.quantidade || 1);
+
+        const produtoEstoque = await prisma.produtoEstoque.findFirst({
+          where: {
+            produtoId,
+            cor: corNome !== 'Padrão' ? { nome: corNome } : undefined,
+            tamanho: { nome: tamanhoNome },
+            ativo: true,
+          },
+          include: {
+            produto: { select: { nome: true } },
+          },
+        });
+
+        if (!produtoEstoque) {
+          return res.status(400).json({
+            message: `A variação (Cor: ${corNome}, Tam: ${tamanhoNome}) não foi encontrada ou está indisponível.`,
+          });
+        }
+
+        if (produtoEstoque.estoque < qtdSolicitada) {
+          const nomeProd = produtoEstoque.produto?.nome || 'Produto';
+          return res.status(400).json({
+            message: `Ops! O item "${nomeProd}" (${corNome}/${tamanhoNome}) esgotou no stock e não é mais possível concluir a compra. Por favor, volte ao carrinho para atualizá-lo.`,
+            produtoId,
+            estoqueDisponivel: produtoEstoque.estoque,
+          });
+        }
+
+        produtosParaAtualizarIds.add(produtoId);
+      }
+
+      // 🛒 PASSO 2: Criar o Pedido e Atualizar o Stock (Transação Atômica)
+      const novoPedido = await prisma.$transaction(async (tx) => {
+        const pedidoCriado = await tx.pedido.create({
+          data: {
+            valorTotal: Number(valorTotal),
+            valorFrete: Number(valorFrete || 0),
+            servicoFrete: servicoFrete || 'Entrega Padrão',
+            metodoPagamento: metodoPagamento || 'PIX',
+            status: 'PENDENTE',
+            
+            ...(userId && {
+              user: { connect: { id: Number(userId) } },
+            }),
+
+            ...(enderecoId && {
+              endereco: { connect: { id: String(enderecoId) } },
+            }),
+
+            historicoStatus: {
+              create: {
+                status: 'PENDENTE',
+                observacao: 'Pedido realizado aguardando confirmação de pagamento.',
+              },
+            },
+            itens: {
+              create: itens.map((i: any) => ({
+                nomeProduto: String(i.nomeProduto || i.nome || 'Produto'),
+                quantidade: Number(i.quantidade),
+                precoUnitario: Number(i.precoUnitario || i.preco),
+                produto: {
+                  connect: { id: String(i.produtoId || i.id) },
+                },
+                ...(i.tamanhoId && {
+                  tamanho: { connect: { id: String(i.tamanhoId) } },
+                }),
+                ...(i.corId && {
+                  cor: { connect: { id: String(i.corId) } },
+                }),
+              })),
+            },
+          },
+          include: {
+            itens: true,
+            endereco: true,
+          },
+        });
+
+        // B. Decrementa o saldo físico do stock para cada variação
+        for (const item of itens) {
+          const produtoId = String(item.produtoId || item.id);
+          const corNome = item.corNome || 'Padrão';
+          const tamanhoNome = item.tamanho || item.tamanhoNome || 'Único';
+          const qtdSolicitada = Number(item.quantidade || 1);
+
+          const estVar = await tx.produtoEstoque.findFirst({
+            where: {
+              produtoId,
+              cor: corNome !== 'Padrão' ? { nome: corNome } : undefined,
+              tamanho: { nome: tamanhoNome },
+            },
+          });
+
+          if (estVar) {
+            await tx.produtoEstoque.update({
+              where: { id: estVar.id },
+              data: {
+                estoque: {
+                  decrement: qtdSolicitada,
+                },
+              },
+            });
+          }
+        }
+
+        return pedidoCriado;
+      });
+
+      // 📡 PASSO 3: Emitir Atualização Socket em Tempo Real para a Vitrine/Carrinho
+      const io = getIO();
+      if (io) {
+        for (const prodId of produtosParaAtualizarIds) {
+          const produtoAtualizado = await prisma.produto.findUnique({
+            where: { id: prodId },
+            include: {
+              categoria: true,
+              imagens: { include: { cor: true }, orderBy: { ordem: 'asc' } },
+              estoques: { include: { tamanho: true, cor: true } },
+              criadoPor: true,
+              atualizadoPor: true,
+              itemPedidos: {
+                where: { pedido: { status: 'PAGO' } },
+                select: { quantidade: true },
+              },
+            },
+          });
+
+          if (produtoAtualizado) {
+            const produtoFormatado = formatarProduto(produtoAtualizado);
+            io.emit('produtoAtualizado', produtoFormatado);
+            io.emit('produto-atualizado', produtoFormatado);
+          }
+        }
+
+        if (userId) {
+          io.to(`usuario_${userId}`).emit('novoPedidoCriado', novoPedido);
+        }
+        io.emit('novoPedidoCriado', novoPedido);
+      }
+
+      return res.status(201).json({
+        message: 'Pedido gerado com sucesso!',
+        pedido: novoPedido,
+      });
+    } catch (error) {
+      console.error('Erro ao criar pedido:', error);
+      return res.status(500).json({ message: 'Erro interno ao processar a criação do pedido.' });
+    }
+  },
+
+  // 1. Método para o Painel Admin (Lista TODOS os pedidos da loja)
   async listarTodosPedidos(req: Request, res: Response) {
     try {
       const pedidos = await prisma.pedido.findMany({
@@ -14,7 +185,7 @@ export const pedidoController = {
           },
           endereco: true,
           historicoStatus: {
-            orderBy: { data: 'asc' }
+            orderBy: { data: 'asc' },
           },
           itens: {
             include: {
@@ -28,7 +199,6 @@ export const pedidoController = {
         },
       });
 
-      // Mapeamento dos campos do banco MySQL para a interface do AdminDashboard
       const pedidosFormatados = pedidos.map((p: any) => ({
         id: p.id,
         codigoPedido: p.numeroPedido ? String(p.numeroPedido) : (p.codigoPedido || p.id.slice(0, 8)),
@@ -70,8 +240,8 @@ export const pedidoController = {
         itens: (p.itens || []).map((i: any) => ({
           id: i.id,
           produtoId: i.produtoId || i.produto?.id || null,
-          tamanhoId: i.tamanhoId || i.tamanho?.id || null, // CORRIGIDO: Retorna o ID do tamanho
-          corId: i.corId || i.cor?.id || null,             // CORRIGIDO: Retorna o ID da cor
+          tamanhoId: i.tamanhoId || i.tamanho?.id || null,
+          corId: i.corId || i.cor?.id || null,
           nomeProduto: i.produto?.nome || i.nomeProduto || 'Produto sem nome',
           imagemUrl: i.produto?.imagens?.[0]?.url || i.imagemUrl || '',
           corNome: i.cor?.nome || i.corNome || '',
@@ -94,13 +264,13 @@ export const pedidoController = {
       const rawUserId = (req as any).user?.id || (req as any).userId || (req as any).user?.userId;
 
       if (!rawUserId) {
-        return res.status(401).json({ message: 'Usuário não autenticado.' });
+        return res.status(401).json({ message: 'Utilizador não autenticado.' });
       }
 
       const userId = Number(rawUserId);
 
       if (isNaN(userId)) {
-        return res.status(400).json({ message: 'ID de usuário inválido.' });
+        return res.status(400).json({ message: 'ID de utilizador inválido.' });
       }
 
       const pedidos = await prisma.pedido.findMany({
@@ -117,8 +287,8 @@ export const pedidoController = {
           },
           endereco: true,
           historicoStatus: {
-            orderBy: { data: 'asc' }
-          }
+            orderBy: { data: 'asc' },
+          },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -127,7 +297,6 @@ export const pedidoController = {
         return res.status(200).json([]);
       }
 
-      // Formatação limpa enviando os IDs das variações para o modal do cliente
       const pedidosFormatados = pedidos.map((p) => ({
         id: p.id,
         codigoPedido: (p as any).codigoPedido || (p as any).numeroPedido ? String((p as any).numeroPedido) : p.id.slice(0, 8),
@@ -145,8 +314,8 @@ export const pedidoController = {
           return {
             id: item.id,
             produtoId: item.produtoId || item.produto?.id || null,
-            tamanhoId: item.tamanhoId || item.tamanho?.id || null, // CORRIGIDO: Retorna o ID do tamanho
-            corId: item.corId || item.cor?.id || null,             // CORRIGIDO: Retorna o ID da cor
+            tamanhoId: item.tamanhoId || item.tamanho?.id || null,
+            corId: item.corId || item.cor?.id || null,
             nomeProduto: item.produto?.nome || item.nomeProduto || 'Produto',
             corNome: item.cor?.nome || item.corNome || '',
             tamanho: item.tamanho?.nome || item.tamanho || item.tamanhoNome || '',
@@ -159,7 +328,7 @@ export const pedidoController = {
 
       return res.status(200).json(pedidosFormatados);
     } catch (error) {
-      console.error('Erro ao buscar pedidos do usuário:', error);
+      console.error('Erro ao buscar pedidos do utilizador:', error);
       return res.status(500).json({ message: 'Erro ao buscar histórico de pedidos.' });
     }
   },
@@ -184,8 +353,8 @@ export const pedidoController = {
           endereco: true,
           user: true,
           historicoStatus: {
-            orderBy: { data: 'asc' }
-          }
+            orderBy: { data: 'asc' },
+          },
         },
       });
 
@@ -209,7 +378,7 @@ export const pedidoController = {
       const codigoFinal = codigoRastreio || rastreioCodigo;
 
       const pedidoExistente = await prisma.pedido.findUnique({
-        where: { id }
+        where: { id },
       });
 
       if (!pedidoExistente) {
@@ -225,8 +394,8 @@ export const pedidoController = {
         dataUpdate.historicoStatus = {
           create: {
             status: status,
-            observacao: observacao || `Status atualizado para ${status}`
-          }
+            observacao: observacao || `Status atualizado para ${status}`,
+          },
         };
       }
 
@@ -245,8 +414,8 @@ export const pedidoController = {
           },
           endereco: true,
           historicoStatus: {
-            orderBy: { data: 'asc' }
-          }
+            orderBy: { data: 'asc' },
+          },
         },
       });
 
@@ -266,8 +435,8 @@ export const pedidoController = {
         itens: pedidoAtualizado.itens.map((item: any) => ({
           id: item.id,
           produtoId: item.produtoId || item.produto?.id || null,
-          tamanhoId: item.tamanhoId || item.tamanho?.id || null, // CORRIGIDO: Retorna o ID do tamanho
-          corId: item.corId || item.cor?.id || null,             // CORRIGIDO: Retorna o ID da cor
+          tamanhoId: item.tamanhoId || item.tamanho?.id || null,
+          corId: item.corId || item.cor?.id || null,
           nomeProduto: item.produto?.nome || item.nomeProduto || 'Produto',
           corNome: item.cor?.nome || item.corNome || '',
           tamanho: item.tamanho?.nome || item.tamanho || '',

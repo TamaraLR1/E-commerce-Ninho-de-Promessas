@@ -5,7 +5,7 @@ import path from 'path';
 import { getIO } from '../socket'; // Ajuste o caminho relativo para onde está o seu arquivo socket.ts
 
 // 🧮 Função auxiliar para calcular estoque ativo, percentual de desconto e vendas de forma padronizada
-function formatarProduto(produto: any) {
+export function formatarProduto(produto: any) {
   if (!produto) return null;
 
   const estoques = produto.estoques || [];

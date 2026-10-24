@@ -42,7 +42,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     toggleTodosItens
   } = useCart();
 
-  // Estados locais para o Cálculo de Frete
   const [cep, setCep] = useState('');
   const [opcoesFrete, setOpcoesFrete] = useState<OpcaoFrete[]>([]);
   const [loadingFrete, setLoadingFrete] = useState(false);
@@ -51,10 +50,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   if (!isOpen) return null;
 
-  const itensSelecionados = itens.filter(item => item.selecionado);
-  const todosSelecionados = itens.length > 0 && itens.every(i => i.selecionado);
+  const itensDisponiveis = itens.filter(item => !item.esgotado);
+  const itensSelecionados = itens.filter(item => item.selecionado && !item.esgotado);
+  const todosSelecionados = itensDisponiveis.length > 0 && itensDisponiveis.every(i => i.selecionado);
 
-  // Função para calcular o frete enviando apenas itens selecionados
   const handleCalcularFrete = async () => {
     const cepLimpo = cep.replace(/\D/g, '');
     if (cepLimpo.length !== 8) {
@@ -63,7 +62,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     }
 
     if (itensSelecionados.length === 0) {
-      setErroFrete('Selecione pelo menos um item para calcular o frete.');
+      setErroFrete('Selecione pelo menos um item disponível para calcular o frete.');
       return;
     }
 
@@ -113,7 +112,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         </div>
 
         {/* Opção "Selecionar Todos" */}
-        {itens.length > 0 && (
+        {itensDisponiveis.length > 0 && (
           <div className={styles.selectAllRow}>
             <input
               type="checkbox"
@@ -122,7 +121,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               onChange={(e) => toggleTodosItens(e.target.checked)}
             />
             <label onClick={() => toggleTodosItens(!todosSelecionados)} style={{ cursor: 'pointer' }}>
-              Selecionar todos os itens ({quantidadeTotalSelecionados} selecionados)
+              Selecionar todos os itens disponíveis ({quantidadeTotalSelecionados} selecionados)
             </label>
           </div>
         )}
@@ -139,12 +138,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               <div 
                 key={item.id} 
                 className={`${styles.cartItem} ${!item.selecionado ? styles.cartItemUnselected : ''}`}
+                style={item.esgotado ? { opacity: 0.6, backgroundColor: '#f9f9f9' } : {}}
               >
-                {/* Checkbox de Seleção */}
+                {/* Checkbox de Seleção - BLOQUEADO SE ESGOTADO */}
                 <input
                   type="checkbox"
                   className={styles.checkboxInput}
-                  checked={item.selecionado}
+                  checked={item.selecionado && !item.esgotado}
+                  disabled={item.esgotado}
                   onChange={() => toggleItemSelecao(item.id)}
                 />
 
@@ -172,6 +173,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     )}
                   </div>
 
+                  {/* Aviso Visual de Esgotado */}
+                  {item.esgotado && (
+                    <div style={{ color: '#d9534f', fontWeight: 'bold', fontSize: '0.85rem', marginTop: '4px' }}>
+                      ⚠️ Esgotado
+                    </div>
+                  )}
+
                   <div className={styles.itemActionsRow}>
                     <button
                       type="button"
@@ -181,21 +189,23 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       Remover
                     </button>
 
-                    <div className={styles.qtyControls}>
-                      <button
-                        type="button"
-                        onClick={() => atualizarQuantidade(item.id, item.quantidade - 1)}
-                      >
-                        -
-                      </button>
-                      <span>{item.quantidade}</span>
-                      <button
-                        type="button"
-                        onClick={() => atualizarQuantidade(item.id, item.quantidade + 1)}
-                      >
-                        +
-                      </button>
-                    </div>
+                    {!item.esgotado && (
+                      <div className={styles.qtyControls}>
+                        <button
+                          type="button"
+                          onClick={() => atualizarQuantidade(item.id, item.quantidade - 1)}
+                        >
+                          -
+                        </button>
+                        <span>{item.quantidade}</span>
+                        <button
+                          type="button"
+                          onClick={() => atualizarQuantidade(item.id, item.quantidade + 1)}
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -291,7 +301,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               }}
             >
               {itensSelecionados.length === 0 
-                ? 'Selecione ao menos 1 item' 
+                ? 'Selecione ao menos 1 item disponível' 
                 : `Comprar (${quantidadeTotalSelecionados} ${quantidadeTotalSelecionados === 1 ? 'item' : 'itens'})`}
             </button>
 

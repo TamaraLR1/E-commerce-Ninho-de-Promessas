@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.estoqueController = void 0;
 const prisma_1 = require("../lib/prisma");
+const socket_1 = require("../socket");
+const produtoController_1 = require("./produtoController"); // Ou mova 'formatarProduto' para um arquivo utils/produto.ts
 exports.estoqueController = {
     async listarMovimentacoes(req, res) {
         try {
@@ -35,8 +37,7 @@ exports.estoqueController = {
     },
     async criarMovimentacao(req, res) {
         try {
-            // 1. Extraia o motivoId e o adminId logado contemplando todas as variações do token
-            const { produtoId, corNome, tamanho, tipo, quantidade, motivoId, motivo } = req.body;
+            const { produtoId, corNome, tamanho, tipo, quantidade, motivoId } = req.body;
             const rawAdminId = req.admin?.id || req.admin?.adminId || req.user?.id || req.user?.adminId;
             const adminId = rawAdminId ? Number(rawAdminId) : null;
             if (!produtoId || !tipo || !quantidade) {
@@ -55,7 +56,7 @@ exports.estoqueController = {
                     tamanho: { nome: tamanhoFinal }
                 },
                 include: {
-                    produto: { select: { nome: true } } // 🔍 Incluído para pegar o nome do produto no log
+                    produto: { select: { nome: true } }
                 }
             });
             if (!produtoEstoque) {
@@ -66,14 +67,12 @@ exports.estoqueController = {
                     message: 'Não é permitido realizar movimentações para variações inativas.'
                 });
             }
-            // Validação opcional para evitar estoque negativo em caso de saída
             if (tipo === 'SAIDA' && produtoEstoque.estoque < qtdNumerica) {
                 return res.status(400).json({ message: 'Estoque insuficiente para esta saída.' });
             }
             const nomeProdutoLog = produtoEstoque.produto?.nome || 'Produto';
-            // 2. Executa a criação da movimentação, atualização do estoque físico e o log em transação atômica
+            // 1. Executa a movimentação, atualização de estoque e log
             const [novaMovimentacao] = await prisma_1.prisma.$transaction([
-                // Cria o registro no histórico salvando o responsável
                 prisma_1.prisma.movimentacaoEstoque.create({
                     data: {
                         produtoId,
@@ -89,7 +88,6 @@ exports.estoqueController = {
                         motivo: true,
                     }
                 }),
-                // Atualiza o saldo real na tabela de estoque do produto
                 prisma_1.prisma.produtoEstoque.update({
                     where: { id: produtoEstoque.id },
                     data: {
@@ -98,7 +96,6 @@ exports.estoqueController = {
                         }
                     }
                 }),
-                // 📝 Registra a ação na tabela de LogAtividade de forma síncrona na transação
                 prisma_1.prisma.logAtividade.create({
                     data: {
                         adminId: Number(adminId),
@@ -106,6 +103,30 @@ exports.estoqueController = {
                     }
                 })
             ]);
+            // 2. BUSCA O PRODUTO COMPLETO ATUALIZADO (com estoques, tamanhos, cores e vendas)
+            const produtoAtualizado = await prisma_1.prisma.produto.findUnique({
+                where: { id: produtoId },
+                include: {
+                    categoria: true,
+                    imagens: { include: { cor: true }, orderBy: { ordem: 'asc' } },
+                    estoques: { include: { tamanho: true, cor: true } },
+                    criadoPor: true,
+                    atualizadoPor: true,
+                    itemPedidos: {
+                        where: { pedido: { status: 'PAGO' } },
+                        select: { quantidade: true }
+                    }
+                }
+            });
+            // 3. EMITE O EVENTO SOCKET COM O PRODUTO FORMATADO
+            if (produtoAtualizado) {
+                const produtoFormatado = (0, produtoController_1.formatarProduto)(produtoAtualizado);
+                const io = (0, socket_1.getIO)() || req.io;
+                if (io) {
+                    io.emit('produtoAtualizado', produtoFormatado);
+                    io.emit('produto-atualizado', produtoFormatado);
+                }
+            }
             return res.status(201).json(novaMovimentacao);
         }
         catch (error) {
