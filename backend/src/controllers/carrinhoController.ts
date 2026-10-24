@@ -65,7 +65,7 @@ export const carrinhoController = {
         });
       }
 
-      // 4. Formatando a resposta com cálculo do subtotal e imagem principal
+      // 4. Formatando a resposta com cálculo do subtotal e imagem principal (ordem: 0)
       let subtotal = 0;
 
       const itensFormatados = (carrinho.itens || []).map((item) => {
@@ -76,9 +76,14 @@ export const carrinhoController = {
         const totalItem = precoUnitario * item.quantidade;
         subtotal += totalItem;
 
-        // Tenta pegar a imagem vinculada à cor do item ou a primeira do produto
+        // 1. Prioridade absoluta: imagem definida como capa principal (ordem === 0)
+        const imagemCapa = item.produto.imagens.find((img: any) => img.ordem === 0);
+
+        // 2. Fallbacks: imagem pela ordem mais baixa ou vinculada à cor
+        const imagemOrdenada = [...(item.produto.imagens || [])].sort((a: any, b: any) => (a.ordem ?? 0) - (b.ordem ?? 0))[0];
         const imagemVinculada = item.produto.imagens.find((img) => img.corId === item.corId);
-        const imagemUrl = imagemVinculada ? imagemVinculada.url : item.produto.imagens[0]?.url || null;
+
+        const imagemUrl = imagemCapa?.url || imagemOrdenada?.url || imagemVinculada?.url || null;
 
         return {
           id: item.id,
@@ -119,6 +124,13 @@ export const carrinhoController = {
         return res.status(400).json({ message: 'ID do produto é obrigatório.' });
       }
 
+      // REGRA DE NEGÓCIO: Bloqueia a adição se tamanhoId ou corId não forem fornecidos
+      if (!tamanhoId || !corId) {
+        return res.status(400).json({ 
+          message: 'Por favor, selecione a cor e o tamanho do produto antes de adicionar ao carrinho.' 
+        });
+      }
+
       // Garante que o carrinho exista
       let carrinho = await prisma.carrinho.findUnique({
         where: { userId: Number(userId) },
@@ -135,8 +147,8 @@ export const carrinhoController = {
         where: {
           carrinhoId: carrinho.id,
           produtoId,
-          tamanhoId: tamanhoId || null,
-          corId: corId || null,
+          tamanhoId: String(tamanhoId),
+          corId: String(corId),
         },
       });
 
@@ -152,8 +164,8 @@ export const carrinhoController = {
           data: {
             carrinhoId: carrinho.id,
             produtoId,
-            tamanhoId: tamanhoId || null,
-            corId: corId || null,
+            tamanhoId: String(tamanhoId),
+            corId: String(corId),
             quantidade: Number(quantidade),
           },
         });
@@ -167,10 +179,9 @@ export const carrinhoController = {
   },
 
   // PUT /api/carrinho/item/:itemId - Atualiza a quantidade do item
-// PUT /api/carrinho/item/:itemId - Atualiza a quantidade do item
   async atualizarQuantidade(req: Request, res: Response) {
     try {
-      const userId = req.userId || (req as any).userId;
+      const userId = (req as any).userId || (req as any).user?.id;
       const itemId = Array.isArray(req.params.itemId) ? req.params.itemId[0] : req.params.itemId;
       const { quantidade } = req.body;
 
@@ -203,7 +214,7 @@ export const carrinhoController = {
   // DELETE /api/carrinho/item/:itemId - Remove um item do carrinho
   async removerItem(req: Request, res: Response) {
     try {
-      const userId = req.userId || (req as any).userId;
+      const userId = (req as any).userId || (req as any).user?.id;
       const itemId = Array.isArray(req.params.itemId) ? req.params.itemId[0] : req.params.itemId;
 
       if (!userId) {
@@ -220,6 +231,7 @@ export const carrinhoController = {
       return res.status(500).json({ message: 'Erro interno ao remover item.' });
     }
   },
+
   // DELETE /api/carrinho/limpar - Limpa todos os itens do carrinho
   async limparCarrinho(req: Request, res: Response) {
     try {

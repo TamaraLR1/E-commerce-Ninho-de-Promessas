@@ -69,6 +69,7 @@ export const cupomController = {
     }
   },
 
+  // GET /api/cupons - Lista todos os cupons
   async listar(req: Request, res: Response) {
     try {
       const cupons = await prisma.cupom.findMany({
@@ -84,6 +85,7 @@ export const cupomController = {
     }
   },
 
+  // PATCH /api/cupons/:id/status - Alterna status ativo/inativo do cupom
   async alternarStatus(req: Request, res: Response) {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : String(req.params.id);
@@ -122,6 +124,7 @@ export const cupomController = {
     }
   },
 
+  // POST /api/cupons/validar - Valida cupom para aplicação no carrinho/checkout
   async validarCupom(req: Request, res: Response) {
     try {
       const { codigo, clienteId } = req.body;
@@ -149,21 +152,29 @@ export const cupomController = {
         return res.status(400).json({ message: 'Este cupom de campanha já expirou.' });
       }
 
-      // Validação Rigorosa de Primeira Compra baseada no userId
+      // Validação de Primeira Compra:
+      // Considera apenas pedidos com compras efetivamente concluídas ou em processamento (PAGO, EM_SEPARACAO, ENVIADO, ENTREGUE).
+      // Desconsidera CANCELADO, RECUSADO e PENDENTE para liberar o cupom em caso de pagamento recusado/não finalizado.
       if (cupom.isPrimeiraCompra && clienteId) {
         const userIdNum = Number(clienteId);
 
-        const pedidosAnteriores = await prisma.pedido.count({
-          where: {
-            userId: isNaN(userIdNum) ? undefined : userIdNum,
-            NOT: { status: 'CANCELADO' }
-          }
-        });
-
-        if (pedidosAnteriores > 0) {
-          return res.status(400).json({ 
-            message: 'Cupom inválido: este cupom é exclusivo para a primeira compra e sua conta já possui pedidos.' 
+        if (!isNaN(userIdNum)) {
+          const pedidosValidosAnteriores = await prisma.pedido.count({
+            where: {
+              userId: userIdNum,
+              NOT: {
+                status: {
+                  in: ['CANCELADO', 'RECUSADO', 'PENDENTE']
+                }
+              }
+            }
           });
+
+          if (pedidosValidosAnteriores > 0) {
+            return res.status(400).json({ 
+              message: 'Cupom inválido: este cupom é exclusivo para a primeira compra e sua conta já possui compras concluídas.' 
+            });
+          }
         }
       }
 

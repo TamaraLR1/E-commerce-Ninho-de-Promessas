@@ -13,7 +13,6 @@ export const pedidoController = {
             select: { nome: true, email: true, telefone: true, cpf: true },
           },
           endereco: true,
-          // --- ADICIONADO: Traz o histórico ordenado ---
           historicoStatus: {
             orderBy: { data: 'asc' }
           },
@@ -34,26 +33,21 @@ export const pedidoController = {
         id: p.id,
         codigoPedido: p.numeroPedido ? String(p.numeroPedido) : (p.codigoPedido || p.id.slice(0, 8)),
         
-        // Prioriza o nome completo salvo na tabela Pedido (clienteNome)
         clienteNome: p.clienteNome || p.user?.nome || 'Cliente Não Identificado',
         clienteEmail: p.clienteEmail || p.user?.email || '',
         clienteTelefone: p.clienteFone || p.clienteTelefone || p.user?.telefone || p.telefone,
         cpf: p.clienteCpf || p.user?.cpf || p.cpf,
         
-        status: p.status, // 'PAGO', 'PENDENTE', etc
+        status: p.status, 
         total: Number(p.valorTotal ?? p.total ?? p.subtotal ?? 0),
         freteValor: Number(p.valorFrete ?? p.freteValor ?? 0),
         
-        // Retorna o método de pagamento exato (PIX, Cartão de Crédito, Boleto, etc.)
         metodoPagamento: p.metodoPagamento || p.formaPagamento || 'PIX / Cartão',
-        
-        // Retorna a opção/serviço de frete gravado no banco (SEDEX, PAC, Jadlog, Retirar na Loja)
         servicoFrete: p.servicoFrete || p.metodoFrete || p.transportadora || 'Retirar na Loja',
         
         rastreioCodigo: p.codigoRastreio || p.rastreioCodigo || '',
         dataCriacao: p.createdAt || p.dataCriacao,
         
-        // Dimensões do Pacote para o Melhor Envio
         pesoTotal: Number(p.pesoTotal ?? 0.3),
         alturaCaixa: Number(p.alturaCaixa ?? 8.0),
         larguraCaixa: Number(p.larguraCaixa ?? 16.0),
@@ -71,12 +65,13 @@ export const pedidoController = {
             }
           : undefined,
         
-        // --- ADICIONADO: Envia o histórico para o frontend ---
         historicoStatus: p.historicoStatus || [],
 
         itens: (p.itens || []).map((i: any) => ({
           id: i.id,
-          produtoId: i.produtoId,
+          produtoId: i.produtoId || i.produto?.id || null,
+          tamanhoId: i.tamanhoId || i.tamanho?.id || null, // CORRIGIDO: Retorna o ID do tamanho
+          corId: i.corId || i.cor?.id || null,             // CORRIGIDO: Retorna o ID da cor
           nomeProduto: i.produto?.nome || i.nomeProduto || 'Produto sem nome',
           imagemUrl: i.produto?.imagens?.[0]?.url || i.imagemUrl || '',
           corNome: i.cor?.nome || i.corNome || '',
@@ -96,7 +91,6 @@ export const pedidoController = {
   // 2. Método para a Área do Cliente (listarMeusPedidos)
   async listarMeusPedidos(req: Request, res: Response) {
     try {
-      // Procura o ID em todas as propriedades possíveis do middleware
       const rawUserId = (req as any).user?.id || (req as any).userId || (req as any).user?.userId;
 
       if (!rawUserId) {
@@ -109,7 +103,6 @@ export const pedidoController = {
         return res.status(400).json({ message: 'ID de usuário inválido.' });
       }
 
-      // Busca os pedidos do utilizador
       const pedidos = await prisma.pedido.findMany({
         where: { userId },
         include: {
@@ -123,7 +116,6 @@ export const pedidoController = {
             },
           },
           endereco: true,
-          // --- ADICIONADO: Traz o histórico para a área do cliente também ---
           historicoStatus: {
             orderBy: { data: 'asc' }
           }
@@ -135,7 +127,7 @@ export const pedidoController = {
         return res.status(200).json([]);
       }
 
-      // Formatação limpa para o Modal / Tela de Pedidos do Cliente
+      // Formatação limpa enviando os IDs das variações para o modal do cliente
       const pedidosFormatados = pedidos.map((p) => ({
         id: p.id,
         codigoPedido: (p as any).codigoPedido || (p as any).numeroPedido ? String((p as any).numeroPedido) : p.id.slice(0, 8),
@@ -146,19 +138,21 @@ export const pedidoController = {
         codigoRastreio: (p as any).codigoRastreio || (p as any).rastreioCodigo || '',
         createdAt: p.createdAt,
         
-        // --- ADICIONADO: Envia o histórico formatado ---
         historicoStatus: (p as any).historicoStatus || [],
 
-        itens: p.itens.map((item) => {
+        itens: p.itens.map((item: any) => {
           const primeiraImagem = item.produto?.imagens?.[0]?.url || '';
           return {
             id: item.id,
-            nomeProduto: item.produto?.nome || (item as any).nomeProduto || 'Produto',
-            corNome: item.cor?.nome || (item as any).corNome || '',
-            tamanho: item.tamanho?.nome || (item as any).tamanho || (item as any).tamanhoNome || '',
+            produtoId: item.produtoId || item.produto?.id || null,
+            tamanhoId: item.tamanhoId || item.tamanho?.id || null, // CORRIGIDO: Retorna o ID do tamanho
+            corId: item.corId || item.cor?.id || null,             // CORRIGIDO: Retorna o ID da cor
+            nomeProduto: item.produto?.nome || item.nomeProduto || 'Produto',
+            corNome: item.cor?.nome || item.corNome || '',
+            tamanho: item.tamanho?.nome || item.tamanho || item.tamanhoNome || '',
             quantidade: item.quantidade,
             precoUnitario: Number(item.precoUnitario),
-            imagemUrl: primeiraImagem || (item as any).imagemUrl || '',
+            imagemUrl: primeiraImagem || item.imagemUrl || '',
           };
         }),
       }));
@@ -189,7 +183,6 @@ export const pedidoController = {
           },
           endereco: true,
           user: true,
-          // --- ADICIONADO ---
           historicoStatus: {
             orderBy: { data: 'asc' }
           }
@@ -211,12 +204,10 @@ export const pedidoController = {
   async atualizarStatus(req: Request, res: Response) {
     try {
       const id = String(req.params.id);
-      // Recebe também a observação opcional
       const { status, codigoRastreio, rastreioCodigo, observacao } = req.body;
 
       const codigoFinal = codigoRastreio || rastreioCodigo;
 
-      // Busca o pedido atual para verificar se o status realmente mudou
       const pedidoExistente = await prisma.pedido.findUnique({
         where: { id }
       });
@@ -225,12 +216,10 @@ export const pedidoController = {
         return res.status(404).json({ message: 'Pedido não encontrado.' });
       }
 
-      // Monta os dados de atualização de forma dinâmica
       const dataUpdate: any = {
         ...(codigoFinal && { codigoRastreio: codigoFinal }),
       };
 
-      // Se um status foi passado E é diferente do status atual, nós atualizamos o campo e criamos o histórico
       if (status && status !== pedidoExistente.status) {
         dataUpdate.status = status;
         dataUpdate.historicoStatus = {
@@ -241,7 +230,6 @@ export const pedidoController = {
         };
       }
 
-      // 1. Atualiza no Banco de Dados via Prisma
       const pedidoAtualizado = await prisma.pedido.update({
         where: { id },
         data: dataUpdate,
@@ -256,14 +244,12 @@ export const pedidoController = {
             },
           },
           endereco: true,
-          // --- ADICIONADO: Traz o histórico atualizado na resposta ---
           historicoStatus: {
             orderBy: { data: 'asc' }
           }
         },
       });
 
-      // 2. Formata a resposta para garantir compatibilidade com o front-end
       const pedidoFormatado = {
         id: pedidoAtualizado.id,
         codigoPedido: (pedidoAtualizado as any).codigoPedido || (pedidoAtualizado as any).numeroPedido ? String((pedidoAtualizado as any).numeroPedido) : pedidoAtualizado.id.slice(0, 8),
@@ -275,29 +261,27 @@ export const pedidoController = {
         createdAt: pedidoAtualizado.createdAt,
         userId: pedidoAtualizado.userId,
         
-        // --- ADICIONADO ---
         historicoStatus: (pedidoAtualizado as any).historicoStatus || [],
 
-        itens: pedidoAtualizado.itens.map((item) => ({
+        itens: pedidoAtualizado.itens.map((item: any) => ({
           id: item.id,
-          nomeProduto: item.produto?.nome || (item as any).nomeProduto || 'Produto',
-          corNome: item.cor?.nome || (item as any).corNome || '',
-          tamanho: item.tamanho?.nome || (item as any).tamanho || '',
+          produtoId: item.produtoId || item.produto?.id || null,
+          tamanhoId: item.tamanhoId || item.tamanho?.id || null, // CORRIGIDO: Retorna o ID do tamanho
+          corId: item.corId || item.cor?.id || null,             // CORRIGIDO: Retorna o ID da cor
+          nomeProduto: item.produto?.nome || item.nomeProduto || 'Produto',
+          corNome: item.cor?.nome || item.corNome || '',
+          tamanho: item.tamanho?.nome || item.tamanho || '',
           quantidade: item.quantidade,
           precoUnitario: Number(item.precoUnitario),
-          imagemUrl: item.produto?.imagens?.[0]?.url || (item as any).imagemUrl || '',
+          imagemUrl: item.produto?.imagens?.[0]?.url || item.imagemUrl || '',
         })),
       };
 
-      // 3. Emite os eventos via Socket.IO para atualizar o cliente e o admin em tempo real
       const io = getIO();
       if (io) {
-        // Notifica o canal do usuário específico (ex: "usuario_123")
         if (pedidoAtualizado.userId) {
           io.to(`usuario_${pedidoAtualizado.userId}`).emit('pedidoAtualizado', pedidoFormatado);
         }
-        
-        // Broadcast geral para atualizar o Admin Dashboard e outros clientes conectados
         io.emit('pedidoAtualizado', pedidoFormatado);
       }
 

@@ -231,6 +231,40 @@ export const Home: React.FC = () => {
     }, 3000);
   };
 
+  const handleRefazerPagamento = async (pedido: any) => {
+    try {
+      if (!pedido.itens || pedido.itens.length === 0) {
+        showToast('Nenhum item encontrado neste pedido.');
+        return;
+      }
+
+      for (const item of pedido.itens) {
+        const targetProdutoId = item.produtoId;
+        const targetTamanhoId = item.tamanhoId;
+        const targetCorId = item.corId;
+        const qtd = Number(item.quantidade) || 1;
+
+        if (!targetProdutoId || !targetTamanhoId || !targetCorId) {
+          showToast(`O item "${item.nomeProduto || 'Produto'}" não possui variações válidas vinculadas.`);
+          return;
+        }
+
+        await adicionarAoCarrinho({
+          produtoId: targetProdutoId,
+          tamanhoId: targetTamanhoId,
+          corId: targetCorId,
+          quantidade: qtd,
+        });
+      }
+
+      setIsCheckoutOpen(true);
+      showToast('Itens adicionados ao carrinho com sucesso! Finalize seu novo pagamento.');
+    } catch (error: any) {
+      console.error('Erro ao refazer pagamento do pedido:', error);
+      showToast(error.response?.data?.message || 'Erro ao adicionar itens ao carrinho.');
+    }
+  };
+
   const handleShare = async (product: Product, e: React.MouseEvent) => {
     e.stopPropagation();
     const productUrl = `${window.location.origin}/produto/${product.id}?utm_source=whatsapp&utm_medium=social&utm_campaign=compartilhamento_vitrine`;    
@@ -238,7 +272,8 @@ export const Home: React.FC = () => {
       ? Number(product.precoPromocional) 
       : (parseFloat(product.preco) || 0);
 
-    const imagemUrl = product.imagens && product.imagens.length > 0 ? getImageUrl(product.imagens[0].url) : '';
+    const imagemCapa = product.imagens?.find((img: any) => img.ordem === 0);
+    const imagemUrl = getImageUrl(imagemCapa?.url || product.imagens?.[0]?.url);
 
     const descricaoLimpa = (product.descricao || '')
       .replace(/<[^>]*>/g, '')
@@ -291,29 +326,51 @@ export const Home: React.FC = () => {
     }
   };
 
-  const handleAddToCart = async (product: Product, size: string, corId?: string) => {
+  // Função ajustada com resgate da imagem principal (ordem: 0) e travamento de cor/tamanho
+  const handleAddToCart = async (product: Product, size?: string, corId?: string) => {
+    // 1. Trava de segurança no Frontend
+    if (!size) {
+      showToast('Por favor, selecione um tamanho!');
+      return false;
+    }
+
+    if (!corId) {
+      showToast('Por favor, selecione uma cor!');
+      return false;
+    }
+
     if (!user) {
       setIsAuthModalOpen(true);
-      return;
+      return false;
     }
 
     try {
       const estoqueItem = product.estoques?.find((e: any) => 
-        e.tamanho?.nome === size && (!corId || e.cor?.id === corId)
+        e.tamanho?.nome === size && e.cor?.id === corId
       );
+
+      const targetTamanhoId = estoqueItem?.tamanho?.id;
+      const targetCorId = estoqueItem?.cor?.id || corId;
+
+      if (!targetTamanhoId || !targetCorId) {
+        showToast('Combinação de cor e tamanho indisponível.');
+        return false;
+      }
 
       await adicionarAoCarrinho({
         produtoId: product.id,
-        tamanhoId: estoqueItem?.tamanho?.id || null,
-        corId: corId || estoqueItem?.cor?.id || null,
+        tamanhoId: targetTamanhoId,
+        corId: targetCorId,
         quantidade: 1,
       });
 
       showToast('Produto adicionado ao carrinho!');
       setIsCartOpen(true);
+      return true;
     } catch (error) {
       console.error('Erro ao adicionar produto:', error);
       setIsAuthModalOpen(true);
+      return false;
     }
   };
 
@@ -792,7 +849,7 @@ export const Home: React.FC = () => {
                 }
               });
               const coresCardList = Array.from(coresCardMap.values()) as any[];
-              const currentCardColor = selectedSizes[`color-${product.id}`] || coresCardList[0]?.id;
+              const currentCardColor = selectedSizes[`color-${product.id}`];
 
               const imagensDaCorSelecionada = product.imagens?.filter((img: any) => {
                 const imgCorId = img.corId || img.cor?.id;
@@ -820,7 +877,7 @@ export const Home: React.FC = () => {
               
               const availableSizes = sortSizes(rawAvailableSizes as string[]);
 
-              const chosenSize = selectedSizes[product.id] || availableSizes[0];
+              const chosenSize = selectedSizes[product.id];
               const numericPrice = parseFloat(product.preco) || 0;
               const precoPromocional = product.precoPromocional ? parseFloat(product.precoPromocional) : 0;
               const emOferta = product.temOferta && precoPromocional > 0;
@@ -948,7 +1005,7 @@ export const Home: React.FC = () => {
                       <span className={styles.sizeLabel}>Selecione o tamanho:</span>
                       <div className={styles.sizeList}>
                         {availableSizes.map((size, index) => {
-                          const isSelected = selectedSizes[product.id] === size;
+                          const isSelected = chosenSize === size;
                           return (
                             <button
                               key={index}
@@ -995,17 +1052,9 @@ export const Home: React.FC = () => {
                     <button 
                       className={styles.buyButton} 
                       type="button"
-                      onClick={() => { 
-                        const sizeSelected = selectedSizes[product.id] || availableSizes[0];
-                        if (!selectedSizes[product.id] && availableSizes.length > 1) {
-                          showToast('Por favor, selecione um tamanho antes de comprar!');
-                          return;
-                        }
-
-                        if (!user) {
-                          setIsAuthModalOpen(true);
-                        } else {
-                          handleAddToCart(product, sizeSelected, currentCardColor); 
+                      onClick={async () => { 
+                        const success = await handleAddToCart(product, chosenSize, currentCardColor);
+                        if (success) {
                           setIsCheckoutOpen(true); 
                         }
                       }}
@@ -1049,7 +1098,6 @@ export const Home: React.FC = () => {
 
             <div style={{ flex: 1, overflowY: 'auto', padding: '1rem 0' }}>
               
-              {/* BOTÃO EM DESTAQUE: MEUS PEDIDOS */}
               <div style={{ padding: '0 15px 12px 15px', borderBottom: '1px solid #f1f5f9', marginBottom: '8px' }}>
                 <button
                   type="button"
@@ -1143,6 +1191,8 @@ export const Home: React.FC = () => {
         isOpen={isOrdersOpen}
         onClose={() => setIsOrdersOpen(false)}
         apiUrl={API_URL}
+        userId={user?.id}
+        onRefazerPagamento={handleRefazerPagamento}
       />
 
       {/* CartDrawer Responsivo com Cálculo de Frete */}

@@ -5,8 +5,11 @@ import styles from './OrdersModal.module.css';
 
 interface ItemPedido {
   id: string;
+  produtoId?: string;
+  tamanhoId?: string;
+  corId?: string;
   nomeProduto?: string;
-  produto?: { nome: string; imagens?: { url: string }[] };
+  produto?: { id: string; nome: string; imagens?: { url: string }[] };
   corNome?: string;
   tamanho?: string;
   quantidade: number;
@@ -25,13 +28,15 @@ interface Pedido {
   id: string;
   userId?: number;
   codigoPedido?: string;
-  status: 'PENDENTE' | 'PAGO' | 'EM_SEPARACAO' | 'ENVIADO' | 'ENTREGUE' | 'CANCELADO';
+  status: 'PENDENTE' | 'RECUSADO' | 'PAGO' | 'EM_SEPARACAO' | 'ENVIADO' | 'ENTREGUE' | 'CANCELADO';
   valorTotal?: number;
   total?: number;
   codigoRastreio?: string;
   rastreioCodigo?: string;
   createdAt?: string;
   dataCriacao?: string;
+  qrCodePix?: string;
+  qrCodeBase64Pix?: string;
   itens: ItemPedido[];
   historicoStatus?: HistoricoStatus[];
 }
@@ -41,14 +46,15 @@ interface OrdersModalProps {
   onClose: () => void;
   apiUrl: string;
   userId?: number;
+  onRefazerPagamento?: (pedido: Pedido) => void;
 }
 
 const statusSteps = ['PENDENTE', 'PAGO', 'EM_SEPARACAO', 'ENVIADO', 'ENTREGUE'];
 
-// Função para deixar o status mais amigável para o cliente final
 const formatarStatusAmigavel = (status: string) => {
   const mapa: Record<string, string> = {
     PENDENTE: 'Aguardando Pagamento',
+    RECUSADO: 'Pagamento Recusado',
     PAGO: 'Pagamento Aprovado',
     EM_SEPARACAO: 'Em Separação',
     ENVIADO: 'Pedido Enviado',
@@ -58,16 +64,23 @@ const formatarStatusAmigavel = (status: string) => {
   return mapa[status] || status;
 };
 
-// Nova função para calcular a estimativa de entrega baseada na data de compra
+// Verifica se o PIX ainda está dentro da janela de 30 minutos
+const isPixValido = (dataCriacao?: string) => {
+  if (!dataCriacao) return false;
+  const dataPedido = new Date(dataCriacao).getTime();
+  const agora = new Date().getTime();
+  const trintaMinutosMs = 30 * 60 * 1000;
+  return (agora - dataPedido) < trintaMinutosMs;
+};
+
 const calcularPrevisaoEntrega = (dataCriacao: string | undefined) => {
   if (!dataCriacao) return null;
   const data = new Date(dataCriacao);
   if (isNaN(data.getTime())) return null;
 
-  // Ajuste estes valores conforme a realidade da sua loja e transportadora
-  const DIAS_PROCESSAMENTO = 5; // Tempo até despachar
-  const TRANSPORTADORA_MIN = 3; // Prazo mínimo da transportadora
-  const TRANSPORTADORA_MAX = 7; // Prazo máximo da transportadora
+  const DIAS_PROCESSAMENTO = 5;
+  const TRANSPORTADORA_MIN = 3;
+  const TRANSPORTADORA_MAX = 7;
 
   const minDate = new Date(data);
   minDate.setDate(minDate.getDate() + DIAS_PROCESSAMENTO + TRANSPORTADORA_MIN);
@@ -79,11 +92,12 @@ const calcularPrevisaoEntrega = (dataCriacao: string | undefined) => {
   return `${minDate.toLocaleDateString('pt-BR', formatOptions)} a ${maxDate.toLocaleDateString('pt-BR', formatOptions)}`;
 };
 
-export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUrl, userId }) => {
+export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUrl, userId, onRefazerPagamento }) => {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(false);
+  const [pixAbertoId, setPixAbertoId] = useState<string | null>(null);
+  const [copiadoId, setCopiadoId] = useState<string | null>(null);
 
-  // Instancia o Socket usando a apiUrl dinâmica
   const socket = useMemo(() => {
     return io(apiUrl, {
       transports: ['polling', 'websocket'],
@@ -97,7 +111,6 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
     }
   }, [isOpen]);
 
-  // --- ATUALIZAÇÃO EM TEMPO REAL VIA SOCKET ---
   useEffect(() => {
     if (!isOpen) return;
 
@@ -142,15 +155,30 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
     return `${apiUrl}${url.startsWith('/') ? '' : '/'}${url}`;
   };
 
+  const handleCopiarPix = (codigo: string, pedidoId: string) => {
+    navigator.clipboard.writeText(codigo);
+    setCopiadoId(pedidoId);
+    setTimeout(() => setCopiadoId(null), 3000);
+  };
+
   if (!isOpen) return null;
 
-  const renderProgressBar = (status: Pedido['status']) => {
-    if (status === 'CANCELADO') {
-      return <div className={styles.statusCanceledBadge}>❌ Pedido Cancelado</div>;
-    }
+  // Renderiza a barra visual com tratamento de erro (bolinha vermelha)
+  const renderProgressBar = (pedido: Pedido) => {
+    const { status } = pedido;
+    const dataCriacaoBase = pedido.createdAt || pedido.dataCriacao;
+    const pixValido = isPixValido(dataCriacaoBase);
+
+    // Identifica se foi recusado no Cartão, Cancelado ou PIX Expirado
+    const foiRecusadoOuExpirado = 
+      status === 'CANCELADO' || 
+      status === 'RECUSADO' || 
+      (status === 'PENDENTE' && !pixValido);
 
     const currentIndex = statusSteps.indexOf(status);
-    const percentage = currentIndex >= 0 ? (currentIndex / (statusSteps.length - 1)) * 100 : 0;
+    const percentage = currentIndex >= 0 && !foiRecusadoOuExpirado 
+      ? (currentIndex / (statusSteps.length - 1)) * 100 
+      : 0;
 
     return (
       <div className={styles.progressContainer}>
@@ -161,23 +189,32 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
           />
         </div>
         <div className={styles.stepsRow}>
-          <div className={`${styles.stepDot} ${currentIndex >= 0 ? styles.stepActive : ''}`}>
-            <span>⏳</span>
-            <p>Pendente</p>
+          {/* Ponto 1: Fica vermelho se houver recusa em cartão ou PIX expirado */}
+          <div 
+            className={`${styles.stepDot} ${currentIndex >= 0 && !foiRecusadoOuExpirado ? styles.stepActive : ''}`}
+            style={foiRecusadoOuExpirado ? { color: '#ef4444' } : undefined}
+          >
+            <span style={foiRecusadoOuExpirado ? { backgroundColor: '#ef4444', color: '#ffffff', borderColor: '#ef4444' } : undefined}>
+              {foiRecusadoOuExpirado ? '✖' : '⏳'}
+            </span>
+            <p style={foiRecusadoOuExpirado ? { color: '#ef4444' } : undefined}>
+              {foiRecusadoOuExpirado ? 'Recusado' : 'Pendente'}
+            </p>
           </div>
-          <div className={`${styles.stepDot} ${currentIndex >= 1 ? styles.stepActive : ''}`}>
+
+          <div className={`${styles.stepDot} ${currentIndex >= 1 && !foiRecusadoOuExpirado ? styles.stepActive : ''}`}>
             <span>💳</span>
             <p>Pago</p>
           </div>
-          <div className={`${styles.stepDot} ${currentIndex >= 2 ? styles.stepActive : ''}`}>
+          <div className={`${styles.stepDot} ${currentIndex >= 2 && !foiRecusadoOuExpirado ? styles.stepActive : ''}`}>
             <span>📦</span>
             <p>Separação</p>
           </div>
-          <div className={`${styles.stepDot} ${currentIndex >= 3 ? styles.stepActive : ''}`}>
+          <div className={`${styles.stepDot} ${currentIndex >= 3 && !foiRecusadoOuExpirado ? styles.stepActive : ''}`}>
             <span>🚚</span>
             <p>Enviado</p>
           </div>
-          <div className={`${styles.stepDot} ${currentIndex >= 4 ? styles.stepActive : ''}`}>
+          <div className={`${styles.stepDot} ${currentIndex >= 4 && !foiRecusadoOuExpirado ? styles.stepActive : ''}`}>
             <span>✅</span>
             <p>Entregue</p>
           </div>
@@ -212,8 +249,8 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
               const valorFinal = Number(pedido.total || pedido.valorTotal || 0);
               const codigoRastreio = pedido.codigoRastreio || pedido.rastreioCodigo;
               
-              // Calcula a previsão apenas uma vez por pedido
               const previsao = calcularPrevisaoEntrega(dataCriacaoBase);
+              const pixAindaValido = isPixValido(dataCriacaoBase);
 
               return (
                 <div key={pedido.id} className={styles.orderCard}>
@@ -225,13 +262,79 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
                     <span className={styles.orderTotal}>R$ {valorFinal.toFixed(2)}</span>
                   </div>
 
-                  {renderProgressBar(pedido.status)}
+                  {renderProgressBar(pedido)}
 
-                  {/* BLOCO DA PREVISÃO DE ENTREGA */}
-                  {pedido.status !== 'CANCELADO' && pedido.status !== 'ENTREGUE' && previsao && (
-                    <div className={styles.trackingBox} style={{ backgroundColor: '#f0fdf4', borderColor: '#bbf7d0', color: '#166534', marginTop: '12px' }}>
+                  {/* PREVISÃO DE ENTREGA */}
+                  {pedido.status !== 'CANCELADO' && pedido.status !== 'RECUSADO' && pedido.status !== 'ENTREGUE' && previsao && (
+                    <div className={styles.trackingBox}>
                       <span style={{ color: '#15803d' }}>🗓️ Previsão de Entrega:</span>
                       <strong>Entre {previsao}</strong>
+                    </div>
+                  )}
+
+                  {/* BOTÃO DE AÇÃO DISCRETO PARA PIX OU REFAZER PAGAMENTO */}
+                  {pedido.status === 'PENDENTE' && (
+                    <div className={styles.paymentActionBox}>
+                      {pixAindaValido ? (
+                        <>
+                          <button
+                            type="button"
+                            className={styles.pixBtn}
+                            onClick={() => setPixAbertoId(pixAbertoId === pedido.id ? null : pedido.id)}
+                          >
+                            ⚡ {pixAbertoId === pedido.id ? 'Ocultar QR Code PIX' : 'Ver QR Code / Copiar PIX'}
+                          </button>
+
+                          {pixAbertoId === pedido.id && pedido.qrCodePix && (
+                            <div className={styles.pixContainerModal}>
+                              {pedido.qrCodeBase64Pix && (
+                                <img
+                                  src={`data:image/jpeg;base64,${pedido.qrCodeBase64Pix}`}
+                                  alt="QR Code PIX"
+                                  style={{ width: '130px', height: '130px' }}
+                                />
+                              )}
+                              <div className={styles.pixCodeBox}>
+                                <input type="text" readOnly value={pedido.qrCodePix} className={styles.pixInput} />
+                                <button
+                                  type="button"
+                                  className={styles.pixBtn}
+                                  style={{ width: 'auto', padding: '6px 12px' }}
+                                  onClick={() => handleCopiarPix(pedido.qrCodePix!, pedido.id)}
+                                >
+                                  {copiadoId === pedido.id ? 'Copiado! ✅' : 'Copiar'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className={styles.retryBtn}
+                          onClick={() => {
+                            onClose();
+                            if (onRefazerPagamento) onRefazerPagamento(pedido);
+                          }}
+                        >
+                          🔄 Refazer Pagamento
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {(pedido.status === 'CANCELADO' || pedido.status === 'RECUSADO') && (
+                    <div className={styles.paymentActionBox}>
+                      <button
+                        type="button"
+                        className={styles.retryBtn}
+                        onClick={() => {
+                          onClose();
+                          if (onRefazerPagamento) onRefazerPagamento(pedido);
+                        }}
+                      >
+                        🔄 Refazer Pagamento
+                      </button>
                     </div>
                   )}
 
@@ -242,25 +345,20 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
                     </div>
                   )}
 
-                  {/* BLOCO DO HISTÓRICO DE STATUS (LINHA DO TEMPO) */}
+                  {/* HISTÓRICO DE STATUS */}
                   {pedido.historicoStatus && pedido.historicoStatus.length > 0 && (
-                    <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <h4 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        ⏱️ Histórico do Pedido
+                    <div style={{ marginTop: '12px', marginBottom: '12px', padding: '10px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <h4 style={{ margin: '0 0 8px 0', fontSize: '0.8rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        ⏱️ Histórico
                       </h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         {pedido.historicoStatus.map((hist, idx) => (
-                          <div key={hist.id || idx} style={{ display: 'flex', gap: '10px', fontSize: '0.85rem', borderLeft: '2px solid #cbd5e1', paddingLeft: '10px' }}>
-                            <span style={{ color: '#64748b', minWidth: '115px', fontWeight: 500 }}>
-                              {new Date(hist.data).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          <div key={hist.id || idx} style={{ display: 'flex', gap: '10px', fontSize: '0.8rem', borderLeft: '2px solid #cbd5e1', paddingLeft: '8px' }}>
+                            <span style={{ color: '#64748b', minWidth: '110px', fontWeight: 500 }}>
+                              {new Date(hist.data).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                             </span>
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
                               <strong style={{ color: '#0f172a' }}>{formatarStatusAmigavel(hist.status)}</strong>
-                              {hist.observacao && !hist.observacao.includes('via Painel Admin') && (
-                                <span style={{ color: '#64748b', fontSize: '0.8rem', fontStyle: 'italic', marginTop: '2px' }}>
-                                  {hist.observacao}
-                                </span>
-                              )}
                             </div>
                           </div>
                         ))}
