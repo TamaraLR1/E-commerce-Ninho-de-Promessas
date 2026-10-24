@@ -93,12 +93,17 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     carregarCarrinho();
   }, [carregarCarrinho]);
 
-  // 🔌 2. Sincronização em Tempo Real via WebSocket (Atualização de Stock)
+  // 🔌 2. Sincronização em Tempo Real via WebSocket (Stock e Preço/Oferta)
   useEffect(() => {
     const handleProdutoAtualizado = (produtoAtualizado: any) => {
       setItens(prevItens =>
         prevItens.map(item => {
           if (item.produtoId === produtoAtualizado.id) {
+            // 🏷️ Calcula o preço vigente em tempo real (considerando se tem oferta ativa)
+            const precoVigente = produtoAtualizado.temOferta && produtoAtualizado.precoPromocional
+              ? Number(produtoAtualizado.precoPromocional)
+              : Number(produtoAtualizado.preco);
+
             const estoqueEncontrado = produtoAtualizado.estoques?.find((est: any) => {
               const mesmoTamanho = item.tamanho ? est.tamanho?.id === item.tamanho.id || est.tamanho?.nome === item.tamanho.nome : true;
               const mesmaCor = item.cor ? est.cor?.id === item.cor.id || est.cor?.nome === item.cor.nome : true;
@@ -110,6 +115,8 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
             return {
               ...item,
+              precoUnitario: precoVigente,
+              totalItem: Number((precoVigente * item.quantidade).toFixed(2)),
               estoqueDisponivel: saldoDisponivel,
               esgotado: estaEsgotado,
               selecionado: estaEsgotado ? false : item.selecionado,
