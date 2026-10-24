@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-// Importe diretamente de onde fica sua instância do Axios (ex: '../api', './api', '@/api')
 import api from '../../../../api'; 
 
 export interface ItemCarrinho {
@@ -80,6 +79,11 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // 3. PUT /api/carrinho/item/:itemId - Atualiza quantidade (+ / -)
   const atualizarQuantidade = async (itemId: string, novaQuantidade: number) => {
+    // TRAVA: Se a nova quantidade for menor que 1, ignora a operação e não faz requisição
+    if (novaQuantidade < 1) {
+      return;
+    }
+
     try {
       await api.put(`/api/carrinho/item/${itemId}`, { quantidade: novaQuantidade });
       await carregarCarrinho();

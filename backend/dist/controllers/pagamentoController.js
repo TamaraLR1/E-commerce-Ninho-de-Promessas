@@ -9,6 +9,31 @@ const client = new mercadopago_1.MercadoPagoConfig({ accessToken: mpAccessToken 
 const paymentClient = new mercadopago_1.Payment(client);
 // URL base do Backend em produção para o Webhook
 const BACKEND_URL = process.env.BACKEND_URL || 'https://ninhoback.tamaralr.com.br';
+function validarCPF(cpf) {
+    const cpfLimpo = cpf.replace(/\D/g, '');
+    if (cpfLimpo.length !== 11 || /^(\d)\1{10}$/.test(cpfLimpo))
+        return false;
+    let soma = 0;
+    let resto;
+    for (let i = 1; i <= 9; i++) {
+        soma += parseInt(cpfLimpo.substring(i - 1, i)) * (11 - i);
+    }
+    resto = (soma * 10) % 11;
+    if (resto === 10 || resto === 11)
+        resto = 0;
+    if (resto !== parseInt(cpfLimpo.substring(9, 10)))
+        return false;
+    soma = 0;
+    for (let i = 1; i <= 10; i++) {
+        soma += parseInt(cpfLimpo.substring(i - 1, i)) * (12 - i);
+    }
+    resto = (soma * 10) % 11;
+    if (resto === 10 || resto === 11)
+        resto = 0;
+    if (resto !== parseInt(cpfLimpo.substring(10, 11)))
+        return false;
+    return true;
+}
 exports.pagamentoController = {
     async processarPagamento(req, res) {
         try {
@@ -31,25 +56,44 @@ exports.pagamentoController = {
             if (!endereco || !endereco.cep || !endereco.rua || !endereco.numero) {
                 return res.status(400).json({ message: 'Endereço de entrega incompleto.' });
             }
-            const cpfLimpo = user.cpf ? user.cpf.replace(/\D/g, '') : '';
+            // Validação prévia de algoritmo de CPF
+            const cpfLimpo = user.cpf ? String(user.cpf).replace(/\D/g, '') : '';
+            if (!cpfLimpo || !validarCPF(cpfLimpo)) {
+                return res.status(400).json({
+                    message: 'O CPF cadastrado na sua conta é inválido. Por favor, corrija o CPF em seus dados pessoais para continuar.'
+                });
+            }
             const isSandbox = mpAccessToken.startsWith('TEST-');
+            // Monta o objeto payer com CPF e endereço completos
+            const payerData = {
+                email: isSandbox && payment_method_id === 'pix'
+                    ? 'TESTUSER312184413725449474@testuser.com'
+                    : user.email,
+                first_name: (user.nome || 'Cliente').trim(),
+                last_name: (user.sobrenome || '').trim(),
+                identification: {
+                    type: 'CPF',
+                    number: cpfLimpo,
+                },
+                address: {
+                    zip_code: String(endereco.cep).replace(/\D/g, ''),
+                    street_name: endereco.rua,
+                    street_number: String(endereco.numero),
+                    neighborhood: endereco.bairro,
+                    city: endereco.cidade,
+                    federal_unit: endereco.estado,
+                },
+            };
             let paymentBody = {
                 notification_url: `${BACKEND_URL}/api/webhooks/mercadopago`,
             };
             if (payment_method_id === 'pix') {
-                const emailPayerMp = isSandbox
-                    ? 'TESTUSER312184413725449474@testuser.com'
-                    : user.email;
                 paymentBody = {
                     ...paymentBody,
                     transaction_amount: Number(transaction_amount),
                     description: description || 'Compra Ninho de Promessas',
                     payment_method_id: 'pix',
-                    payer: {
-                        email: emailPayerMp,
-                        first_name: (user.nome || 'Cliente').trim(),
-                        last_name: (user.sobrenome || '').trim(),
-                    },
+                    payer: payerData,
                 };
             }
             else {
@@ -63,15 +107,7 @@ exports.pagamentoController = {
                     description: description || 'Compra Ninho de Promessas',
                     installments: Number(installments || 1),
                     payment_method_id: bandeiraFinal,
-                    payer: {
-                        email: user.email,
-                        first_name: (user.nome || 'Cliente').trim(),
-                        last_name: (user.sobrenome || '').trim(),
-                        identification: {
-                            type: 'CPF',
-                            number: cpfLimpo,
-                        },
-                    },
+                    payer: payerData,
                 };
                 if (issuer_id)
                     paymentBody.issuer_id = issuer_id;
@@ -102,12 +138,10 @@ exports.pagamentoController = {
                 statusPedido = 'RECUSADO';
             // 3. Salva ou Atualiza Endereço (evitando duplicações), Cria Pedido e Itens em uma transação
             const resultado = await prisma_1.prisma.$transaction(async (tx) => {
-                // Procura primeiro se já existe um endereço ligado a este userId
                 let enderecoExistente = await tx.endereco.findFirst({
                     where: { userId: user.id },
                     orderBy: { createdAt: 'desc' },
                 });
-                // Se não encontrar por userId (caso existam registos antigos órfãos), procura o último sem dono
                 if (!enderecoExistente) {
                     enderecoExistente = await tx.endereco.findFirst({
                         where: { userId: null },
@@ -124,10 +158,9 @@ exports.pagamentoController = {
                     cidade: endereco.cidade,
                     estado: endereco.estado,
                     destinatario: endereco.destinatario || `${user.nome} ${user.sobrenome}`,
-                    userId: user.id, // Amarra firmemente ao utilizador logado
+                    userId: user.id,
                 };
                 if (enderecoExistente) {
-                    // Atualiza o registo existente (mantém o mesmo UUID, sem duplicar linhas)
                     const enderecoAtualizado = await tx.endereco.update({
                         where: { id: enderecoExistente.id },
                         data: dadosTratados,
@@ -135,7 +168,6 @@ exports.pagamentoController = {
                     enderecoId = enderecoAtualizado.id;
                 }
                 else {
-                    // Cria apenas se não existir absolutamente nenhum registo elegível
                     const novoEndereco = await tx.endereco.create({
                         data: dadosTratados,
                     });
@@ -173,7 +205,6 @@ exports.pagamentoController = {
                         endereco: true,
                     },
                 });
-                // Decrementa estoque se o pedido for criado como PAGO
                 if (statusPedido === 'PAGO') {
                     for (const item of items) {
                         if (item.tamanhoId || item.corId) {
@@ -192,7 +223,6 @@ exports.pagamentoController = {
                 }
                 return novoPedido;
             });
-            // Emite evento via WebSocket para atualizar o painel admin em tempo real
             const io = (0, socket_1.getIO)();
             if (io) {
                 io.emit('novoPedido', resultado);
@@ -208,6 +238,13 @@ exports.pagamentoController = {
         }
         catch (error) {
             console.error('Erro detalhado ao processar pagamento:', JSON.stringify(error, null, 2));
+            // Captura de erro específica para retornos de rejeição da API do Mercado Pago
+            const isIdentificationErr = error?.causes?.some((c) => String(c.description).includes('identification') || c.code === 2060);
+            if (isIdentificationErr || error?.message?.includes('identification')) {
+                return res.status(400).json({
+                    message: 'CPF inválido ou não reconhecido. Por favor, verifique se digitou seu CPF corretamente.',
+                });
+            }
             return res.status(500).json({
                 message: 'Erro interno ao processar o pagamento e salvar o pedido.',
                 error: error.message || error,
@@ -232,12 +269,10 @@ exports.pagamentoController = {
                     });
                     if (pedidoExistente && pedidoExistente.status !== 'PAGO') {
                         await prisma_1.prisma.$transaction(async (tx) => {
-                            // 1. Atualiza status do pedido para PAGO
                             await tx.pedido.update({
                                 where: { id: pedidoExistente.id },
                                 data: { status: 'PAGO' },
                             });
-                            // 2. Dá baixa no estoque
                             for (const item of pedidoExistente.itens) {
                                 if (item.tamanhoId || item.corId) {
                                     await tx.produtoEstoque.updateMany({
@@ -253,7 +288,6 @@ exports.pagamentoController = {
                                 }
                             }
                         });
-                        // 3. Notifica via WebSocket
                         const io = (0, socket_1.getIO)();
                         if (io) {
                             io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: 'PAGO' });

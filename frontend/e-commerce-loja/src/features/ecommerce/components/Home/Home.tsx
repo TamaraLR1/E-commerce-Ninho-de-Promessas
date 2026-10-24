@@ -326,9 +326,7 @@ export const Home: React.FC = () => {
     }
   };
 
-  // Função ajustada com resgate da imagem principal (ordem: 0) e travamento de cor/tamanho
   const handleAddToCart = async (product: Product, size?: string, corId?: string) => {
-    // 1. Trava de segurança no Frontend
     if (!size) {
       showToast('Por favor, selecione um tamanho!');
       return false;
@@ -351,9 +349,15 @@ export const Home: React.FC = () => {
 
       const targetTamanhoId = estoqueItem?.tamanho?.id;
       const targetCorId = estoqueItem?.cor?.id || corId;
+      const estoqueDisponivel = Number(estoqueItem?.estoque || 0);
 
       if (!targetTamanhoId || !targetCorId) {
         showToast('Combinação de cor e tamanho indisponível.');
+        return false;
+      }
+
+      if (estoqueDisponivel <= 0) {
+        showToast('Desculpe, este item está esgotado no momento.');
         return false;
       }
 
@@ -367,9 +371,10 @@ export const Home: React.FC = () => {
       showToast('Produto adicionado ao carrinho!');
       setIsCartOpen(true);
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao adicionar produto:', error);
-      setIsAuthModalOpen(true);
+      const mensagemErro = error.response?.data?.message || 'Erro ao adicionar item ao carrinho.';
+      showToast(mensagemErro);
       return false;
     }
   };
@@ -885,19 +890,33 @@ export const Home: React.FC = () => {
               return (
                 <div key={product.id} className={styles.productCard}>
                   
-                  <div className={styles.badgesTopBar}>
-                    {product.isNovidade ? (
-                      <span className={styles.badgeNovidadeVitrine}>
-                        ✨ Novidade
-                      </span>
-                    ) : <span />}
+                  {(() => {
+                    const estoqueTotal = product.estoques
+                      ?.filter((item: any) => !currentCardColor || item.cor?.id === currentCardColor)
+                      .reduce((acc: number, item: any) => acc + Number(item.estoque || 0), 0) ?? 0;
 
-                    {emOferta && product.percentualDesconto && product.percentualDesconto > 0 && (
-                      <span className={styles.badgeOfferBadge}>
-                        {product.percentualDesconto}% OFF
-                      </span>
-                    )}
-                  </div>
+                    const isEsgotado = estoqueTotal <= 0;
+
+                    return (
+                      <div className={styles.badgesTopBar}>
+                        {isEsgotado ? (
+                          <span className={styles.badgeEsgotadoVitrine}>
+                            Esgotado
+                          </span>
+                        ) : product.isNovidade ? (
+                          <span className={styles.badgeNovidadeVitrine}>
+                            ✨ Novidade
+                          </span>
+                        ) : <span />}
+
+                        {emOferta && product.percentualDesconto && product.percentualDesconto > 0 && (
+                          <span className={styles.badgeOfferBadge}>
+                            {product.percentualDesconto}% OFF
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   <div className={styles.imageContainer} style={{ position: 'relative' }}>
                     <img 
@@ -1006,12 +1025,24 @@ export const Home: React.FC = () => {
                       <div className={styles.sizeList}>
                         {availableSizes.map((size, index) => {
                           const isSelected = chosenSize === size;
+
+                          const estoqueItem = product.estoques?.find((e: any) => {
+                            const matchTamanho = e.tamanho?.nome === size;
+                            const matchCor = !currentCardColor || e.cor?.id === currentCardColor;
+                            return matchTamanho && matchCor;
+                          });
+
+                          const temEstoque = Number(estoqueItem?.estoque || 0) > 0;
+
                           return (
                             <button
                               key={index}
                               type="button"
-                              className={`${styles.sizeBadge} ${isSelected ? styles.selectedSizeBadge : ''}`}
+                              disabled={!temEstoque}
+                              title={!temEstoque ? 'Tamanho esgotado' : `Selecionar tamanho ${size}`}
+                              className={`${styles.sizeBadge} ${isSelected ? styles.selectedSizeBadge : ''} ${!temEstoque ? styles.sizeBadgeDisabled : ''}`}
                               onClick={() => {
+                                if (!temEstoque) return;
                                 setSelectedSizes(prev => ({
                                   ...prev,
                                   [product.id]: size

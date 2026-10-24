@@ -96,7 +96,7 @@ exports.carrinhoController = {
             return res.status(500).json({ message: 'Erro interno ao buscar carrinho.' });
         }
     },
-    // POST /api/carrinho/item - Adiciona produto ao carrinho (ou soma quantidade)
+    // POST /api/carrinho/item - Adiciona produto ao carrinho com checagem rigorosa de estoque
     async adicionarItem(req, res) {
         try {
             const userId = req.user?.id || req.userId;
@@ -107,13 +107,28 @@ exports.carrinhoController = {
             if (!produtoId) {
                 return res.status(400).json({ message: 'ID do produto é obrigatório.' });
             }
-            // REGRA DE NEGÓCIO: Bloqueia a adição se tamanhoId ou corId não forem fornecidos
             if (!tamanhoId || !corId) {
                 return res.status(400).json({
                     message: 'Por favor, selecione a cor e o tamanho do produto antes de adicionar ao carrinho.'
                 });
             }
-            // Garante que o carrinho exista
+            const qtdAdicionar = Number(quantidade);
+            if (isNaN(qtdAdicionar) || qtdAdicionar <= 0) {
+                return res.status(400).json({ message: 'Quantidade inválida.' });
+            }
+            // 1. Busca o estoque disponível para este produto/tamanho/cor usando prisma.produtoEstoque
+            const estoqueRegistro = await prisma_1.prisma.produtoEstoque.findFirst({
+                where: {
+                    produtoId: String(produtoId),
+                    tamanhoId: String(tamanhoId),
+                    corId: String(corId),
+                },
+            });
+            const estoqueDisponivel = estoqueRegistro ? estoqueRegistro.estoque : 0;
+            if (estoqueDisponivel <= 0) {
+                return res.status(400).json({ message: 'Desculpe, este produto está esgotado no momento.' });
+            }
+            // 2. Garante que o carrinho exista
             let carrinho = await prisma_1.prisma.carrinho.findUnique({
                 where: { userId: Number(userId) },
             });
@@ -122,31 +137,42 @@ exports.carrinhoController = {
                     data: { userId: Number(userId) },
                 });
             }
-            // Verifica se o mesmo item com a mesma variação já está no carrinho
+            // 3. Verifica a quantidade já existente no carrinho para validar contra o estoque
             const itemExistente = await prisma_1.prisma.itemCarrinho.findFirst({
                 where: {
                     carrinhoId: carrinho.id,
-                    produtoId,
+                    produtoId: String(produtoId),
                     tamanhoId: String(tamanhoId),
                     corId: String(corId),
                 },
             });
+            const qtdAtualNoCarrinho = itemExistente ? itemExistente.quantidade : 0;
+            const novaQtdTotal = qtdAtualNoCarrinho + qtdAdicionar;
+            if (novaQtdTotal > estoqueDisponivel) {
+                const restantePermitido = estoqueDisponivel - qtdAtualNoCarrinho;
+                if (restantePermitido <= 0) {
+                    return res.status(400).json({
+                        message: `Você já possui ${qtdAtualNoCarrinho} unidade(s) no carrinho, que é o limite máximo em estoque.`
+                    });
+                }
+                return res.status(400).json({
+                    message: `Estoque insuficiente. Restam apenas ${estoqueDisponivel} unidade(s) no estoque (você já possui ${qtdAtualNoCarrinho} no carrinho).`
+                });
+            }
             if (itemExistente) {
-                // Incrementa a quantidade
                 await prisma_1.prisma.itemCarrinho.update({
                     where: { id: itemExistente.id },
-                    data: { quantidade: itemExistente.quantidade + Number(quantidade) },
+                    data: { quantidade: novaQtdTotal },
                 });
             }
             else {
-                // Cria um novo item no carrinho
                 await prisma_1.prisma.itemCarrinho.create({
                     data: {
                         carrinhoId: carrinho.id,
-                        produtoId,
+                        produtoId: String(produtoId),
                         tamanhoId: String(tamanhoId),
                         corId: String(corId),
-                        quantidade: Number(quantidade),
+                        quantidade: qtdAdicionar,
                     },
                 });
             }
@@ -157,7 +183,7 @@ exports.carrinhoController = {
             return res.status(500).json({ message: 'Erro interno ao adicionar item ao carrinho.' });
         }
     },
-    // PUT /api/carrinho/item/:itemId - Atualiza a quantidade do item
+    // PUT /api/carrinho/item/:itemId - Atualiza a quantidade do item com checagem de estoque
     async atualizarQuantidade(req, res) {
         try {
             const userId = req.userId || req.user?.id;
@@ -168,11 +194,31 @@ exports.carrinhoController = {
             }
             const novaQuantidade = Number(quantidade);
             if (isNaN(novaQuantidade) || novaQuantidade <= 0) {
-                // Se a quantidade for <= 0, remove o item
                 await prisma_1.prisma.itemCarrinho.delete({
                     where: { id: String(itemId) },
                 });
                 return res.status(200).json({ message: 'Item removido do carrinho.' });
+            }
+            // 1. Busca o item do carrinho
+            const itemCarrinho = await prisma_1.prisma.itemCarrinho.findUnique({
+                where: { id: String(itemId) },
+            });
+            if (!itemCarrinho) {
+                return res.status(404).json({ message: 'Item não encontrado no carrinho.' });
+            }
+            // 2. Busca o estoque real da variação usando prisma.produtoEstoque
+            const estoqueRegistro = await prisma_1.prisma.produtoEstoque.findFirst({
+                where: {
+                    produtoId: itemCarrinho.produtoId,
+                    tamanhoId: itemCarrinho.tamanhoId,
+                    corId: itemCarrinho.corId,
+                },
+            });
+            const estoqueDisponivel = estoqueRegistro ? estoqueRegistro.estoque : 0;
+            if (novaQuantidade > estoqueDisponivel) {
+                return res.status(400).json({
+                    message: `Estoque insuficiente. Não é possível alterar para ${novaQuantidade} unidade(s). Restam apenas ${estoqueDisponivel} disponível(is).`
+                });
             }
             await prisma_1.prisma.itemCarrinho.update({
                 where: { id: String(itemId) },
