@@ -36,7 +36,13 @@ interface Pedido {
   createdAt?: string;
   dataCriacao?: string;
   qrCodePix?: string;
+  pixCopiaECola?: string;
   qrCodeBase64Pix?: string;
+  qrCodeBase64?: string;
+  pix?: {
+    qrCode?: string;
+    qrCodeBase64?: string;
+  };
   itens: ItemPedido[];
   historicoStatus?: HistoricoStatus[];
 }
@@ -45,7 +51,7 @@ interface OrdersModalProps {
   isOpen: boolean;
   onClose: () => void;
   apiUrl: string;
-  userId?: number | string; // Permitir number ou string resolve o erro  
+  userId?: number | string;
   onRefazerPagamento?: (pedido: Pedido) => void;
 }
 
@@ -61,7 +67,7 @@ const formatarStatusAmigavel = (status: string) => {
     ENTREGUE: 'Pedido Entregue',
     CANCELADO: 'Pedido Cancelado'
   };
-  return mapa[status] || status;
+  return mapa[status?.toUpperCase()] || status;
 };
 
 // Verifica se o PIX ainda está dentro da janela de 30 minutos
@@ -163,19 +169,17 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
 
   if (!isOpen) return null;
 
-  // Renderiza a barra visual com tratamento de erro (bolinha vermelha)
   const renderProgressBar = (pedido: Pedido) => {
-    const { status } = pedido;
+    const statusUpper = (pedido.status || '').toUpperCase();
     const dataCriacaoBase = pedido.createdAt || pedido.dataCriacao;
     const pixValido = isPixValido(dataCriacaoBase);
 
-    // Identifica se foi recusado no Cartão, Cancelado ou PIX Expirado
     const foiRecusadoOuExpirado = 
-      status === 'CANCELADO' || 
-      status === 'RECUSADO' || 
-      (status === 'PENDENTE' && !pixValido);
+      statusUpper === 'CANCELADO' || 
+      statusUpper === 'RECUSADO' || 
+      (statusUpper === 'PENDENTE' && !pixValido);
 
-    const currentIndex = statusSteps.indexOf(status);
+    const currentIndex = statusSteps.indexOf(statusUpper);
     const percentage = currentIndex >= 0 && !foiRecusadoOuExpirado 
       ? (currentIndex / (statusSteps.length - 1)) * 100 
       : 0;
@@ -189,7 +193,6 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
           />
         </div>
         <div className={styles.stepsRow}>
-          {/* Ponto 1: Fica vermelho se houver recusa em cartão ou PIX expirado */}
           <div 
             className={`${styles.stepDot} ${currentIndex >= 0 && !foiRecusadoOuExpirado ? styles.stepActive : ''}`}
             style={foiRecusadoOuExpirado ? { color: '#ef4444' } : undefined}
@@ -241,6 +244,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
         ) : (
           <div className={styles.ordersList}>
             {pedidos.map((pedido) => {
+              const statusUpper = (pedido.status || '').toUpperCase();
               const codExibicao = pedido.codigoPedido || pedido.id.slice(0, 8);
               const dataCriacaoBase = pedido.createdAt || pedido.dataCriacao;
               const dataFormatada = new Date(dataCriacaoBase || '').toLocaleDateString('pt-BR', {
@@ -251,6 +255,14 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
               
               const previsao = calcularPrevisaoEntrega(dataCriacaoBase);
               const pixAindaValido = isPixValido(dataCriacaoBase);
+
+              // 1. Previsão de entrega somente de 'PAGO' em diante
+              const statusAprovados = ['PAGO', 'EM_SEPARACAO', 'ENVIADO', 'ENTREGUE'];
+              const exibirPrevisaoEntrega = statusAprovados.includes(statusUpper) && Boolean(previsao);
+
+              // 2. Extração flexível do código e imagem do PIX
+              const codigoPix = pedido.qrCodePix || pedido.pixCopiaECola || pedido.pix?.qrCode || '';
+              const base64Pix = pedido.qrCodeBase64Pix || pedido.qrCodeBase64 || pedido.pix?.qrCodeBase64 || '';
 
               return (
                 <div key={pedido.id} className={styles.orderCard}>
@@ -265,17 +277,17 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
                   {renderProgressBar(pedido)}
 
                   {/* PREVISÃO DE ENTREGA */}
-                  {pedido.status !== 'CANCELADO' && pedido.status !== 'RECUSADO' && pedido.status !== 'ENTREGUE' && previsao && (
+                  {exibirPrevisaoEntrega && (
                     <div className={styles.trackingBox}>
                       <span style={{ color: '#15803d' }}>🗓️ Previsão de Entrega:</span>
                       <strong>Entre {previsao}</strong>
                     </div>
                   )}
 
-                  {/* BOTÃO DE AÇÃO DISCRETO PARA PIX OU REFAZER PAGAMENTO */}
-                  {pedido.status === 'PENDENTE' && (
+                  {/* BOTÃO DE AÇÃO PARA PIX OU REFAZER PAGAMENTO */}
+                  {statusUpper === 'PENDENTE' && (
                     <div className={styles.paymentActionBox}>
-                      {pixAindaValido ? (
+                      {pixAindaValido && codigoPix ? (
                         <>
                           <button
                             type="button"
@@ -285,22 +297,23 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
                             ⚡ {pixAbertoId === pedido.id ? 'Ocultar QR Code PIX' : 'Ver QR Code / Copiar PIX'}
                           </button>
 
-                          {pixAbertoId === pedido.id && pedido.qrCodePix && (
+                          {pixAbertoId === pedido.id && (
                             <div className={styles.pixContainerModal}>
-                              {pedido.qrCodeBase64Pix && (
+                              {base64Pix && (
                                 <img
-                                  src={`data:image/jpeg;base64,${pedido.qrCodeBase64Pix}`}
+                                  src={base64Pix.startsWith('data:') ? base64Pix : `data:image/jpeg;base64,${base64Pix}`}
                                   alt="QR Code PIX"
-                                  style={{ width: '130px', height: '130px' }}
+                                  style={{ width: '140px', height: '140px', display: 'block', margin: '0 auto' }}
                                 />
                               )}
+                              
                               <div className={styles.pixCodeBox}>
-                                <input type="text" readOnly value={pedido.qrCodePix} className={styles.pixInput} />
+                                <input type="text" readOnly value={codigoPix} className={styles.pixInput} />
                                 <button
                                   type="button"
                                   className={styles.pixBtn}
                                   style={{ width: 'auto', padding: '6px 12px' }}
-                                  onClick={() => handleCopiarPix(pedido.qrCodePix!, pedido.id)}
+                                  onClick={() => handleCopiarPix(codigoPix, pedido.id)}
                                 >
                                   {copiadoId === pedido.id ? 'Copiado! ✅' : 'Copiar'}
                                 </button>
@@ -309,21 +322,29 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
                           )}
                         </>
                       ) : (
-                        <button
-                          type="button"
-                          className={styles.retryBtn}
-                          onClick={() => {
-                            onClose();
-                            if (onRefazerPagamento) onRefazerPagamento(pedido);
-                          }}
-                        >
-                          🔄 Refazer Pagamento
-                        </button>
+                        /* Se o PIX expirar OU se o código PIX não estiver disponível, renderiza o botão Refazer Pagamento */
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                          {pixAbertoId === pedido.id && !codigoPix && (
+                            <p style={{ fontSize: '0.85rem', color: '#dc2626', margin: 0, textAlign: 'center', fontWeight: 600 }}>
+                              Código PIX não disponível. Por favor, refaça o pagamento abaixo:
+                            </p>
+                          )}
+                          <button
+                            type="button"
+                            className={styles.retryBtn}
+                            onClick={() => {
+                              onClose();
+                              if (onRefazerPagamento) onRefazerPagamento(pedido);
+                            }}
+                          >
+                            🔄 Refazer Pagamento
+                          </button>
+                        </div>
                       )}
                     </div>
                   )}
 
-                  {(pedido.status === 'CANCELADO' || pedido.status === 'RECUSADO') && (
+                  {(statusUpper === 'CANCELADO' || statusUpper === 'RECUSADO') && (
                     <div className={styles.paymentActionBox}>
                       <button
                         type="button"
