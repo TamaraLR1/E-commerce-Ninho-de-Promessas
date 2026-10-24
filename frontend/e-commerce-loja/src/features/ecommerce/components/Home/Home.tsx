@@ -78,7 +78,10 @@ interface Product {
   ativo: boolean;
   ativoGeral?: boolean;
   genero?: string; 
-  isNovidade?: boolean; 
+  isNovidade?: boolean;
+  isMaisVendido?: boolean;
+  vendas?: number;
+  totalVendas?: number;
   categoria: Category;
   imagens: {
     id: string;
@@ -130,7 +133,7 @@ export const Home: React.FC = () => {
 
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [sortBy, setSortBy] = useState<string>('novidades');
+  const [sortBy, setSortBy] = useState<string>('mais-vendidos');
   const [filtroNovidade, setFiltroNovidade] = useState<string>('todos');
 
   const [precoMin, setPrecoMin] = useState<number>(0);
@@ -437,6 +440,12 @@ export const Home: React.FC = () => {
   });
 
   const sortedAndFilteredProducts = [...filteredProducts].sort((a, b) => {
+    if (sortBy === 'mais-vendidos') {
+      const vendasA = a.vendas ?? a.totalVendas ?? 0;
+      const vendasB = b.vendas ?? b.totalVendas ?? 0;
+      return vendasB - vendasA;
+    }
+
     if (sortBy === 'novidades') {
       return b.id.localeCompare(a.id);
     }
@@ -831,6 +840,7 @@ export const Home: React.FC = () => {
             onChange={(e) => setSortBy(e.target.value)}
             className={styles.sortSelect}
           >
+            <option value="mais-vendidos">🔥 Mais Vendidos</option>
             <option value="novidades">✨ Mais Recentes</option>
             <option value="preco-asc">💲 Menor preço</option>
             <option value="preco-desc">💲 Maior preço</option>

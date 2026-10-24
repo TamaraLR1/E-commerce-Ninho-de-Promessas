@@ -21,6 +21,7 @@ const pedidoRoutes_1 = require("./routes/pedidoRoutes");
 const freteRoutes_1 = require("./routes/freteRoutes");
 const carrinhoRoutes_1 = require("./routes/carrinhoRoutes");
 const cupomRoutes_1 = require("./routes/cupomRoutes");
+const relatorioRoutes_1 = require("./routes/relatorioRoutes");
 const path_1 = __importDefault(require("path"));
 const socket_1 = require("./socket");
 const app = (0, express_1.default)();
@@ -56,6 +57,7 @@ app.use('/api', pedidoRoutes_1.pedidoRoutes);
 app.use('/api', freteRoutes_1.freteRoutes);
 app.use('/api', carrinhoRoutes_1.carrinhoRoutes);
 app.use('/api', cupomRoutes_1.cupomRoutes);
+app.use('/api', relatorioRoutes_1.relatorioRoutes);
 const PORT = Number(process.env.PORT) || 3333;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor rodando na porta ${PORT}`);

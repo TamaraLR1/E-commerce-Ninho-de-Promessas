@@ -16,6 +16,7 @@ import { pedidoRoutes } from './routes/pedidoRoutes';
 import { freteRoutes } from './routes/freteRoutes';
 import { carrinhoRoutes } from './routes/carrinhoRoutes';
 import { cupomRoutes } from './routes/cupomRoutes';
+import { relatorioRoutes } from './routes/relatorioRoutes';
 
 import path from 'path';
 import { initSocket, socketMiddleware } from './socket';
@@ -61,6 +62,7 @@ app.use('/api', pedidoRoutes);
 app.use('/api', freteRoutes);
 app.use('/api', carrinhoRoutes);
 app.use('/api', cupomRoutes);
+app.use('/api', relatorioRoutes);
 
 const PORT = Number(process.env.PORT) || 3333;
 

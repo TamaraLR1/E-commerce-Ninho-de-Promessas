@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styles from './AdminDashboard.module.css';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { CupomManager } from './cupons/CupomManager';
+import { RelatorioVendas } from './components/relatorios/RelatorioVendas';
 
 interface ProductMaster {
   id: string;
@@ -187,6 +188,7 @@ export const AdminDashboard: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<
     | 'dashboard'
+    | 'relatorio-vendas'
     | 'cadastro'
     | 'lista'
     | 'oferta'
@@ -1551,6 +1553,7 @@ export const AdminDashboard: React.FC = () => {
 
           <nav>
             <div className={`${styles.navItem} ${activeTab === 'dashboard' ? styles.active : ''}`} onClick={() => { setActiveTab('dashboard'); setIsMenuOpen(false); }}>📊 Dashboard</div>
+            <div className={`${styles.navItem} ${activeTab === 'relatorio-vendas' ? styles.active : ''}`} onClick={() => { setActiveTab('relatorio-vendas'); setIsMenuOpen(false); }}>📈 Relatório de Vendas</div>
             <div className={`${styles.navItem} ${activeTab === 'pedidos' ? styles.active : ''}`} onClick={() => { setActiveTab('pedidos'); setIsMenuOpen(false); }}>🛍️ Gerenciador de Pedidos ({pedidosList.length})</div>
             <div 
               className={`${styles.navItem} ${activeTab === 'cadastro' && !editingProductId ? styles.active : ''}`} 
@@ -1813,6 +1816,12 @@ export const AdminDashboard: React.FC = () => {
                 <p className={`${styles.emptyNotice} ${styles.dashboardErrorNotice}`}>Erro ao carregar dados do dashboard.</p>
               )}
             </section>
+          </div>
+        )}
+
+        {activeTab === 'relatorio-vendas' && (
+          <div className={styles.singleContainer}>
+            <RelatorioVendas apiUrl={API_URL} />
           </div>
         )}
 

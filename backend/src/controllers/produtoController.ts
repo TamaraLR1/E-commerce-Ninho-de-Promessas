@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { getIO } from '../socket'; // Ajuste o caminho relativo para onde está o seu arquivo socket.ts
 
-// 🧮 Função auxiliar para calcular estoque ativo e percentual de desconto de forma padronizada
+// 🧮 Função auxiliar para calcular estoque ativo, percentual de desconto e vendas de forma padronizada
 function formatarProduto(produto: any) {
   if (!produto) return null;
 
@@ -20,10 +20,15 @@ function formatarProduto(produto: any) {
     }
   }
 
+  // 🛒 Contagem padronizada das unidades vendidas em pedidos PAGO
+  const itens = Array.isArray(produto.itemPedidos) ? produto.itemPedidos : [];
+  const vendas = itens.reduce((acc: number, item: any) => acc + (Number(item.quantidade) || 0), 0);
+
   return {
     ...produto,
     ativoGeral: temEstoqueAtivo,
     percentualDesconto,
+    vendas, // Propriedade enviada diretamente para o frontend
   };
 }
 
@@ -138,7 +143,7 @@ export const produtoController = {
         });
       }
 
-      const produtoFormatado = (global as any).formatarProduto ? (global as any).formatarProduto(novoProduto) : novoProduto;
+      const produtoFormatado = formatarProduto(novoProduto);
 
       const io = (req as any).io;
       if (io) {
@@ -158,7 +163,7 @@ export const produtoController = {
         include: {
           categoria: true,
           imagens: {
-            include: { cor: true } // Inclui a cor associada à imagem
+            include: { cor: true }
           },
           estoques: {
             include: {
@@ -168,6 +173,18 @@ export const produtoController = {
           },
           criadoPor: true,    
           atualizadoPor: true,
+          
+          // 👈 Busca a relação de itens de pedidos que foram pagos
+          itemPedidos: {
+            where: {
+              pedido: {
+                status: "PAGO"
+              }
+            },
+            select: {
+              quantidade: true
+            }
+          }
         },
         orderBy: {
           createdAt: "desc",
@@ -184,14 +201,18 @@ export const produtoController = {
 
   async buscarPorId(req: Request, res: Response) {
     try {
-      const id = String(req.params);
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : String(req.params.id);
+
+      if (!id) {
+        return res.status(400).json({ message: 'ID do produto não informado.' });
+      }
 
       const produto = await prisma.produto.findUnique({
         where: { id },
         include: {
           categoria: true,
           imagens: {
-            include: { cor: true } // Inclui a cor associada à imagem
+            include: { cor: true }
           },
           estoques: {
             include: {
@@ -201,6 +222,18 @@ export const produtoController = {
           },
           criadoPor: true,    
           atualizadoPor: true,
+          
+          // 👈 Busca a contagem de vendas para a tela de detalhes
+          itemPedidos: {
+            where: {
+              pedido: {
+                status: "PAGO"
+              }
+            },
+            select: {
+              quantidade: true
+            }
+          }
         },
       });
 
@@ -220,7 +253,6 @@ export const produtoController = {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : String(req.params.id);
       
-      // 1. Extraindo os campos, incluindo isNovidade
       const { nome, preco, descricao, categoryId, genero, tamanhos, coresMapeamentoImagens, isVisible, isNovidade } = req.body;
       const arquivos = (req.files as Express.Multer.File[]) || [];
 
@@ -272,7 +304,6 @@ export const produtoController = {
         const arquivosDaCor = arquivos.filter(file => file.fieldname === keyFiles);
         const mantidasDaCor = imagensMantidasParsed[corId] || [];
 
-        const listaFinalUrlsDaCor = [...mantidasDaCor];
         let ordemGlobalCor = 0;
 
         mantidasDaCor.forEach((urlMantida: string) => {
@@ -302,12 +333,10 @@ export const produtoController = {
         }
       }
 
-      // Tratamento seguro para os booleanos vindos do FormData
       const isVisibleParsed = isVisible !== undefined 
         ? (isVisible === 'true' || isVisible === true) 
         : produtoExistente.isVisible;
 
-      // 2. Garante que se o campo não for enviado, o valor anterior do banco seja mantido
       const isNovidadeParsed = isNovidade !== undefined 
         ? (isNovidade === 'true' || isNovidade === true) 
         : produtoExistente.isNovidade;
@@ -330,7 +359,7 @@ export const produtoController = {
             categoryId: String(categoryId),
             genero: genero || produtoExistente.genero || 'Unissex',
             isVisible: isVisibleParsed,
-            isNovidade: isNovidadeParsed, // 3. Atualiza no banco
+            isNovidade: isNovidadeParsed,
             atualizadoPorId: adminId,
             estoques: {
               create: tamanhosParsed.map((item: any) => ({
@@ -349,6 +378,12 @@ export const produtoController = {
             imagens: { include: { cor: true }, orderBy: { ordem: 'asc' } },
             criadoPor: true,
             atualizadoPor: true,
+            itemPedidos: {
+              where: {
+                pedido: { status: "PAGO" }
+              },
+              select: { quantidade: true }
+            }
           },
         });
       });
@@ -362,7 +397,7 @@ export const produtoController = {
         });
       }
 
-      const produtoFormatado = (global as any).formatarProduto ? (global as any).formatarProduto(produtoAtualizado) : produtoAtualizado;
+      const produtoFormatado = formatarProduto(produtoAtualizado);
 
       const io = (req as any).io;
       if (io) {
@@ -381,7 +416,6 @@ export const produtoController = {
       const id = String(req.params.id);
       const { discountType, promoValue } = req.body;
 
-      // 1. Busca o produto atual para saber o preço original
       const produto = await prisma.produto.findUnique({
         where: { id },
       });
@@ -392,9 +426,8 @@ export const produtoController = {
 
       const precoOriginal = Number(produto.preco);
       let precoPromocional = 0;
-      let percentualCalculado = 0; // Já declarada aqui
+      let percentualCalculado = 0;
 
-      // 2. Calcula o preço promocional com base no tipo escolhido
       if (discountType === 'percentual') {
         const percentual = Number(promoValue);
         if (isNaN(percentual) || percentual < 0 || percentual > 100) {
@@ -412,7 +445,6 @@ export const produtoController = {
         return res.status(400).json({ message: 'Tipo de desconto inválido.' });
       }
 
-      // 3. Atualiza o produto na base de dados persistindo os campos de oferta
       const produtoAtualizado = await prisma.produto.update({
         where: { id },
         data: {
@@ -427,17 +459,18 @@ export const produtoController = {
               tamanho: true,
               cor: true
             }
+          },
+          itemPedidos: {
+            where: {
+              pedido: { status: "PAGO" }
+            },
+            select: { quantidade: true }
           }
         }
       });
 
-      // Monta o objeto incluindo a porcentagem já calculada (sem redeclarar com const)
-      const produtoComDesconto = {
-        ...produtoAtualizado,
-        percentualDesconto: percentualCalculado
-      };
+      const produtoComDesconto = formatarProduto(produtoAtualizado);
 
-      // 4. Dispara o evento via WebSocket com o objeto completo contendo a porcentagem
       const io = getIO();
       if (io) {
         io.emit('produtoAtualizado', produtoComDesconto);
@@ -474,17 +507,25 @@ export const produtoController = {
           imagens: { include: { cor: true } },
           criadoPor: true,    
           atualizadoPor: true,
+          itemPedidos: {
+            where: {
+              pedido: { status: "PAGO" }
+            },
+            select: { quantidade: true }
+          }
         },
       });
 
+      const produtoFormatado = formatarProduto(produtoAtualizado);
+
       const io = (req as any).io;
       if (io) {
-        io.emit('produtoAtualizado', produtoAtualizado);
+        io.emit('produtoAtualizado', produtoFormatado);
       }
 
       return res.status(200).json({ 
         message: 'Visibilidade atualizada com sucesso!', 
-        produto: produtoAtualizado 
+        produto: produtoFormatado 
       });
     } catch (error) {
       console.error('Erro ao atualizar visibilidade:', error);
@@ -494,14 +535,12 @@ export const produtoController = {
 
   async excluir(req: Request, res: Response) {
     try {
-      // ✅ Força a conversão para string pura para satisfazer o PrismaWhereUniqueInput
       const id = Array.isArray(req.params.id) ? req.params.id[0] : String(req.params.id);
 
       if (!id) {
         return res.status(400).json({ message: 'ID do produto não informado.' });
       }
 
-      // Verifica se o produto existe
       const produtoExiste = await prisma.produto.findUnique({
         where: { id },
         include: { estoques: true }
@@ -511,20 +550,17 @@ export const produtoController = {
         return res.status(404).json({ message: 'Produto não encontrado.' });
       }
 
-      // Verifica se existem movimentações de estoque registradas para este produto
       const movimentacoesCount = await prisma.movimentacaoEstoque.count({
         where: { produtoId: id }
       });
 
       if (movimentacoesCount === 0) {
-        // Sem movimentação: Exclusão permanente direta do banco de dados
         await prisma.produto.delete({
           where: { id }
         });
 
         return res.status(200).json({ message: 'Produto excluído permanentemente com sucesso.' });
       } else {
-        // Com movimentação: Apenas inativa o produto para preservar o histórico contábil/fiscal
         const produtoInativado = await prisma.produto.update({
           where: { id },
           data: { 
@@ -552,7 +588,6 @@ export const produtoController = {
         return res.status(400).json({ message: 'ID do produto não informado.' });
       }
 
-      // Executa a reativação alterando ativo e visibilidade no banco de dados
       const produtoReativado = await prisma.produto.update({
         where: { id },
         data: { 
