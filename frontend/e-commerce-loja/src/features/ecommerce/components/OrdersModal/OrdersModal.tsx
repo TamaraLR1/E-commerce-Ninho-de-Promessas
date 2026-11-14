@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
+import { CheckoutModal } from '../CheckoutModal/CheckoutModal';
 import styles from './OrdersModal.module.css';
 
 interface ItemPedido {
@@ -52,7 +53,6 @@ interface OrdersModalProps {
   onClose: () => void;
   apiUrl: string;
   userId?: number | string;
-  onRefazerPagamento?: (pedido: Pedido) => void;
 }
 
 const statusSteps = ['PENDENTE', 'PAGO', 'EM_SEPARACAO', 'ENVIADO', 'ENTREGUE'];
@@ -70,7 +70,6 @@ const formatarStatusAmigavel = (status: string) => {
   return mapa[status?.toUpperCase()] || status;
 };
 
-// Verifica se o PIX ainda está dentro da janela de 30 minutos
 const isPixValido = (dataCriacao?: string) => {
   if (!dataCriacao) return false;
   const dataPedido = new Date(dataCriacao).getTime();
@@ -98,11 +97,12 @@ const calcularPrevisaoEntrega = (dataCriacao: string | undefined) => {
   return `${minDate.toLocaleDateString('pt-BR', formatOptions)} a ${maxDate.toLocaleDateString('pt-BR', formatOptions)}`;
 };
 
-export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUrl, userId, onRefazerPagamento }) => {
+export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUrl, userId }) => {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(false);
   const [pixAbertoId, setPixAbertoId] = useState<string | null>(null);
   const [copiadoId, setCopiadoId] = useState<string | null>(null);
+  const [pedidoRefazendo, setPedidoRefazendo] = useState<Pedido | null>(null);
 
   const socket = useMemo(() => {
     return io(apiUrl, {
@@ -167,17 +167,20 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
     setTimeout(() => setCopiadoId(null), 3000);
   };
 
+  const handleAbrirCheckoutRefazer = (pedido: Pedido) => {
+    localStorage.setItem('pedidoParaRefazerId', pedido.id);
+    setPedidoRefazendo(pedido);
+  };
+
   if (!isOpen) return null;
 
   const renderProgressBar = (pedido: Pedido) => {
     const statusUpper = (pedido.status || '').toUpperCase();
-    const dataCriacaoBase = pedido.createdAt || pedido.dataCriacao;
-    const pixValido = isPixValido(dataCriacaoBase);
 
+    // Pedido só é considerado expirado/recusado se o status real no banco for CANCELADO ou RECUSADO
     const foiRecusadoOuExpirado = 
       statusUpper === 'CANCELADO' || 
-      statusUpper === 'RECUSADO' || 
-      (statusUpper === 'PENDENTE' && !pixValido);
+      statusUpper === 'RECUSADO';
 
     const currentIndex = statusSteps.indexOf(statusUpper);
     const percentage = currentIndex >= 0 && !foiRecusadoOuExpirado 
@@ -201,7 +204,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
               {foiRecusadoOuExpirado ? '✖' : '⏳'}
             </span>
             <p style={foiRecusadoOuExpirado ? { color: '#ef4444' } : undefined}>
-              {foiRecusadoOuExpirado ? 'Recusado' : 'Pendente'}
+              {foiRecusadoOuExpirado ? 'Expirado/Recusado' : 'Pendente'}
             </p>
           </div>
 
@@ -227,194 +230,211 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
   };
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.modalHeader}>
-          <h3>🛍️ Meus Pedidos</h3>
-          <button type="button" className={styles.closeBtn} onClick={onClose}>✕</button>
-        </div>
-
-        {loading ? (
-          <p className={styles.loadingNotice}>Buscando suas compras...</p>
-        ) : pedidos.length === 0 ? (
-          <div className={styles.emptyNotice}>
-            <span>🛒</span>
-            <p>Você ainda não realizou nenhum pedido em nossa loja.</p>
+    <>
+      <div className={styles.modalOverlay} onClick={onClose}>
+        <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+          <div className={styles.modalHeader}>
+            <h3>🛍️ Meus Pedidos</h3>
+            <button type="button" className={styles.closeBtn} onClick={onClose}>✕</button>
           </div>
-        ) : (
-          <div className={styles.ordersList}>
-            {pedidos.map((pedido) => {
-              const statusUpper = (pedido.status || '').toUpperCase();
-              const codExibicao = pedido.codigoPedido || pedido.id.slice(0, 8);
-              const dataCriacaoBase = pedido.createdAt || pedido.dataCriacao;
-              const dataFormatada = new Date(dataCriacaoBase || '').toLocaleDateString('pt-BR', {
-                day: '2-digit', month: '2-digit', year: 'numeric'
-              });
-              const valorFinal = Number(pedido.total || pedido.valorTotal || 0);
-              const codigoRastreio = pedido.codigoRastreio || pedido.rastreioCodigo;
-              
-              const previsao = calcularPrevisaoEntrega(dataCriacaoBase);
-              const pixAindaValido = isPixValido(dataCriacaoBase);
 
-              // 1. Previsão de entrega somente de 'PAGO' em diante
-              const statusAprovados = ['PAGO', 'EM_SEPARACAO', 'ENVIADO', 'ENTREGUE'];
-              const exibirPrevisaoEntrega = statusAprovados.includes(statusUpper) && Boolean(previsao);
+          {loading ? (
+            <p className={styles.loadingNotice}>Buscando suas compras...</p>
+          ) : pedidos.length === 0 ? (
+            <div className={styles.emptyNotice}>
+              <span>🛒</span>
+              <p>Você ainda não realizou nenhum pedido em nossa loja.</p>
+            </div>
+          ) : (
+            <div className={styles.ordersList}>
+              {pedidos.map((pedido) => {
+                const statusUpper = (pedido.status || '').toUpperCase();
+                const codExibicao = pedido.codigoPedido || pedido.id.slice(0, 8);
+                const dataCriacaoBase = pedido.createdAt || pedido.dataCriacao;
+                const dataFormatada = new Date(dataCriacaoBase || '').toLocaleDateString('pt-BR', {
+                  day: '2-digit', month: '2-digit', year: 'numeric'
+                });
+                const valorFinal = Number(pedido.total || pedido.valorTotal || 0);
+                const codigoRastreio = pedido.codigoRastreio || pedido.rastreioCodigo;
+                
+                const previsao = calcularPrevisaoEntrega(dataCriacaoBase);
+                const pixAindaValido = isPixValido(dataCriacaoBase);
 
-              // 2. Extração flexível do código e imagem do PIX
-              const codigoPix = pedido.qrCodePix || pedido.pixCopiaECola || pedido.pix?.qrCode || '';
-              const base64Pix = pedido.qrCodeBase64Pix || pedido.qrCodeBase64 || pedido.pix?.qrCodeBase64 || '';
+                const statusAprovados = ['PAGO', 'EM_SEPARACAO', 'ENVIADO', 'ENTREGUE'];
+                const exibirPrevisaoEntrega = statusAprovados.includes(statusUpper) && Boolean(previsao);
 
-              return (
-                <div key={pedido.id} className={styles.orderCard}>
-                  <div className={styles.orderCardHeader}>
-                    <div>
-                      <strong className={styles.orderCode}>Pedido #{codExibicao}</strong>
-                      <span className={styles.orderDate}>{dataFormatada}</span>
+                const codigoPix = pedido.qrCodePix || pedido.pixCopiaECola || pedido.pix?.qrCode || '';
+                const base64Pix = pedido.qrCodeBase64Pix || pedido.qrCodeBase64 || pedido.pix?.qrCodeBase64 || '';
+
+                const isExpiradoOuCancelado = statusUpper === 'CANCELADO' || statusUpper === 'RECUSADO';
+
+                return (
+                  <div key={pedido.id} className={styles.orderCard}>
+                    <div className={styles.orderCardHeader}>
+                      <div>
+                        <strong className={styles.orderCode}>Pedido #{codExibicao}</strong>
+                        <span className={styles.orderDate}>{dataFormatada}</span>
+                      </div>
+                      <span className={styles.orderTotal}>R$ {valorFinal.toFixed(2)}</span>
                     </div>
-                    <span className={styles.orderTotal}>R$ {valorFinal.toFixed(2)}</span>
-                  </div>
 
-                  {renderProgressBar(pedido)}
+                    {renderProgressBar(pedido)}
 
-                  {/* PREVISÃO DE ENTREGA */}
-                  {exibirPrevisaoEntrega && (
-                    <div className={styles.trackingBox}>
-                      <span style={{ color: '#15803d' }}>🗓️ Previsão de Entrega:</span>
-                      <strong>Entre {previsao}</strong>
-                    </div>
-                  )}
+                    {isExpiradoOuCancelado && (
+                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '10px 12px', borderRadius: '8px', margin: '8px 0', fontSize: '0.85rem', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                        <span style={{ fontSize: '1rem' }}>ℹ️</span>
+                        <p style={{ margin: 0, color: '#475569', lineHeight: '1.4' }}>
+                          <strong>Atenção:</strong> Este pedido expirou ou foi cancelado. Clique abaixo para abrir o checkout e refazer o pagamento.
+                        </p>
+                      </div>
+                    )}
 
-                  {/* BOTÃO DE AÇÃO PARA PIX OU REFAZER PAGAMENTO */}
-                  {statusUpper === 'PENDENTE' && (
-                    <div className={styles.paymentActionBox}>
-                      {pixAindaValido && codigoPix ? (
-                        <>
-                          <button
-                            type="button"
-                            className={styles.pixBtn}
-                            onClick={() => setPixAbertoId(pixAbertoId === pedido.id ? null : pedido.id)}
-                          >
-                            ⚡ {pixAbertoId === pedido.id ? 'Ocultar QR Code PIX' : 'Ver QR Code / Copiar PIX'}
-                          </button>
+                    {exibirPrevisaoEntrega && (
+                      <div className={styles.trackingBox}>
+                        <span style={{ color: '#15803d' }}>🗓️ Previsão de Entrega:</span>
+                        <strong>Entre {previsao}</strong>
+                      </div>
+                    )}
 
-                          {pixAbertoId === pedido.id && (
-                            <div className={styles.pixContainerModal}>
-                              {base64Pix && (
-                                <img
-                                  src={base64Pix.startsWith('data:') ? base64Pix : `data:image/jpeg;base64,${base64Pix}`}
-                                  alt="QR Code PIX"
-                                  style={{ width: '140px', height: '140px', display: 'block', margin: '0 auto' }}
-                                />
-                              )}
-                              
-                              <div className={styles.pixCodeBox}>
-                                <input type="text" readOnly value={codigoPix} className={styles.pixInput} />
-                                <button
-                                  type="button"
-                                  className={styles.pixBtn}
-                                  style={{ width: 'auto', padding: '6px 12px' }}
-                                  onClick={() => handleCopiarPix(codigoPix, pedido.id)}
-                                >
-                                  {copiadoId === pedido.id ? 'Copiado! ✅' : 'Copiar'}
-                                </button>
+                    {/* BOTÕES DE AÇÃO COM TRATATIVA DE CARTÃO/ANÁLISE */}
+                    {(statusUpper === 'PENDENTE' || isExpiradoOuCancelado) && (
+                      <div className={styles.paymentActionBox}>
+                        {pixAindaValido && codigoPix && !isExpiradoOuCancelado ? (
+                          <>
+                            <button
+                              type="button"
+                              className={styles.pixBtn}
+                              onClick={() => setPixAbertoId(pixAbertoId === pedido.id ? null : pedido.id)}
+                            >
+                              ⚡ {pixAbertoId === pedido.id ? 'Ocultar QR Code PIX' : 'Ver QR Code / Copiar PIX'}
+                            </button>
+
+                            <button
+                              type="button"
+                              className={styles.retryBtn}
+                              style={{ marginTop: '6px', background: '#2563eb', color: '#fff' }}
+                              onClick={() => handleAbrirCheckoutRefazer(pedido)}
+                            >
+                              💳 Abrir Checkout (Refazer Pagamento)
+                            </button>
+
+                            {pixAbertoId === pedido.id && (
+                              <div className={styles.pixContainerModal}>
+                                {base64Pix && (
+                                  <img
+                                    src={base64Pix.startsWith('data:') ? base64Pix : `data:image/jpeg;base64,${base64Pix}`}
+                                    alt="QR Code PIX"
+                                    style={{ width: '140px', height: '140px', display: 'block', margin: '0 auto' }}
+                                  />
+                                )}
+                                
+                                <div className={styles.pixCodeBox}>
+                                  <input type="text" readOnly value={codigoPix} className={styles.pixInput} />
+                                  <button
+                                    type="button"
+                                    className={styles.pixBtn}
+                                    style={{ width: 'auto', padding: '6px 12px' }}
+                                    onClick={() => handleCopiarPix(codigoPix, pedido.id)}
+                                  >
+                                    {copiadoId === pedido.id ? 'Copiado! ✅' : 'Copiar'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '10px 12px', borderRadius: '8px', marginBottom: '8px', fontSize: '0.85rem', color: '#1e40af', textAlign: 'left' }}>
+                              ⏳ <strong>Pagamento em Análise / Processamento:</strong> Se efetuou o pagamento com cartão de crédito recentemente, aguarde alguns instantes. Análises de segurança do Mercado Pago podem levar <strong>alguns minutos ou até 2 dias úteis</strong> para aprovação. O status atualizar-se-á automaticamente assim que confirmado.
+                            </div>
+
+                            <button
+                              type="button"
+                              className={styles.retryBtn}
+                              style={{ backgroundColor: '#2563eb', color: '#fff', width: '100%', padding: '10px' }}
+                              onClick={() => handleAbrirCheckoutRefazer(pedido)}
+                            >
+                              💳 Tentar Novamente / Outro Meio
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {codigoRastreio && (
+                      <div className={styles.trackingBox} style={{ marginTop: '8px' }}>
+                        <span>🚚 Código de Rastreio:</span>
+                        <strong>{codigoRastreio}</strong>
+                      </div>
+                    )}
+
+                    {/* HISTÓRICO DE STATUS */}
+                    {pedido.historicoStatus && pedido.historicoStatus.length > 0 && (
+                      <div style={{ marginTop: '12px', marginBottom: '12px', padding: '10px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                        <h4 style={{ margin: '0 0 8px 0', fontSize: '0.8rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          ⏱️ Histórico
+                        </h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {pedido.historicoStatus.map((hist, idx) => (
+                            <div key={hist.id || idx} style={{ display: 'flex', gap: '10px', fontSize: '0.8rem', borderLeft: '2px solid #cbd5e1', paddingLeft: '8px' }}>
+                              <span style={{ color: '#64748b', minWidth: '110px', fontWeight: 500 }}>
+                                {new Date(hist.data).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <strong style={{ color: '#0f172a' }}>{formatarStatusAmigavel(hist.status)}</strong>
+                                {hist.observacao && <span style={{ color: '#64748b', fontSize: '0.75rem' }}>{hist.observacao}</span>}
                               </div>
                             </div>
-                          )}
-                        </>
-                      ) : (
-                        /* Se o PIX expirar OU se o código PIX não estiver disponível, renderiza o botão Refazer Pagamento */
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
-                          {pixAbertoId === pedido.id && !codigoPix && (
-                            <p style={{ fontSize: '0.85rem', color: '#dc2626', margin: 0, textAlign: 'center', fontWeight: 600 }}>
-                              Código PIX não disponível. Por favor, refaça o pagamento abaixo:
-                            </p>
-                          )}
-                          <button
-                            type="button"
-                            className={styles.retryBtn}
-                            onClick={() => {
-                              onClose();
-                              if (onRefazerPagamento) onRefazerPagamento(pedido);
-                            }}
-                          >
-                            🔄 Refazer Pagamento
-                          </button>
+                          ))}
                         </div>
-                      )}
-                    </div>
-                  )}
-
-                  {(statusUpper === 'CANCELADO' || statusUpper === 'RECUSADO') && (
-                    <div className={styles.paymentActionBox}>
-                      <button
-                        type="button"
-                        className={styles.retryBtn}
-                        onClick={() => {
-                          onClose();
-                          if (onRefazerPagamento) onRefazerPagamento(pedido);
-                        }}
-                      >
-                        🔄 Refazer Pagamento
-                      </button>
-                    </div>
-                  )}
-
-                  {codigoRastreio && (
-                    <div className={styles.trackingBox} style={{ marginTop: '8px' }}>
-                      <span>🚚 Código de Rastreio:</span>
-                      <strong>{codigoRastreio}</strong>
-                    </div>
-                  )}
-
-                  {/* HISTÓRICO DE STATUS */}
-                  {pedido.historicoStatus && pedido.historicoStatus.length > 0 && (
-                    <div style={{ marginTop: '12px', marginBottom: '12px', padding: '10px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <h4 style={{ margin: '0 0 8px 0', fontSize: '0.8rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        ⏱️ Histórico
-                      </h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {pedido.historicoStatus.map((hist, idx) => (
-                          <div key={hist.id || idx} style={{ display: 'flex', gap: '10px', fontSize: '0.8rem', borderLeft: '2px solid #cbd5e1', paddingLeft: '8px' }}>
-                            <span style={{ color: '#64748b', minWidth: '110px', fontWeight: 500 }}>
-                              {new Date(hist.data).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                              <strong style={{ color: '#0f172a' }}>{formatarStatusAmigavel(hist.status)}</strong>
-                            </div>
-                          </div>
-                        ))}
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  <div className={styles.itemsSummary}>
-                    {pedido.itens?.map((item, idx) => {
-                      const nomeProd = item.nomeProduto || item.produto?.nome || 'Produto';
-                      const rawImg = item.imagemUrl || item.produto?.imagens?.[0]?.url;
-                      const imgUrl = getImageUrl(rawImg);
+                    <div className={styles.itemsSummary}>
+                      {pedido.itens?.map((item, idx) => {
+                        const nomeProd = item.nomeProduto || item.produto?.nome || 'Produto';
+                        const rawImg = item.imagemUrl || item.produto?.imagens?.[0]?.url;
+                        const imgUrl = getImageUrl(rawImg);
 
-                      return (
-                        <div key={item.id || idx} className={styles.itemRow}>
-                          <img src={imgUrl} alt={nomeProd} className={styles.itemThumb} />
-                          <div className={styles.itemMeta}>
-                            <p className={styles.itemName}>{nomeProd}</p>
-                            <span className={styles.itemSub}>
-                              {item.corNome && `Cor: ${item.corNome}`} {item.tamanho && `| Tam: ${item.tamanho}`} | Qtd: {item.quantidade}
+                        return (
+                          <div key={item.id || idx} className={styles.itemRow}>
+                            <img src={imgUrl} alt={nomeProd} className={styles.itemThumb} />
+                            <div className={styles.itemMeta}>
+                              <p className={styles.itemName}>{nomeProd}</p>
+                              <span className={styles.itemSub}>
+                                {item.corNome && `Cor: ${item.corNome}`} {item.tamanho && `| Tam: ${item.tamanho}`} | Qtd: {item.quantidade}
+                              </span>
+                            </div>
+                            <span className={styles.itemPrice}>
+                              R$ {(Number(item.precoUnitario) * Number(item.quantidade)).toFixed(2)}
                             </span>
                           </div>
-                          <span className={styles.itemPrice}>
-                            R$ {(Number(item.precoUnitario) * Number(item.quantidade)).toFixed(2)}
-                          </span>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* CHECKOUT MODAL PARA REFAZER O PAGAMENTO DO PEDIDO SELECIONADO */}
+      {pedidoRefazendo && (
+        <CheckoutModal
+          total={Number(pedidoRefazendo.total || pedidoRefazendo.valorTotal || 0)}
+          onClose={() => {
+            localStorage.removeItem('pedidoParaRefazerId');
+            setPedidoRefazendo(null);
+          }}
+          onPaymentSuccess={() => {
+            localStorage.removeItem('pedidoParaRefazerId');
+            setPedidoRefazendo(null);
+            carregarMeusPedidos();
+          }}
+        />
+      )}
+    </>
   );
 };

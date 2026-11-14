@@ -46,10 +46,48 @@ const OPCAO_RETIRADA: OpcaoFrete = {
 };
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPaymentSuccess, total }) => {
-  const { itens, subtotalSelecionados, carregarCarrinho } = useCart();
+  const { itens, subtotalSelecionados, limparCarrinho } = useCart();
 
-  const itensParaCompra = itens.filter(item => item.selecionado);
-  const valorTotalBase = subtotalSelecionados || total;
+  // Estados para suportar o refazer pedido do histórico
+  const [itensPedidoRefazer, setItensPedidoRefazer] = useState<any[]>([]);
+  const [carregandoRefazer, setCarregandoRefazer] = useState<boolean>(false);
+
+  const pedidoIdRefazer = localStorage.getItem('pedidoParaRefazerId');
+
+  // Efeito para buscar os itens do pedido original caso esteja a refazer o pagamento
+  useEffect(() => {
+    if (pedidoIdRefazer) {
+      const buscarPedidoOriginal = async () => {
+        try {
+          setCarregandoRefazer(true);
+          const res = await axios.get(`${API_URL}/api/pedidos/${pedidoIdRefazer}`, { withCredentials: true });
+          if (res.data && res.data.itens) {
+            const itensFormatados = res.data.itens.map((i: any) => ({
+              produtoId: i.produtoId || i.produto?.id,
+              tamanhoId: i.tamanhoId || i.tamanho?.id,
+              corId: i.corId || i.cor?.id,
+              nome: i.produto?.nome || i.nomeProduto || 'Produto',
+              quantidade: i.quantidade,
+              totalItem: Number(i.precoUnitario) * Number(i.quantidade),
+              selecionado: true
+            }));
+            setItensPedidoRefazer(itensFormatados);
+          }
+        } catch (err) {
+          console.error('Erro ao carregar pedido para refazer:', err);
+        } finally {
+          setCarregandoRefazer(false);
+        }
+      };
+      buscarPedidoOriginal();
+    }
+  }, [pedidoIdRefazer]);
+
+  // Se estiver a refazer, usa os itens do pedido antigo; senão, usa os itens selecionados do carrinho
+  const itensParaCompra = pedidoIdRefazer ? itensPedidoRefazer : itens.filter(item => item.selecionado);
+  const valorTotalBase = pedidoIdRefazer 
+    ? itensPedidoRefazer.reduce((acc, item) => acc + item.totalItem, 0) 
+    : (subtotalSelecionados || total);
 
   const [step, setStep] = useState<number>(1);
   const [clienteLogadoId, setClienteLogadoId] = useState<string>('');
@@ -206,7 +244,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   const valorFreteNum = freteSelecionado ? Number(parseFloat(freteSelecionado.price || '0').toFixed(2)) : 0;
   const totalGeral = Number((subtotalComDesconto + valorFreteNum).toFixed(2));
 
-  // Regra de validação: valores menores que R$ 1,00 não permitem cartão de crédito
   const permiteCartao = totalGeral >= 1.00;
 
   const handleAvancarParaFrete = async (e: React.FormEvent) => {
@@ -259,7 +296,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   };
 
   const enviarPedidoParaBackend = async (payloadCard: any = null) => {
-    // Validação de segurança no front
     if (metodoPagamento === 'credit_card' && totalGeral < 1.00) {
       const msg = 'O valor mínimo para pagamentos com cartão de crédito é de R$ 1,00.';
       setErroPagamento(msg);
@@ -272,7 +308,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
       setLoadingPagamento(true);
       setErroPagamento('');
 
+      const endpoint = pedidoIdRefazer 
+        ? `${API_URL}/api/pedidos/${pedidoIdRefazer}/atualizar-pagamento` 
+        : `${API_URL}/api/pagamento`;
+
       const payloadBackend = {
+        pedidoParaRefazerId: pedidoIdRefazer || null,
         transaction_amount: totalGeral,
         token: payloadCard?.token || null,
         description: 'Compra Ninho de Promessas',
@@ -306,23 +347,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
         })),
       };
 
-      const res = await axios.post(`${API_URL}/api/pagamento`, payloadBackend, {
+      const res = await axios.post(endpoint, payloadBackend, {
         withCredentials: true,
       });
 
       if (res.data.success || res.data.sucesso) {
-        const qrCodePix = res.data.qrCode || res.data.pixCopiaECola;
-        const qrCodeBase64Pix = res.data.qrCodeBase64;
+        localStorage.removeItem('pedidoParaRefazerId');
+
+        const qrCodePix = res.data.qrCode || res.data.pixCopiaECola || res.data.pedido?.qrCodePix;
+        const qrCodeBase64Pix = res.data.qrCodeBase64 || res.data.pedido?.qrCodeBase64Pix;
+
+        if (!pedidoIdRefazer && limparCarrinho) {
+          await limparCarrinho();
+        }
 
         if (metodoPagamento === 'pix' && qrCodePix) {
           setDadosPix({
             qrCode: qrCodePix,
             qrCodeBase64: qrCodeBase64Pix,
           });
-          if (carregarCarrinho) await carregarCarrinho();
         } else {
-          if (carregarCarrinho) await carregarCarrinho();
-          alert('🎉 Pedido gerado com sucesso!');
+          alert('🎉 Pagamento atualizado com sucesso!');
           if (onPaymentSuccess) {
             onPaymentSuccess();
           } else {
@@ -336,11 +381,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
       
       setErroPagamento(mensagemErro);
       alert(mensagemErro);
-
-      if (mensagemErro.toLowerCase().includes('esgotou') || mensagemErro.toLowerCase().includes('stock') || mensagemErro.toLowerCase().includes('estoque')) {
-        if (carregarCarrinho) await carregarCarrinho();
-        onClose();
-      }
     } finally {
       setLoadingPagamento(false);
     }
@@ -389,7 +429,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
             {dadosPix.qrCodeBase64 && (
               <div className={styles.qrCodeWrapper}>
                 <img
-                  src={`data:image/jpeg;base64,${dadosPix.qrCodeBase64}`}
+                  src={dadosPix.qrCodeBase64.startsWith('data:') ? dadosPix.qrCodeBase64 : `data:image/jpeg;base64,${dadosPix.qrCodeBase64}`}
                   alt="QR Code PIX Mercado Pago"
                   className={styles.qrCodeImg}
                 />
@@ -643,7 +683,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                     className={styles.primaryButton}
                     disabled={!freteSelecionado}
                     onClick={() => {
-                      // Se o total for menor que 1 real, garante que o método de pagamento inicial selecionado seja Pix
                       if (totalGeral < 1.00) {
                         setMetodoPagamento('pix');
                       }
@@ -661,24 +700,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
               <div className={styles.stepForm}>
                 <h3>💳 Etapa 3: Pagamento</h3>
 
-                {itensParaCompra.length === 0 ? (
+                {carregandoRefazer ? (
+                  <div className={styles.loadingBox}>A carregar dados do pedido...</div>
+                ) : itensParaCompra.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '2rem 1rem', background: '#fef2f2', borderRadius: '8px', border: '1px solid #fecaca', margin: '1rem 0' }}>
                     <p style={{ color: '#991b1b', fontWeight: 'bold', fontSize: '1rem', marginBottom: '0.5rem' }}>
-                      ⚠️ Ops! O item selecionado esgotou no stock.
+                      ⚠️ Ops! Não foram encontrados itens para este pedido.
                     </p>
                     <p style={{ color: '#7f1d1d', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
-                      Já não é possível concluir a compra deste produto porque ele ficou sem stock. Por favor, feche esta janela, atualize o carrinho e tente novamente.
+                      Por favor, feche esta janela e tente novamente.
                     </p>
                     <button
                       type="button"
                       className={styles.primaryButton}
-                      onClick={async () => {
-                        if (carregarCarrinho) await carregarCarrinho();
-                        onClose();
-                      }}
+                      onClick={onClose}
                       style={{ backgroundColor: '#dc2626' }}
                     >
-                      Fechar e Atualizar Carrinho
+                      Fechar
                     </button>
                   </div>
                 ) : (
@@ -772,7 +810,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                   <div className={styles.summaryRow}>
                     <span>Frete ({freteSelecionado?.name}):</span>
                     <span>
-                      {valorFreteNum === 0 ? 'Grátis' : `R$ {valorFreteNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
+                      {valorFreteNum === 0 ? 'Grátis' : `R$ ${valorFreteNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
                     </span>
                   </div>
                   <div className={styles.totalRow}>

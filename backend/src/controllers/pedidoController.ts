@@ -1,22 +1,108 @@
 import { Request, Response } from 'express';
+import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { prisma } from '../lib/prisma';
 import { getIO } from '../socket';
 import { formatarProduto } from './produtoController';
 
+const mpAccessToken = process.env.MERCADOPAGO_ACCESS_TOKEN || 'APP_USR-6241648762325115-101109-22bbdb4d167baad86cf6c9f6f2776dc8-3529610690';
+const client = new MercadoPagoConfig({ accessToken: mpAccessToken });
+const paymentClient = new Payment(client);
+const BACKEND_URL = process.env.BACKEND_URL || 'https://ninhoback.tamaralr.com.br';
+
 export const pedidoController = {
 
-  // 🛒 0. Método para Criar Pedido com Validação e Baixa de Stock em Tempo Real
-  async criarPedido(req: Request, res: Response) {
+  // 🛒 0. Método para Criar Pedido (ou Atualizar se vier de "Refazer Pagamento" via Checkout)
+ 
+ async criarPedido(req: Request, res: Response) {
     try {
       const rawUserId = (req as any).user?.id || (req as any).userId || (req as any).user?.userId;
       const userId = rawUserId ? Number(rawUserId) : null;
-      const { itens, enderecoId, valorTotal, valorFrete, servicoFrete, metodoPagamento } = req.body;
+      const { itens, enderecoId, valorTotal, valorFrete, servicoFrete, metodoPagamento, pedidoParaRefazerId, transaction_amount, token, installments, issuer_id, description } = req.body;
+
+      const valorFinalPedido = Number(valorTotal || transaction_amount || 0);
 
       if (!itens || !Array.isArray(itens) || itens.length === 0) {
         return res.status(400).json({ message: 'O carrinho está vazio.' });
       }
 
-      // 🔍 PASSO 1: Validar se todos os itens possuem stock disponível no banco de dados
+      // Se for um pedido sendo refeito via checkout, vamos processar o pagamento e atualizar o pedido existente
+      if (pedidoParaRefazerId) {
+        const pedidoExistente = await prisma.pedido.findFirst({
+          where: { id: String(pedidoParaRefazerId), userId: userId ? Number(userId) : undefined },
+          include: { itens: true }
+        });
+
+        if (!pedidoExistente) {
+          return res.status(404).json({ message: 'Pedido original para refazer não encontrado.' });
+        }
+
+        const user = await prisma.user.findUnique({ where: { id: Number(userId) } });
+        const isCartao = metodoPagamento === 'credit_card' || metodoPagamento !== 'pix';
+
+        let paymentBody: any = {
+          transaction_amount: Number(pedidoExistente.valorTotal),
+          description: `Refazendo pagamento Pedido #${pedidoExistente.id.slice(0, 8)}`,
+          notification_url: `${BACKEND_URL}/api/webhooks/mercadopago`,
+          payer: {
+            email: user?.email || 'cliente@ninhodepromessas.com.br',
+            first_name: (user?.nome || 'Cliente').trim(),
+            last_name: (user?.sobrenome || '').trim(),
+            identification: {
+              type: 'CPF',
+              number: user?.cpf ? String(user.cpf).replace(/\D/g, '') : '00000000000',
+            }
+          }
+        };
+
+        if (isCartao) {
+          paymentBody.payment_method_id = metodoPagamento !== 'credit_card' ? metodoPagamento : 'master';
+          paymentBody.token = token;
+          paymentBody.installments = Number(installments || 1);
+          if (issuer_id) paymentBody.issuer_id = issuer_id;
+        } else {
+          paymentBody.payment_method_id = 'pix';
+        }
+
+        const mpResponse = await paymentClient.create({ body: paymentBody });
+        const statusMapeado = mpResponse.status === 'approved' ? 'PAGO' : 'PENDENTE';
+
+        const pedidoAtualizado = await prisma.pedido.update({
+          where: { id: pedidoExistente.id },
+          data: {
+            mpPaymentId: String(mpResponse.id),
+            status: statusMapeado,
+            metodoPagamento: isCartao ? 'credit_card' : 'pix',
+            createdAt: new Date(),
+            historicoStatus: {
+              create: {
+                status: statusMapeado,
+                observacao: statusMapeado === 'PAGO' 
+                  ? 'Pagamento aprovado via Cartão de Crédito no Checkout.' 
+                  : 'Novo código PIX gerado no Checkout.'
+              }
+            }
+          },
+          include: { itens: true, historicoStatus: true, endereco: true }
+        });
+
+        const io = getIO();
+        if (io && userId) {
+          io.to(`usuario_${userId}`).emit('pedidoAtualizado', pedidoAtualizado);
+          io.emit('pedidoAtualizado', pedidoAtualizado);
+        }
+
+        return res.status(200).json({
+          success: true,
+          sucesso: true,
+          pedido: {
+            ...pedidoAtualizado,
+            qrCodePix: mpResponse.point_of_interaction?.transaction_data?.qr_code,
+            qrCodeBase64Pix: mpResponse.point_of_interaction?.transaction_data?.qr_code_base64,
+          }
+        });
+      }
+
+      // Fluxo normal de criação de novo pedido
       const produtosParaAtualizarIds = new Set<string>();
 
       for (const item of itens) {
@@ -46,7 +132,7 @@ export const pedidoController = {
         if (produtoEstoque.estoque < qtdSolicitada) {
           const nomeProd = produtoEstoque.produto?.nome || 'Produto';
           return res.status(400).json({
-            message: `Ops! O item "${nomeProd}" (${corNome}/${tamanhoNome}) esgotou no stock e não é mais possível concluir a compra. Por favor, volte ao carrinho para atualizá-lo.`,
+            message: `Ops! O item "${nomeProd}" (${corNome}/${tamanhoNome}) esgotou no stock e não é mais possível concluir a compra.`,
             produtoId,
             estoqueDisponivel: produtoEstoque.estoque,
           });
@@ -55,11 +141,10 @@ export const pedidoController = {
         produtosParaAtualizarIds.add(produtoId);
       }
 
-      // 🛒 PASSO 2: Criar o Pedido e Atualizar o Stock (Transação Atômica)
       const novoPedido = await prisma.$transaction(async (tx) => {
         const pedidoCriado = await tx.pedido.create({
           data: {
-            valorTotal: Number(valorTotal),
+            valorTotal: Number(valorFinalPedido),
             valorFrete: Number(valorFrete || 0),
             servicoFrete: servicoFrete || 'Entrega Padrão',
             metodoPagamento: metodoPagamento || 'PIX',
@@ -102,7 +187,6 @@ export const pedidoController = {
           },
         });
 
-        // B. Decrementa o saldo físico do stock para cada variação
         for (const item of itens) {
           const produtoId = String(item.produtoId || item.id);
           const corNome = item.corNome || 'Padrão';
@@ -132,32 +216,8 @@ export const pedidoController = {
         return pedidoCriado;
       });
 
-      // 📡 PASSO 3: Emitir Atualização Socket em Tempo Real para a Vitrine/Carrinho
       const io = getIO();
       if (io) {
-        for (const prodId of produtosParaAtualizarIds) {
-          const produtoAtualizado = await prisma.produto.findUnique({
-            where: { id: prodId },
-            include: {
-              categoria: true,
-              imagens: { include: { cor: true }, orderBy: { ordem: 'asc' } },
-              estoques: { include: { tamanho: true, cor: true } },
-              criadoPor: true,
-              atualizadoPor: true,
-              itemPedidos: {
-                where: { pedido: { status: 'PAGO' } },
-                select: { quantidade: true },
-              },
-            },
-          });
-
-          if (produtoAtualizado) {
-            const produtoFormatado = formatarProduto(produtoAtualizado);
-            io.emit('produtoAtualizado', produtoFormatado);
-            io.emit('produto-atualizado', produtoFormatado);
-          }
-        }
-
         if (userId) {
           io.to(`usuario_${userId}`).emit('novoPedidoCriado', novoPedido);
         }
@@ -496,4 +556,71 @@ export const pedidoController = {
       return res.status(500).json({ message: 'Erro ao salvar o código de rastreio.' });
     }
   },
+
+  // 6. Atualizar Pagamento Existente (PIX direto no modal)
+  async atualizarPagamentoExistente(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const { metodoPagamento } = req.body;
+      const userIdLogado = (req as any).userId || (req as any).user?.id || (req as any).user?.userId;
+
+      const pedido = await prisma.pedido.findFirst({
+        where: { id: String(id), userId: Number(userIdLogado) },
+        include: { itens: true }
+      });
+
+      if (!pedido) return res.status(404).json({ message: 'Pedido não encontrado.' });
+
+      const user = await prisma.user.findUnique({ where: { id: Number(userIdLogado) } });
+
+      const paymentBody = {
+        transaction_amount: Number(pedido.valorTotal),
+        description: `Refazendo pagamento Pedido #${pedido.id.slice(0, 8)}`,
+        notification_url: `${BACKEND_URL}/api/webhooks/mercadopago`,
+        payment_method_id: 'pix',
+        payer: {
+          email: user?.email || 'cliente@ninhodepromessas.com.br',
+          first_name: (user?.nome || 'Cliente').trim(),
+          last_name: (user?.sobrenome || '').trim(),
+          identification: {
+            type: 'CPF',
+            number: user?.cpf ? String(user.cpf).replace(/\D/g, '') : '00000000000',
+          }
+        }
+      };
+
+      const mpResponse = await paymentClient.create({ body: paymentBody });
+
+      const pedidoAtualizado = await prisma.pedido.update({
+        where: { id: pedido.id },
+        data: {
+          mpPaymentId: String(mpResponse.id),
+          status: 'PENDENTE',
+          metodoPagamento: 'pix',
+          createdAt: new Date(),
+          historicoStatus: {
+            create: {
+              status: 'PENDENTE',
+              observacao: 'Novo código PIX gerado para nova tentativa de pagamento.'
+            }
+          }
+        },
+        include: { itens: true, historicoStatus: true }
+      });
+
+      return res.status(200).json({
+        success: true,
+        sucesso: true,
+        pedido: {
+          ...pedidoAtualizado,
+          qrCodePix: mpResponse.point_of_interaction?.transaction_data?.qr_code,
+          qrCodeBase64Pix: mpResponse.point_of_interaction?.transaction_data?.qr_code_base64,
+        }
+      });
+
+    } catch (error: any) {
+      console.error('Erro ao atualizar pagamento:', error);
+      return res.status(500).json({ message: 'Erro ao processar pagamento.', error: error.message });
+    }
+  }
 };

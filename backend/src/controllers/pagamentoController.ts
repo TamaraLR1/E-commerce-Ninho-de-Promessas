@@ -55,6 +55,7 @@ export const pagamentoController = {
       }
 
       const {
+        pedidoParaRefazerId, // ID opcional enviado quando o cliente clica em refazer/tentar outro meio
         transaction_amount,
         token,
         description,
@@ -78,7 +79,7 @@ export const pagamentoController = {
       }
 
       // -------------------------------------------------------------------------
-      // NOVA REGRA: Validação de valor mínimo para Cartão de Crédito (< R$ 1,00)
+      // Validação de valor mínimo para Cartão de Crédito (< R$ 1,00)
       // -------------------------------------------------------------------------
       const isCartaoCredito = payment_method_id === 'credit_card' || (payment_method_id && payment_method_id !== 'pix');
       
@@ -87,7 +88,6 @@ export const pagamentoController = {
           message: 'O valor mínimo para pagamentos com cartão de crédito é de R$ 1,00.'
         });
       }
-      // -------------------------------------------------------------------------
 
       // Validação prévia de algoritmo de CPF
       const cpfLimpo = user.cpf ? String(user.cpf).replace(/\D/g, '') : '';
@@ -95,6 +95,25 @@ export const pagamentoController = {
         return res.status(400).json({ 
           message: 'O CPF cadastrado na sua conta é inválido. Por favor, corrija o CPF em seus dados pessoais para continuar.' 
         });
+      }
+
+      // -------------------------------------------------------------------------
+      // TRATATIVA DE REFAZER: Se houver um pedido anterior, cancela o pagamento antigo no MP
+      // -------------------------------------------------------------------------
+      if (pedidoParaRefazerId) {
+        const pedidoAntigo = await prisma.pedido.findUnique({
+          where: { id: String(pedidoParaRefazerId) },
+        });
+
+        if (pedidoAntigo && pedidoAntigo.mpPaymentId) {
+          try {
+            // Tenta cancelar a transação anterior no Mercado Pago para liberar o valor/cartão
+            await paymentClient.cancel({ id: String(pedidoAntigo.mpPaymentId) });
+            console.log(`Pagamento anterior ${pedidoAntigo.mpPaymentId} cancelado com sucesso no Mercado Pago.`);
+          } catch (cancelErr) {
+            console.warn(`Não foi possível cancelar o pagamento anterior ${pedidoAntigo.mpPaymentId} no MP (pode já estar expirado ou aprovado):`, cancelErr);
+          }
+        }
       }
 
       const isSandbox = mpAccessToken.startsWith('TEST-');
@@ -171,7 +190,7 @@ export const pagamentoController = {
       else if (mpResponse.status === 'in_process') statusPedido = 'EM_SEPARACAO';
       else if (mpResponse.status === 'rejected') statusPedido = 'RECUSADO';
 
-      // 3. Salva ou Atualiza Endereço (evitando duplicações), Cria Pedido e Itens em uma transação
+      // 3. Salva/Atualiza Endereço e gerencia a atualização ou criação do Pedido
       const resultado = await prisma.$transaction(async (tx) => {
         let enderecoExistente = await tx.endereco.findFirst({
           where: { userId: user.id },
@@ -212,41 +231,85 @@ export const pagamentoController = {
           enderecoId = novoEndereco.id;
         }
 
-        const novoPedido = await tx.pedido.create({
-          data: {
-            status: statusPedido,
-            subtotal: Number(subtotal || Number(transaction_amount) - (Number(valorFrete) || 0)),
-            valorFrete: Number(valorFrete || 0),
-            valorTotal: Number(transaction_amount),
-            servicoFrete: servicoFrete || 'Padrão',
-            prazoEntrega: prazoEntrega || null,
-            metodoPagamento: payment_method_id,
-            mpPaymentId: String(mpResponse.id),
+        let pedidoFinal;
 
-            clienteNome: `${user.nome} ${user.sobrenome}`,
-            clienteEmail: user.email,
-            clienteCpf: user.cpf,
-            clienteFone: user.telefone,
-
-            userId: user.id,
-            enderecoId: enderecoId,
-
-            itens: {
-              create: items.map((item: any) => ({
-                produtoId: String(item.produtoId),
-                tamanhoId: item.tamanhoId ? String(item.tamanhoId) : null,
-                corId: item.corId ? String(item.corId) : null,
-                nomeProduto: item.nome || 'Produto',
-                precoUnitario: Number(item.preco),
-                quantidade: Number(item.quantidade),
-              })),
+        // Se foi enviado um ID para refazer, ATUALIZAMOS o pedido existente em vez de criar um novo (Zero pedidos fantasmas!)
+        if (pedidoParaRefazerId) {
+          pedidoFinal = await tx.pedido.update({
+            where: { id: String(pedidoParaRefazerId) },
+            data: {
+              status: statusPedido,
+              subtotal: Number(subtotal || Number(transaction_amount) - (Number(valorFrete) || 0)),
+              valorFrete: Number(valorFrete || 0),
+              valorTotal: Number(transaction_amount),
+              servicoFrete: servicoFrete || 'Padrão',
+              prazoEntrega: prazoEntrega || null,
+              metodoPagamento: payment_method_id,
+              mpPaymentId: String(mpResponse.id),
+              enderecoId: enderecoId,
+              historicoStatus: {
+                create: {
+                  status: statusPedido,
+                  observacao: statusPedido === 'PAGO' 
+                    ? 'Pagamento aprovado na nova tentativa.' 
+                    : 'Novo meio de pagamento gerado (tentativa atualizada).',
+                }
+              }
             },
-          },
-          include: {
-            itens: true,
-            endereco: true,
-          },
-        });
+            include: {
+              itens: true,
+              endereco: true,
+              historicoStatus: true,
+            },
+          });
+        } else {
+          // Caso contrário, cria um pedido novo normalmente
+          pedidoFinal = await tx.pedido.create({
+            data: {
+              status: statusPedido,
+              subtotal: Number(subtotal || Number(transaction_amount) - (Number(valorFrete) || 0)),
+              valorFrete: Number(valorFrete || 0),
+              valorTotal: Number(transaction_amount),
+              servicoFrete: servicoFrete || 'Padrão',
+              prazoEntrega: prazoEntrega || null,
+              metodoPagamento: payment_method_id,
+              mpPaymentId: String(mpResponse.id),
+
+              clienteNome: `${user.nome} ${user.sobrenome}`,
+              clienteEmail: user.email,
+              clienteCpf: user.cpf,
+              clienteFone: user.telefone,
+
+              userId: user.id,
+              enderecoId: enderecoId,
+
+              historicoStatus: {
+                create: {
+                  status: statusPedido,
+                  observacao: statusPedido === 'PAGO' 
+                    ? 'Pagamento aprovado na criação do pedido.' 
+                    : 'Pedido criado aguardando pagamento.',
+                }
+              },
+
+              itens: {
+                create: items.map((item: any) => ({
+                  produtoId: String(item.produtoId),
+                  tamanhoId: item.tamanhoId ? String(item.tamanhoId) : null,
+                  corId: item.corId ? String(item.corId) : null,
+                  nomeProduto: item.nome || 'Produto',
+                  precoUnitario: Number(item.preco),
+                  quantidade: Number(item.quantidade),
+                })),
+              },
+            },
+            include: {
+              itens: true,
+              endereco: true,
+              historicoStatus: true,
+            },
+          });
+        }
 
         if (statusPedido === 'PAGO') {
           for (const item of items) {
@@ -265,12 +328,12 @@ export const pagamentoController = {
           }
         }
 
-        return novoPedido;
+        return pedidoFinal;
       });
 
       const io = getIO();
       if (io) {
-        io.emit('novoPedido', resultado);
+        io.emit(pedidoParaRefazerId ? 'pedidoAtualizado' : 'novoPedido', resultado);
       }
 
       return res.status(201).json({
@@ -284,7 +347,6 @@ export const pagamentoController = {
     } catch (error: any) {
       console.error('Erro detalhado ao processar pagamento:', JSON.stringify(error, null, 2));
 
-      // Captura de erro específica para retornos de rejeição da API do Mercado Pago
       const isIdentificationErr = error?.causes?.some((c: any) => 
         String(c.description).includes('identification') || c.code === 2060
       );
@@ -318,39 +380,73 @@ export const pagamentoController = {
         const mpPaymentId = String(paymentId);
         const paymentInfo = await paymentClient.get({ id: mpPaymentId });
 
-        if (paymentInfo.status === 'approved') {
-          const pedidoExistente = await prisma.pedido.findFirst({
-            where: { mpPaymentId },
-            include: { itens: true },
-          });
+        const pedidoExistente = await prisma.pedido.findFirst({
+          where: { mpPaymentId },
+          include: { itens: true },
+        });
 
-          if (pedidoExistente && pedidoExistente.status !== 'PAGO') {
-            await prisma.$transaction(async (tx) => {
-              await tx.pedido.update({
-                where: { id: pedidoExistente.id },
-                data: { status: 'PAGO' },
-              });
+        if (!pedidoExistente) return;
 
-              for (const item of pedidoExistente.itens) {
-                if (item.tamanhoId || item.corId) {
-                  await tx.produtoEstoque.updateMany({
-                    where: {
-                      produtoId: item.produtoId,
-                      tamanhoId: item.tamanhoId,
-                      corId: item.corId,
-                    },
-                    data: {
-                      estoque: { decrement: item.quantidade },
-                    },
-                  });
+        // --- TRATATIVA DE PAGAMENTO APROVADO ---
+        if (paymentInfo.status === 'approved' && pedidoExistente.status !== 'PAGO') {
+          await prisma.$transaction(async (tx) => {
+            await tx.pedido.update({
+              where: { id: pedidoExistente.id },
+              data: { 
+                status: 'PAGO',
+                historicoStatus: {
+                  create: {
+                    status: 'PAGO',
+                    observacao: 'Pagamento aprovado via Webhook do Mercado Pago.'
+                  }
                 }
-              }
+              },
             });
 
-            const io = getIO();
-            if (io) {
-              io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: 'PAGO' });
+            for (const item of pedidoExistente.itens) {
+              if (item.tamanhoId || item.corId) {
+                await tx.produtoEstoque.updateMany({
+                  where: {
+                    produtoId: item.produtoId,
+                    tamanhoId: item.tamanhoId,
+                    corId: item.corId,
+                  },
+                  data: {
+                    estoque: { decrement: item.quantidade },
+                  },
+                });
+              }
             }
+          });
+
+          const io = getIO();
+          if (io) {
+            io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: 'PAGO' });
+          }
+        } 
+        
+        // --- TRATATIVA DE PAGAMENTO RECUSADO, CANCELADO OU EXPIRADO ---
+        else if (['rejected', 'cancelled'].includes(String(paymentInfo.status)) && pedidoExistente.status === 'PENDENTE') {
+          const novoStatus = 'RECUSADO' as const;
+
+          await prisma.$transaction(async (tx) => {
+            await tx.pedido.update({
+              where: { id: pedidoExistente.id },
+              data: { 
+                status: novoStatus,
+                historicoStatus: {
+                  create: {
+                    status: novoStatus,
+                    observacao: `Pagamento ${paymentInfo.status === 'rejected' ? 'recusado' : 'cancelado/expirado'} pelo Mercado Pago.`
+                  }
+                }
+              },
+            });
+          });
+
+          const io = getIO();
+          if (io) {
+            io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: novoStatus });
           }
         }
       }

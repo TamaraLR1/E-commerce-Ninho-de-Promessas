@@ -26,6 +26,8 @@ router.patch('/pedidos/:id/rastreio', ensureAdminAuthenticated, pedidoController
 // Histórico "Meus Pedidos" do cliente logado
 router.get('/pedidos/meus', authMiddleware, pedidoController.listarMeusPedidos);
 
+// Rota para refazer/atualizar o pagamento do pedido existente (sem gerar ID novo)
+router.post('/pedidos/:id/atualizar-pagamento', authMiddleware, pedidoController.atualizarPagamentoExistente);
 
 // ==========================================
 // ROTAS COMPARTILHADAS / DETALHES

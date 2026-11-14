@@ -27,3 +27,19 @@ Para rodar o sistema em prod e em dev, é necessário clonar o repositório para
 Abra o terminal na pasta Projeto_DEV.
 
 Execute: git clone [https://github.com/seu-usuario/seu-repositorio.git](https://github.com/seu-usuario/seu-repositorio.git)
+
+
+...
+
+Renomear commit
+
+Se for o ultimo commit
+git commit --amend -m "Sua nova mensagem aqui"
+
+Se for outro commit
+git rebase -i 4619b215fda9fb1bb4313351c5481d62bc192910^
+
+Altere no vim do git bash (para inserir aperte i) (para salvar aperte ESC e :wq)
+
+depois faça esse comando para enviar a alteração
+git push origin sua-branch-atual --force-with-lease
