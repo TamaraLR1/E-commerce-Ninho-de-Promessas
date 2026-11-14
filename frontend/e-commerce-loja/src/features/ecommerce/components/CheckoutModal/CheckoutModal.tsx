@@ -121,9 +121,30 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   const [loadingPagamento, setLoadingPagamento] = useState<boolean>(false);
   const [erroPagamento, setErroPagamento] = useState<string>('');
 
-  // Resultado PIX
+  // Resultado PIX e Cronômetro de 15 minutos
   const [dadosPix, setDadosPix] = useState<{ qrCode: string; qrCodeBase64: string } | null>(null);
   const [copiado, setCopiado] = useState<boolean>(false);
+  const [tempoRestantePix, setTempoRestantePix] = useState<number>(15 * 60); // 15 minutos
+
+  useEffect(() => {
+    if (!dadosPix) return;
+    const timer = setInterval(() => {
+      setTempoRestantePix((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [dadosPix]);
+
+  const formatarTempoPix = (segundos: number) => {
+    const mins = Math.floor(segundos / 60);
+    const secs = segundos % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
 
   useEffect(() => {
     const carregarPerfilUsuario = async () => {
@@ -308,9 +329,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
       setLoadingPagamento(true);
       setErroPagamento('');
 
-      const endpoint = pedidoIdRefazer 
-        ? `${API_URL}/api/pedidos/${pedidoIdRefazer}/atualizar-pagamento` 
-        : `${API_URL}/api/pagamento`;
+      const endpoint = `${API_URL}/api/pagamento`;
 
       const payloadBackend = {
         pedidoParaRefazerId: pedidoIdRefazer || null,
@@ -366,8 +385,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
             qrCode: qrCodePix,
             qrCodeBase64: qrCodeBase64Pix,
           });
+          setTempoRestantePix(15 * 60);
         } else {
-          alert('🎉 Pagamento atualizado com sucesso!');
+          alert('🎉 Pagamento processado com sucesso!');
           if (onPaymentSuccess) {
             onPaymentSuccess();
           } else {
@@ -377,7 +397,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
       }
     } catch (err: any) {
       console.error('Erro ao processar pagamento:', err);
-      const mensagemErro = err.response?.data?.message || 'Erro ao processar o pagamento.';
+      const mensagemErro = err.response?.data?.message || 'Erro ao processar o pagamento ou verificar estoque.';
       
       setErroPagamento(mensagemErro);
       alert(mensagemErro);
@@ -424,6 +444,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
             <div className={styles.pixHeader}>
               <h3>⚡ Pagamento PIX Gerado!</h3>
               <p>Escaneie o QR Code ou copie a chave abaixo:</p>
+              
+              {/* CRONÔMETRO DE 15 MINUTOS */}
+              <div className={styles.pixCountdownBox}>
+                ⏱️ Tempo restante para pagamento: <strong>{formatarTempoPix(tempoRestantePix)}</strong>
+              </div>
             </div>
             
             {dadosPix.qrCodeBase64 && (
@@ -729,7 +754,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                       >
                         <span className={styles.paymentIcon}>⚡</span>
                         <strong>PIX</strong>
-                        <small>Aprovação instantânea</small>
+                        <small>Reserva de 15 minutos</small>
                       </button>
 
                       {permiteCartao && (
@@ -740,7 +765,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                         >
                           <span className={styles.paymentIcon}>💳</span>
                           <strong>Cartão de Crédito</strong>
-                          <small>Parcele em até 6x</small>
+                          <small>Reserva de até 48h úteis</small>
                         </button>
                       )}
                     </div>
@@ -754,7 +779,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                     {metodoPagamento === 'pix' && (
                       <div className={styles.pixContainer}>
                         <p className={styles.pixInfo}>
-                          Ao clicar em <strong>Finalizar Pedido</strong>, o código PIX Copia e Cola e o QR Code serão gerados em tempo real pelo Mercado Pago.
+                          Ao clicar em <strong>Finalizar Pedido</strong>, o estoque será reservado por <strong>15 minutos</strong> e o QR Code PIX será gerado.
                         </p>
                         
                         <button
@@ -764,7 +789,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                           disabled={loadingPagamento}
                           style={{ marginTop: '1rem' }}
                         >
-                          {loadingPagamento ? 'Gerando PIX...' : 'Finalizar Pedido'}
+                          {loadingPagamento ? 'Reservando estoque e gerando PIX...' : 'Finalizar Pedido'}
                         </button>
                       </div>
                     )}

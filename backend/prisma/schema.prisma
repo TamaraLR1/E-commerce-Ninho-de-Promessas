@@ -263,6 +263,9 @@ model Pedido {
   metodoPagamento String? // Ex: "credit_card", "pix", "ticket"
   mpPaymentId     String? // ID do pagamento retornado pelo Mercado Pago
 
+  // NOVO: Controle de expiração do estoque (15 min para PIX ou 48h úteis para Cartão)
+  expiraEm         DateTime?
+
   // Snapshot do Cliente
   clienteNome  String
   clienteEmail String

@@ -498,3 +498,14 @@
     padding: 0.75rem;
   }
 }
+
+.pixCountdownBox {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  margin-top: 6px;
+  text-align: center;
+}

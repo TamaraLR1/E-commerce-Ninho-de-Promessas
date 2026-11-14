@@ -21,6 +21,9 @@ import { relatorioRoutes } from './routes/relatorioRoutes';
 import path from 'path';
 import { initSocket, socketMiddleware } from './socket';
 
+// IMPORTUE O SEU WORKER AQUI (ajuste o caminho se necessário)
+import { iniciarWorkerExpiracaoPedidos } from './jobs/expiracaoPedidosJob';
+
 const app = express();
 const server = http.createServer(app);
 
@@ -68,4 +71,7 @@ const PORT = Number(process.env.PORT) || 3333;
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor rodando na porta ${PORT}`);
+  
+  // INICIA O WORKER LOGO APÓS O SERVIDOR SUBIR
+  iniciarWorkerExpiracaoPedidos();
 });

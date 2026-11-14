@@ -24,6 +24,8 @@ const cupomRoutes_1 = require("./routes/cupomRoutes");
 const relatorioRoutes_1 = require("./routes/relatorioRoutes");
 const path_1 = __importDefault(require("path"));
 const socket_1 = require("./socket");
+// IMPORTUE O SEU WORKER AQUI (ajuste o caminho se necessário)
+const expiracaoPedidosJob_1 = require("./jobs/expiracaoPedidosJob");
 const app = (0, express_1.default)();
 const server = http_1.default.createServer(app);
 (0, socket_1.initSocket)(server);
@@ -61,4 +63,6 @@ app.use('/api', relatorioRoutes_1.relatorioRoutes);
 const PORT = Number(process.env.PORT) || 3333;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor rodando na porta ${PORT}`);
+    // INICIA O WORKER LOGO APÓS O SERVIDOR SUBIR
+    (0, expiracaoPedidosJob_1.iniciarWorkerExpiracaoPedidos)();
 });

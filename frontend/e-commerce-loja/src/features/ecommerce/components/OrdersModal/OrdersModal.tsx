@@ -74,8 +74,8 @@ const isPixValido = (dataCriacao?: string) => {
   if (!dataCriacao) return false;
   const dataPedido = new Date(dataCriacao).getTime();
   const agora = new Date().getTime();
-  const trintaMinutosMs = 30 * 60 * 1000;
-  return (agora - dataPedido) < trintaMinutosMs;
+  const quinzeMinutosMs = 15 * 60 * 1000; // Alinhado com a regra de 15 minutos do PIX
+  return (agora - dataPedido) < quinzeMinutosMs;
 };
 
 const calcularPrevisaoEntrega = (dataCriacao: string | undefined) => {

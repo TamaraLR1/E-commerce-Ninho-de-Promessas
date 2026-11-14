@@ -82,12 +82,11 @@ exports.pagamentoController = {
                 });
                 if (pedidoAntigo && pedidoAntigo.mpPaymentId) {
                     try {
-                        // Tenta cancelar a transação anterior no Mercado Pago para liberar o valor/cartão
                         await paymentClient.cancel({ id: String(pedidoAntigo.mpPaymentId) });
                         console.log(`Pagamento anterior ${pedidoAntigo.mpPaymentId} cancelado com sucesso no Mercado Pago.`);
                     }
                     catch (cancelErr) {
-                        console.warn(`Não foi possível cancelar o pagamento anterior ${pedidoAntigo.mpPaymentId} no MP (pode já estar expirado ou aprovado):`, cancelErr);
+                        console.warn(`Não foi possível cancelar o pagamento anterior ${pedidoAntigo.mpPaymentId} no MP:`, cancelErr);
                     }
                 }
             }
@@ -140,7 +139,6 @@ exports.pagamentoController = {
                 if (issuer_id)
                     paymentBody.issuer_id = issuer_id;
             }
-            console.log('Payload enviado ao Mercado Pago:', JSON.stringify(paymentBody, null, 2));
             let mpResponse;
             try {
                 mpResponse = await paymentClient.create({ body: paymentBody });
@@ -148,7 +146,6 @@ exports.pagamentoController = {
             catch (firstErr) {
                 const isTokenErr = firstErr?.causes?.some((c) => c.code === 2006 || String(c.description).includes('Card Token'));
                 if (isTokenErr && paymentBody.payment_method_id && payment_method_id !== 'pix') {
-                    console.warn('Alerta 2006 detectado: tentando autorização do token sem payment_method_id explícito...');
                     delete paymentBody.payment_method_id;
                     mpResponse = await paymentClient.create({ body: paymentBody });
                 }
@@ -156,16 +153,82 @@ exports.pagamentoController = {
                     throw firstErr;
                 }
             }
-            // Mapeamento do status do pedido com tipagem correta
+            // Mapeamento correto: Apenas 'approved' vira PAGO. Demais (pendente, em análise, etc.) continuam PENDENTE.
             let statusPedido = 'PENDENTE';
-            if (mpResponse.status === 'approved')
+            if (mpResponse.status === 'approved') {
                 statusPedido = 'PAGO';
-            else if (mpResponse.status === 'in_process')
-                statusPedido = 'EM_SEPARACAO';
-            else if (mpResponse.status === 'rejected')
+            }
+            else if (mpResponse.status === 'rejected') {
                 statusPedido = 'RECUSADO';
-            // 3. Salva/Atualiza Endereço e gerencia a atualização ou criação do Pedido
+            }
+            else {
+                statusPedido = 'PENDENTE';
+            }
+            // -------------------------------------------------------------------------
+            // 3. TRANSAÇÃO PRISMA: ESTOQUE, RESERVA E EXPIRAÇÃO (15 min PIX / 48h Cartão)
+            // -------------------------------------------------------------------------
             const resultado = await prisma_1.prisma.$transaction(async (tx) => {
+                // Se estiver refazendo um pedido, verificamos se o pedido anterior estava ATIVO (PAGO ou PENDENTE).
+                // Se já estava CANCELADO ou RECUSADO, o estoque já havia sido devolvido, logo não fazemos increment duplicado.
+                if (pedidoParaRefazerId) {
+                    const pedidoAntigo = await tx.pedido.findUnique({
+                        where: { id: String(pedidoParaRefazerId) },
+                        include: { itens: true }
+                    });
+                    if (pedidoAntigo && (pedidoAntigo.status === 'PAGO' || pedidoAntigo.status === 'PENDENTE')) {
+                        for (const itemAntigo of pedidoAntigo.itens) {
+                            if (itemAntigo.produtoId) {
+                                await tx.produtoEstoque.updateMany({
+                                    where: {
+                                        produtoId: itemAntigo.produtoId,
+                                        ...(itemAntigo.tamanhoId ? { tamanhoId: itemAntigo.tamanhoId } : {}),
+                                        ...(itemAntigo.corId ? { corId: itemAntigo.corId } : {}),
+                                    },
+                                    data: { estoque: { increment: itemAntigo.quantidade } },
+                                });
+                            }
+                        }
+                    }
+                    await tx.itemPedido.deleteMany({ where: { pedidoId: String(pedidoParaRefazerId) } });
+                }
+                // Validação prévia de disponibilidade em estoque
+                for (const item of items) {
+                    if (item.produtoId) {
+                        const estoqueDisponivel = await tx.produtoEstoque.findFirst({
+                            where: {
+                                produtoId: String(item.produtoId),
+                                ...(item.tamanhoId ? { tamanhoId: String(item.tamanhoId) } : {}),
+                                ...(item.corId ? { corId: String(item.corId) } : {}),
+                            },
+                        });
+                        if (!estoqueDisponivel || estoqueDisponivel.estoque < Number(item.quantidade)) {
+                            throw new Error(`Estoque insuficiente para o produto: ${item.nome || 'Item'}`);
+                        }
+                    }
+                }
+                // Reserva / Decrementa o estoque imediatamente se não for recusado
+                if (statusPedido !== 'RECUSADO') {
+                    for (const item of items) {
+                        if (item.produtoId) {
+                            await tx.produtoEstoque.updateMany({
+                                where: {
+                                    produtoId: String(item.produtoId),
+                                    ...(item.tamanhoId ? { tamanhoId: String(item.tamanhoId) } : {}),
+                                    ...(item.corId ? { corId: String(item.corId) } : {}),
+                                },
+                                data: { estoque: { decrement: Number(item.quantidade) } },
+                            });
+                        }
+                    }
+                }
+                // Define o tempo de expiração da reserva: 15 minutos para PIX, 48 horas para Cartão
+                const expiraEm = new Date();
+                if (payment_method_id === 'pix') {
+                    expiraEm.setMinutes(expiraEm.getMinutes() + 15);
+                }
+                else {
+                    expiraEm.setHours(expiraEm.getHours() + 48);
+                }
                 let enderecoExistente = await tx.endereco.findFirst({
                     where: { userId: user.id },
                     orderBy: { createdAt: 'desc' },
@@ -179,7 +242,7 @@ exports.pagamentoController = {
                 let enderecoId;
                 const dadosTratados = {
                     cep: String(endereco.cep).replace(/\D/g, ''),
-                    rua: endereco.rua,
+                    rua: endereco.logradouro,
                     numero: String(endereco.numero),
                     complemento: endereco.complemento || null,
                     bairro: endereco.bairro,
@@ -196,101 +259,66 @@ exports.pagamentoController = {
                     enderecoId = enderecoAtualizado.id;
                 }
                 else {
-                    const novoEndereco = await tx.endereco.create({
-                        data: dadosTratados,
-                    });
+                    const novoEndereco = await tx.endereco.create({ data: dadosTratados });
                     enderecoId = novoEndereco.id;
                 }
                 let pedidoFinal;
-                // Se foi enviado um ID para refazer, ATUALIZAMOS o pedido existente em vez de criar um novo (Zero pedidos fantasmas!)
+                const dadosPayloadPedido = {
+                    status: statusPedido,
+                    subtotal: Number(subtotal || Number(transaction_amount) - (Number(valorFrete) || 0)),
+                    valorFrete: Number(valorFrete || 0),
+                    valorTotal: Number(transaction_amount),
+                    servicoFrete: servicoFrete || 'Padrão',
+                    prazoEntrega: prazoEntrega || null,
+                    metodoPagamento: payment_method_id,
+                    mpPaymentId: String(mpResponse.id),
+                    expiraEm: expiraEm,
+                    createdAt: new Date(), // Reinicia a data de criação para atualizar o cronômetro e expiração
+                    enderecoId: enderecoId,
+                    itens: {
+                        create: items.map((item) => ({
+                            produtoId: String(item.produtoId),
+                            tamanhoId: item.tamanhoId ? String(item.tamanhoId) : null,
+                            corId: item.corId ? String(item.corId) : null,
+                            nomeProduto: item.nome || 'Produto',
+                            precoUnitario: Number(item.preco),
+                            quantidade: Number(item.quantidade),
+                        })),
+                    },
+                };
                 if (pedidoParaRefazerId) {
                     pedidoFinal = await tx.pedido.update({
                         where: { id: String(pedidoParaRefazerId) },
                         data: {
-                            status: statusPedido,
-                            subtotal: Number(subtotal || Number(transaction_amount) - (Number(valorFrete) || 0)),
-                            valorFrete: Number(valorFrete || 0),
-                            valorTotal: Number(transaction_amount),
-                            servicoFrete: servicoFrete || 'Padrão',
-                            prazoEntrega: prazoEntrega || null,
-                            metodoPagamento: payment_method_id,
-                            mpPaymentId: String(mpResponse.id),
-                            enderecoId: enderecoId,
+                            ...dadosPayloadPedido,
                             historicoStatus: {
                                 create: {
                                     status: statusPedido,
-                                    observacao: statusPedido === 'PAGO'
-                                        ? 'Pagamento aprovado na nova tentativa.'
-                                        : 'Novo meio de pagamento gerado (tentativa atualizada).',
+                                    observacao: 'Tentativa de pagamento refeita. Status reativado para PENDENTE e estoque reservado novamente.',
                                 }
                             }
                         },
-                        include: {
-                            itens: true,
-                            endereco: true,
-                            historicoStatus: true,
-                        },
+                        include: { itens: true, endereco: true, historicoStatus: true },
                     });
                 }
                 else {
-                    // Caso contrário, cria um pedido novo normalmente
                     pedidoFinal = await tx.pedido.create({
                         data: {
-                            status: statusPedido,
-                            subtotal: Number(subtotal || Number(transaction_amount) - (Number(valorFrete) || 0)),
-                            valorFrete: Number(valorFrete || 0),
-                            valorTotal: Number(transaction_amount),
-                            servicoFrete: servicoFrete || 'Padrão',
-                            prazoEntrega: prazoEntrega || null,
-                            metodoPagamento: payment_method_id,
-                            mpPaymentId: String(mpResponse.id),
+                            ...dadosPayloadPedido,
                             clienteNome: `${user.nome} ${user.sobrenome}`,
                             clienteEmail: user.email,
                             clienteCpf: user.cpf,
                             clienteFone: user.telefone,
                             userId: user.id,
-                            enderecoId: enderecoId,
                             historicoStatus: {
                                 create: {
                                     status: statusPedido,
-                                    observacao: statusPedido === 'PAGO'
-                                        ? 'Pagamento aprovado na criação do pedido.'
-                                        : 'Pedido criado aguardando pagamento.',
+                                    observacao: 'Pedido criado. Estoque reservado temporariamente.',
                                 }
-                            },
-                            itens: {
-                                create: items.map((item) => ({
-                                    produtoId: String(item.produtoId),
-                                    tamanhoId: item.tamanhoId ? String(item.tamanhoId) : null,
-                                    corId: item.corId ? String(item.corId) : null,
-                                    nomeProduto: item.nome || 'Produto',
-                                    precoUnitario: Number(item.preco),
-                                    quantidade: Number(item.quantidade),
-                                })),
-                            },
+                            }
                         },
-                        include: {
-                            itens: true,
-                            endereco: true,
-                            historicoStatus: true,
-                        },
+                        include: { itens: true, endereco: true, historicoStatus: true },
                     });
-                }
-                if (statusPedido === 'PAGO') {
-                    for (const item of items) {
-                        if (item.tamanhoId || item.corId) {
-                            await tx.produtoEstoque.updateMany({
-                                where: {
-                                    produtoId: String(item.produtoId),
-                                    tamanhoId: item.tamanhoId ? String(item.tamanhoId) : null,
-                                    corId: item.corId ? String(item.corId) : null,
-                                },
-                                data: {
-                                    estoque: { decrement: Number(item.quantidade) },
-                                },
-                            });
-                        }
-                    }
                 }
                 return pedidoFinal;
             });
@@ -309,15 +337,8 @@ exports.pagamentoController = {
         }
         catch (error) {
             console.error('Erro detalhado ao processar pagamento:', JSON.stringify(error, null, 2));
-            const isIdentificationErr = error?.causes?.some((c) => String(c.description).includes('identification') || c.code === 2060);
-            if (isIdentificationErr || error?.message?.includes('identification')) {
-                return res.status(400).json({
-                    message: 'CPF inválido ou não reconhecido. Por favor, verifique se digitou seu CPF corretamente.',
-                });
-            }
-            return res.status(500).json({
-                message: 'Erro interno ao processar o pagamento e salvar o pedido.',
-                error: error.message || error,
+            return res.status(400).json({
+                message: error.message || 'Erro interno ao processar o pagamento e salvar o pedido.',
             });
         }
     },
@@ -345,6 +366,7 @@ exports.pagamentoController = {
                             where: { id: pedidoExistente.id },
                             data: {
                                 status: 'PAGO',
+                                expiraEm: null, // Limpa o prazo de expiração pois foi pago
                                 historicoStatus: {
                                     create: {
                                         status: 'PAGO',
@@ -353,20 +375,6 @@ exports.pagamentoController = {
                                 }
                             },
                         });
-                        for (const item of pedidoExistente.itens) {
-                            if (item.tamanhoId || item.corId) {
-                                await tx.produtoEstoque.updateMany({
-                                    where: {
-                                        produtoId: item.produtoId,
-                                        tamanhoId: item.tamanhoId,
-                                        corId: item.corId,
-                                    },
-                                    data: {
-                                        estoque: { decrement: item.quantidade },
-                                    },
-                                });
-                            }
-                        }
                     });
                     const io = (0, socket_1.getIO)();
                     if (io) {
@@ -389,6 +397,19 @@ exports.pagamentoController = {
                                 }
                             },
                         });
+                        // Devolve o estoque reservado para a loja
+                        for (const item of pedidoExistente.itens) {
+                            if (item.produtoId) {
+                                await tx.produtoEstoque.updateMany({
+                                    where: {
+                                        produtoId: item.produtoId,
+                                        ...(item.tamanhoId ? { tamanhoId: item.tamanhoId } : {}),
+                                        ...(item.corId ? { corId: item.corId } : {}),
+                                    },
+                                    data: { estoque: { increment: item.quantidade } },
+                                });
+                            }
+                        }
                     });
                     const io = (0, socket_1.getIO)();
                     if (io) {
