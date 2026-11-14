@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { relatorioController } from '../controllers/RelatorioController';
+import { relatorioController } from '../controllers/relatorioController';
 import { ensureAdminAuthenticated } from '../middlewares/authAdminMiddleware';
 
 const router = Router();

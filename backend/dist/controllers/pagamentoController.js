@@ -56,6 +56,16 @@ exports.pagamentoController = {
             if (!endereco || !endereco.cep || !endereco.rua || !endereco.numero) {
                 return res.status(400).json({ message: 'Endereço de entrega incompleto.' });
             }
+            // -------------------------------------------------------------------------
+            // NOVA REGRA: Validação de valor mínimo para Cartão de Crédito (< R$ 1,00)
+            // -------------------------------------------------------------------------
+            const isCartaoCredito = payment_method_id === 'credit_card' || (payment_method_id && payment_method_id !== 'pix');
+            if (isCartaoCredito && Number(transaction_amount) < 1.00) {
+                return res.status(400).json({
+                    message: 'O valor mínimo para pagamentos com cartão de crédito é de R$ 1,00.'
+                });
+            }
+            // -------------------------------------------------------------------------
             // Validação prévia de algoritmo de CPF
             const cpfLimpo = user.cpf ? String(user.cpf).replace(/\D/g, '') : '';
             if (!cpfLimpo || !validarCPF(cpfLimpo)) {

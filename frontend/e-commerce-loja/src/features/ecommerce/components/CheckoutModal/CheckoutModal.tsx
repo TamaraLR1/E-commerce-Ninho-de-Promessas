@@ -206,6 +206,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   const valorFreteNum = freteSelecionado ? Number(parseFloat(freteSelecionado.price || '0').toFixed(2)) : 0;
   const totalGeral = Number((subtotalComDesconto + valorFreteNum).toFixed(2));
 
+  // Regra de validação: valores menores que R$ 1,00 não permitem cartão de crédito
+  const permiteCartao = totalGeral >= 1.00;
+
   const handleAvancarParaFrete = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -256,6 +259,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   };
 
   const enviarPedidoParaBackend = async (payloadCard: any = null) => {
+    // Validação de segurança no front
+    if (metodoPagamento === 'credit_card' && totalGeral < 1.00) {
+      const msg = 'O valor mínimo para pagamentos com cartão de crédito é de R$ 1,00.';
+      setErroPagamento(msg);
+      alert(msg);
+      setMetodoPagamento('pix');
+      return;
+    }
+
     try {
       setLoadingPagamento(true);
       setErroPagamento('');
@@ -630,7 +642,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                     type="button"
                     className={styles.primaryButton}
                     disabled={!freteSelecionado}
-                    onClick={() => setStep(3)}
+                    onClick={() => {
+                      // Se o total for menor que 1 real, garante que o método de pagamento inicial selecionado seja Pix
+                      if (totalGeral < 1.00) {
+                        setMetodoPagamento('pix');
+                      }
+                      setStep(3);
+                    }}
                   >
                     Ir para Pagamento →
                   </button>
@@ -676,16 +694,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                         <small>Aprovação instantânea</small>
                       </button>
 
-                      <button
-                        type="button"
-                        className={`${styles.paymentMethodCard} ${metodoPagamento === 'credit_card' ? styles.paymentMethodSelected : ''}`}
-                        onClick={() => setMetodoPagamento('credit_card')}
-                      >
-                        <span className={styles.paymentIcon}>💳</span>
-                        <strong>Cartão de Crédito</strong>
-                        <small>Parcele em até 6x</small>
-                      </button>
+                      {permiteCartao && (
+                        <button
+                          type="button"
+                          className={`${styles.paymentMethodCard} ${metodoPagamento === 'credit_card' ? styles.paymentMethodSelected : ''}`}
+                          onClick={() => setMetodoPagamento('credit_card')}
+                        >
+                          <span className={styles.paymentIcon}>💳</span>
+                          <strong>Cartão de Crédito</strong>
+                          <small>Parcele em até 6x</small>
+                        </button>
+                      )}
                     </div>
+
+                    {!permiteCartao && (
+                      <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', padding: '10px 14px', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.85rem', color: '#92400e' }}>
+                        ℹ️ O pagamento com Cartão de Crédito está disponível apenas para pedidos a partir de <strong>R$ 1,00</strong>. Para este valor, utilize o <strong>PIX</strong>.
+                      </div>
+                    )}
 
                     {metodoPagamento === 'pix' && (
                       <div className={styles.pixContainer}>
@@ -705,28 +731,30 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                       </div>
                     )}
 
-                    <div style={{ display: metodoPagamento === 'credit_card' ? 'block' : 'none', minHeight: '350px' }}>
-                      <CardPayment
-                        initialization={{
-                          amount: totalGeral,
-                        }}
-                        customization={{
-                          paymentMethods: {
-                            maxInstallments: 6,
-                          },
-                          visual: {
-                            style: {
-                              theme: 'default',
+                    {permiteCartao && (
+                      <div style={{ display: metodoPagamento === 'credit_card' ? 'block' : 'none', minHeight: '350px' }}>
+                        <CardPayment
+                          initialization={{
+                            amount: totalGeral,
+                          }}
+                          customization={{
+                            paymentMethods: {
+                              maxInstallments: 6,
                             },
-                          },
-                        }}
-                        onSubmit={async (param) => {
-                          await enviarPedidoParaBackend(param);
-                        }}
-                        onError={(error) => console.error('Erro no Card Brick:', error)}
-                        onReady={() => console.log('Card Payment Brick pronto e montado!')}
-                      />
-                    </div>
+                            visual: {
+                              style: {
+                                theme: 'default',
+                              },
+                            },
+                          }}
+                          onSubmit={async (param) => {
+                            await enviarPedidoParaBackend(param);
+                          }}
+                          onError={(error) => console.error('Erro no Card Brick:', error)}
+                          onReady={() => console.log('Card Payment Brick pronto e montado!')}
+                        />
+                      </div>
+                    )}
                   </>
                 )}
 
