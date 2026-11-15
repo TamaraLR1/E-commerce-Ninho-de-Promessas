@@ -487,7 +487,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
               }} 
               style={{ marginTop: '0.5rem' }}
             >
-              Entendi, ir para Meus Pedidos
+              Acompanhar Meus Pedidos
             </button>
           </div>
         ) : (
