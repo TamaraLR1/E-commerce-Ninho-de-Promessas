@@ -5,13 +5,18 @@ import { useCart } from '../../components/CartContext/CartContext';
 import styles from './CheckoutModal.module.css';
 
 const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const API_URL = isLocal 
-  ? 'http://localhost:3333' 
+const API_URL = isLocal
+  ? 'http://localhost:3333'
   : 'https://ninhoback.tamaralr.com.br';
 
-const MP_PUBLIC_KEY = import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY || 'APP_USR-b123bab4-983f-4921-8c65-009fe7158446';
+const MP_PUBLIC_KEY =
+  import.meta.env.VITE_MERCADOPAGO_PUBLIC_KEY ||
+  'APP_USR-b123bab4-983f-4921-8c65-009fe7158446';
 
-initMercadoPago(MP_PUBLIC_KEY, { locale: 'pt-BR' });
+if (!(window as any).__mpInitialized) {
+  initMercadoPago(MP_PUBLIC_KEY, { locale: 'pt-BR' });
+  (window as any).__mpInitialized = true;
+}
 
 export interface CheckoutModalProps {
   onClose: () => void;
@@ -85,8 +90,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
 
   // Se estiver a refazer, usa os itens do pedido antigo; senão, usa os itens selecionados do carrinho
   const itensParaCompra = pedidoIdRefazer ? itensPedidoRefazer : itens.filter(item => item.selecionado);
-  const valorTotalBase = pedidoIdRefazer 
-    ? itensPedidoRefazer.reduce((acc, item) => acc + item.totalItem, 0) 
+  const valorTotalBase = pedidoIdRefazer
+    ? itensPedidoRefazer.reduce((acc, item) => acc + item.totalItem, 0)
     : (subtotalSelecionados || total);
 
   const [step, setStep] = useState<number>(1);
@@ -149,8 +154,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   useEffect(() => {
     const carregarPerfilUsuario = async () => {
       try {
-        const res = await axios.get(`${API_URL}/api/perfil`, { 
-          withCredentials: true 
+        const res = await axios.get(`${API_URL}/api/perfil`, {
+          withCredentials: true
         });
 
         const dadosUsuario = res.data?.user;
@@ -344,8 +349,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
         cupomCodigo: cupomAplicado?.codigo || null,
         valorFrete: valorFreteNum,
         servicoFrete: freteSelecionado?.name || 'Padrão',
-        prazoEntrega: freteSelecionado?.id === 'pickup_store' 
-          ? 'Retirada Imediata' 
+        prazoEntrega: freteSelecionado?.id === 'pickup_store'
+          ? 'Retirada Imediata'
           : (freteSelecionado ? `${freteSelecionado.custom_delivery_time} dias úteis` : ''),
         endereco: {
           cep: endereco.cep.replace(/\D/g, ''),
@@ -398,7 +403,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
     } catch (err: any) {
       console.error('Erro ao processar pagamento:', err);
       const mensagemErro = err.response?.data?.message || 'Erro ao processar o pagamento ou verificar estoque.';
-      
+
       setErroPagamento(mensagemErro);
       alert(mensagemErro);
     } finally {
@@ -417,7 +422,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        
+
         <div className={styles.header}>
           <h2>Finalizar Compra</h2>
           <button type="button" className={styles.closeBtn} onClick={onClose}>✕</button>
@@ -444,13 +449,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
             <div className={styles.pixHeader}>
               <h3>⚡ Pagamento PIX Gerado!</h3>
               <p>Escaneie o QR Code ou copie a chave abaixo:</p>
-              
+
               {/* CRONÔMETRO DE 15 MINUTOS */}
               <div className={styles.pixCountdownBox}>
                 ⏱️ Tempo restante para pagamento: <strong>{formatarTempoPix(tempoRestantePix)}</strong>
               </div>
             </div>
-            
+
             {dadosPix.qrCodeBase64 && (
               <div className={styles.qrCodeWrapper}>
                 <img
@@ -475,16 +480,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
               </div>
             </div>
 
-            <button 
-              type="button" 
-              className={styles.primaryButton} 
+            <button
+              type="button"
+              className={styles.primaryButton}
               onClick={() => {
                 if (onPaymentSuccess) {
                   onPaymentSuccess();
                 } else {
                   onClose();
                 }
-              }} 
+              }}
               style={{ marginTop: '0.5rem' }}
             >
               Acompanhar Meus Pedidos
@@ -620,14 +625,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                         <div className={styles.shippingInfo}>
                           <strong>{opcao.name}</strong>
                           <span>
-                            {opcao.id === 'pickup_store' 
-                              ? 'Sem custo de envio' 
+                            {opcao.id === 'pickup_store'
+                              ? 'Sem custo de envio'
                               : `Prazo estimado: até ${opcao.custom_delivery_time} dias úteis`}
                           </span>
                         </div>
                         <span className={styles.shippingPrice}>
-                          {parseFloat(opcao.price) === 0 
-                            ? 'Grátis' 
+                          {parseFloat(opcao.price) === 0
+                            ? 'Grátis'
                             : `R$ ${parseFloat(opcao.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
                         </span>
                       </label>
@@ -645,8 +650,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                       <span style={{ fontSize: '0.85rem', color: '#166534', fontWeight: 600 }}>
                         Cupom <strong>{cupomAplicado.codigo}</strong> aplicado ({cupomAplicado.tipo === 'PERCENTUAL' ? `${cupomAplicado.valor}% OFF` : `R$ ${cupomAplicado.valor.toFixed(2)} OFF`})
                       </span>
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         onClick={handleRemoverCupom}
                         style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
                       >
@@ -781,7 +786,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                         <p className={styles.pixInfo}>
                           Ao clicar em <strong>Finalizar Pedido</strong>, o estoque será reservado por <strong>15 minutos</strong> e o QR Code PIX será gerado.
                         </p>
-                        
+
                         <button
                           type="button"
                           className={styles.primaryButton}
@@ -794,8 +799,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                       </div>
                     )}
 
-                    {permiteCartao && (
-                      <div style={{ display: metodoPagamento === 'credit_card' ? 'block' : 'none', minHeight: '350px' }}>
+                    {permiteCartao && metodoPagamento === 'credit_card' && totalGeral >= 1.0 && (
+                      <div style={{ minHeight: '350px' }}>
                         <CardPayment
                           initialization={{
                             amount: totalGeral,
@@ -813,7 +818,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                           onSubmit={async (param) => {
                             await enviarPedidoParaBackend(param);
                           }}
-                          onError={(error) => console.error('Erro no Card Brick:', error)}
+                          onError={(error) => {
+                            console.error('Erro no Card Brick:', JSON.stringify(error, null, 2), error);
+                          }}
                           onReady={() => console.log('Card Payment Brick pronto e montado!')}
                         />
                       </div>

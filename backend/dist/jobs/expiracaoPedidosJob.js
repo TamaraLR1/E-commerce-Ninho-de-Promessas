@@ -9,65 +9,91 @@ const prisma_1 = require("../lib/prisma");
 const socket_1 = require("../socket");
 const client_1 = require("@prisma/client");
 function iniciarWorkerExpiracaoPedidos() {
-    // Roda a cada 1 minuto para verificar pedidos pendentes expirados (limite de 15 minutos)
+    // Roda a cada 1 minuto para verificar reservas de estoque expiradas (15 min PIX / 48h Cartão)
     node_cron_1.default.schedule('* * * * *', async () => {
         try {
-            const quinzeMinutosAtras = new Date(Date.now() - 15 * 60 * 1000);
-            // Busca pedidos que ainda estão PENDENTE e foram criados há mais de 15 minutos
-            const pedidosPendentes = await prisma_1.prisma.pedido.findMany({
+            const agora = new Date();
+            const quinzeMinutosAtras = new Date(agora.getTime() - 15 * 60 * 1000);
+            const quarentaEOitoHorasAtras = new Date(agora.getTime() - 48 * 60 * 60 * 1000);
+            const pedidosExpirados = await prisma_1.prisma.pedido.findMany({
                 where: {
                     status: client_1.StatusPedido.PENDENTE,
-                    createdAt: {
-                        lte: quinzeMinutosAtras,
-                    },
+                    OR: [
+                        {
+                            expiraEm: {
+                                not: null,
+                                lte: agora,
+                            },
+                        },
+                        {
+                            expiraEm: null,
+                            metodoPagamento: 'pix',
+                            createdAt: { lte: quinzeMinutosAtras },
+                        },
+                        {
+                            expiraEm: null,
+                            metodoPagamento: { not: 'pix' },
+                            createdAt: { lte: quarentaEOitoHorasAtras },
+                        },
+                    ],
                 },
                 include: {
                     itens: true,
                 },
             });
-            if (pedidosPendentes.length === 0)
+            if (pedidosExpirados.length === 0)
                 return;
-            console.log(`⏱️ Worker: Encontrados ${pedidosPendentes.length} pedido(s) pendente(s) expirado(s) (> 15 min). Liberando estoque...`);
+            console.log(`⏱️ Worker: Encontrados ${pedidosExpirados.length} pedido(s) expirado(s). Liberando estoque...`);
             const io = (0, socket_1.getIO)();
-            for (const pedido of pedidosPendentes) {
-                await prisma_1.prisma.$transaction(async (tx) => {
-                    // 1. Atualiza o status do pedido para CANCELADO
-                    await tx.pedido.update({
-                        where: { id: pedido.id },
-                        data: { status: client_1.StatusPedido.CANCELADO },
+            for (const pedido of pedidosExpirados) {
+                const isPix = String(pedido.metodoPagamento || '').toLowerCase() === 'pix';
+                const regraLabel = isPix ? '15 minutos (PIX)' : '48 horas (Cartão de Crédito)';
+                // Garantia extra de transação: só cancela se ainda estiver PENDENTE
+                const resultadoTx = await prisma_1.prisma.$transaction(async (tx) => {
+                    const atualizado = await tx.pedido.updateMany({
+                        where: {
+                            id: pedido.id,
+                            status: client_1.StatusPedido.PENDENTE,
+                        },
+                        data: {
+                            status: client_1.StatusPedido.CANCELADO,
+                            expiraEm: null,
+                        },
                     });
-                    // 2. Registra no histórico de status
+                    if (atualizado.count === 0)
+                        return false;
                     await tx.historicoStatusPedido.create({
                         data: {
                             pedidoId: pedido.id,
                             status: client_1.StatusPedido.CANCELADO,
-                            observacao: 'Pedido cancelado automaticamente após 15 minutos sem confirmação de pagamento. Estoque liberado.',
+                            observacao: `Pedido cancelado automaticamente após expiração de ${regraLabel}. Reserva de estoque liberada.`,
                         },
                     });
-                    // 3. Devolve o estoque para a prateleira para cada item do pedido
                     for (const item of pedido.itens) {
-                        await tx.produtoEstoque.updateMany({
-                            where: {
-                                produtoId: item.produtoId,
-                                tamanhoId: item.tamanhoId || null,
-                                corId: item.corId || null,
-                            },
-                            data: {
-                                estoque: { increment: item.quantidade },
-                            },
-                        });
+                        if (item.produtoId) {
+                            await tx.produtoEstoque.updateMany({
+                                where: {
+                                    produtoId: item.produtoId,
+                                    tamanhoId: item.tamanhoId || null,
+                                    corId: item.corId || null,
+                                },
+                                data: {
+                                    estoque: { increment: item.quantidade },
+                                },
+                            });
+                        }
                     }
+                    return true;
                 });
-                // Notifica via WebSocket se houver clientes conectados
-                if (io) {
+                if (resultadoTx && io) {
                     io.emit('pedidoAtualizado', { id: pedido.id, status: client_1.StatusPedido.CANCELADO });
+                    console.log(`✅ Pedido ${pedido.id} (${regraLabel}) cancelado por expiração e estoque devolvido.`);
                 }
-                console.log(`✅ Pedido ${pedido.id} cancelado por expiração de tempo e estoque devolvido.`);
             }
         }
         catch (error) {
             console.error('❌ Erro no Worker de expiração de pedidos:', error);
         }
     });
-    console.log('⏱️ Cron job de expiração de pedidos pendentes (15 min) iniciado com sucesso.');
+    console.log('⏱️ Cron job de expiração de pedidos (15 min PIX / 48h Cartão) iniciado com sucesso.');
 }

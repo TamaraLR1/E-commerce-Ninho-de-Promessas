@@ -82,7 +82,7 @@ export const pagamentoController = {
       // Validação de valor mínimo para Cartão de Crédito (< R$ 1,00)
       // -------------------------------------------------------------------------
       const isCartaoCredito = payment_method_id === 'credit_card' || (payment_method_id && payment_method_id !== 'pix');
-      
+
       if (isCartaoCredito && Number(transaction_amount) < 1.00) {
         return res.status(400).json({
           message: 'O valor mínimo para pagamentos com cartão de crédito é de R$ 1,00.'
@@ -92,8 +92,8 @@ export const pagamentoController = {
       // Validação prévia de algoritmo de CPF
       const cpfLimpo = user.cpf ? String(user.cpf).replace(/\D/g, '') : '';
       if (!cpfLimpo || !validarCPF(cpfLimpo)) {
-        return res.status(400).json({ 
-          message: 'O CPF cadastrado na sua conta é inválido. Por favor, corrija o CPF em seus dados pessoais para continuar.' 
+        return res.status(400).json({
+          message: 'O CPF cadastrado na sua conta é inválido. Por favor, corrija o CPF em seus dados pessoais para continuar.'
         });
       }
 
@@ -119,8 +119,8 @@ export const pagamentoController = {
 
       // Monta o objeto payer com CPF e endereço completos
       const payerData: any = {
-        email: isSandbox && payment_method_id === 'pix' 
-          ? 'TESTUSER312184413725449474@testuser.com' 
+        email: isSandbox && payment_method_id === 'pix'
+          ? 'TESTUSER312184413725449474@testuser.com'
           : user.email,
         first_name: (user.nome || 'Cliente').trim(),
         last_name: (user.sobrenome || '').trim(),
@@ -306,7 +306,7 @@ export const pagamentoController = {
           prazoEntrega: prazoEntrega || null,
           metodoPagamento: payment_method_id,
           mpPaymentId: String(mpResponse.id),
-          expiraEm: expiraEm,
+          expiraEm: statusPedido === 'PAGO' ? null : expiraEm,
           createdAt: new Date(), // Reinicia a data de criação para atualizar o cronômetro e expiração
           enderecoId: enderecoId,
           itens: {
@@ -382,10 +382,10 @@ export const pagamentoController = {
 
   async webhookMercadoPago(req: Request, res: Response) {
     try {
-      const paymentId = 
-        req.body?.data?.id || 
-        req.body?.id || 
-        req.query?.id || 
+      const paymentId =
+        req.body?.data?.id ||
+        req.body?.id ||
+        req.query?.id ||
         req.query['data.id'];
 
       const topic = req.body?.type || req.body?.action || req.query?.topic;
@@ -403,45 +403,83 @@ export const pagamentoController = {
 
         if (!pedidoExistente) return;
 
-        // --- TRATATIVA DE PAGAMENTO APROVADO ---
-        if (paymentInfo.status === 'approved' && pedidoExistente.status !== 'PAGO') {
-          await prisma.$transaction(async (tx) => {
-            await tx.pedido.update({
-              where: { id: pedidoExistente.id },
-              data: { 
-                status: 'PAGO',
-                expiraEm: null, // Limpa o prazo de expiração pois foi pago
-                historicoStatus: {
-                  create: {
-                    status: 'PAGO',
-                    observacao: 'Pagamento aprovado via Webhook do Mercado Pago.'
-                  }
-                }
+        // --- PEDIDO JÁ EXPIRADO / CANCELADO ---
+        // Se o pedido já expirou e foi CANCELADO, o estoque já foi recomposto.
+        // Permanece CANCELADO mesmo com aprovação tardia no Mercado Pago.
+        if (pedidoExistente.status === 'CANCELADO') {
+          if (paymentInfo.status === 'approved') {
+            await prisma.historicoStatusPedido.create({
+              data: {
+                pedidoId: pedidoExistente.id,
+                status: 'CANCELADO',
+                observacao: `Pagamento ${mpPaymentId} aprovado no Mercado Pago após expiração do pedido. Pedido mantido como CANCELADO e estoque já devolvido; verificar estorno/atendimento.`,
               },
             });
+          }
+          return;
+        }
+
+        // --- TRATATIVA DE PAGAMENTO APROVADO ---
+        if (paymentInfo.status === 'approved' && pedidoExistente.status === 'PENDENTE') {
+          let foiAprovado = false;
+
+          await prisma.$transaction(async (tx) => {
+            const atualizado = await tx.pedido.updateMany({
+              where: {
+                id: pedidoExistente.id,
+                status: 'PENDENTE',
+              },
+              data: {
+                status: 'PAGO',
+                expiraEm: null, // Limpa o prazo de expiração pois foi pago
+              },
+            });
+
+            if (atualizado.count > 0) {
+              foiAprovado = true;
+              await tx.historicoStatusPedido.create({
+                data: {
+                  pedidoId: pedidoExistente.id,
+                  status: 'PAGO',
+                  observacao: 'Pagamento aprovado via Webhook do Mercado Pago.',
+                },
+              });
+            }
           });
 
-          const io = getIO();
-          if (io) {
-            io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: 'PAGO' });
+          if (foiAprovado) {
+            const io = getIO();
+            if (io) {
+              io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: 'PAGO' });
+            }
           }
-        } 
-        
+        }
+
         // --- TRATATIVA DE PAGAMENTO RECUSADO, CANCELADO OU EXPIRADO ---
         else if (['rejected', 'cancelled'].includes(String(paymentInfo.status)) && pedidoExistente.status === 'PENDENTE') {
           const novoStatus = 'RECUSADO' as const;
+          let foiRecusado = false;
 
           await prisma.$transaction(async (tx) => {
-            await tx.pedido.update({
-              where: { id: pedidoExistente.id },
-              data: { 
+            const atualizado = await tx.pedido.updateMany({
+              where: {
+                id: pedidoExistente.id,
+                status: 'PENDENTE',
+              },
+              data: {
                 status: novoStatus,
-                historicoStatus: {
-                  create: {
-                    status: novoStatus,
-                    observacao: `Pagamento ${paymentInfo.status === 'rejected' ? 'recusado' : 'cancelado/expirado'} pelo Mercado Pago.`
-                  }
-                }
+                expiraEm: null,
+              },
+            });
+
+            if (atualizado.count === 0) return;
+            foiRecusado = true;
+
+            await tx.historicoStatusPedido.create({
+              data: {
+                pedidoId: pedidoExistente.id,
+                status: novoStatus,
+                observacao: `Pagamento ${paymentInfo.status === 'rejected' ? 'recusado' : 'cancelado/expirado'} pelo Mercado Pago.`,
               },
             });
 
@@ -460,9 +498,11 @@ export const pagamentoController = {
             }
           });
 
-          const io = getIO();
-          if (io) {
-            io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: novoStatus });
+          if (foiRecusado) {
+            const io = getIO();
+            if (io) {
+              io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: novoStatus });
+            }
           }
         }
       }

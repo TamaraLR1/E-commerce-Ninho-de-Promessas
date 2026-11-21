@@ -272,7 +272,7 @@ exports.pagamentoController = {
                     prazoEntrega: prazoEntrega || null,
                     metodoPagamento: payment_method_id,
                     mpPaymentId: String(mpResponse.id),
-                    expiraEm: expiraEm,
+                    expiraEm: statusPedido === 'PAGO' ? null : expiraEm,
                     createdAt: new Date(), // Reinicia a data de criação para atualizar o cronômetro e expiração
                     enderecoId: enderecoId,
                     itens: {
@@ -359,42 +359,76 @@ exports.pagamentoController = {
                 });
                 if (!pedidoExistente)
                     return;
+                // --- PEDIDO JÁ EXPIRADO / CANCELADO ---
+                // Se o pedido já expirou e foi CANCELADO, o estoque já foi recomposto.
+                // Permanece CANCELADO mesmo com aprovação tardia no Mercado Pago.
+                if (pedidoExistente.status === 'CANCELADO') {
+                    if (paymentInfo.status === 'approved') {
+                        await prisma_1.prisma.historicoStatusPedido.create({
+                            data: {
+                                pedidoId: pedidoExistente.id,
+                                status: 'CANCELADO',
+                                observacao: `Pagamento ${mpPaymentId} aprovado no Mercado Pago após expiração do pedido. Pedido mantido como CANCELADO e estoque já devolvido; verificar estorno/atendimento.`,
+                            },
+                        });
+                    }
+                    return;
+                }
                 // --- TRATATIVA DE PAGAMENTO APROVADO ---
-                if (paymentInfo.status === 'approved' && pedidoExistente.status !== 'PAGO') {
+                if (paymentInfo.status === 'approved' && pedidoExistente.status === 'PENDENTE') {
+                    let foiAprovado = false;
                     await prisma_1.prisma.$transaction(async (tx) => {
-                        await tx.pedido.update({
-                            where: { id: pedidoExistente.id },
+                        const atualizado = await tx.pedido.updateMany({
+                            where: {
+                                id: pedidoExistente.id,
+                                status: 'PENDENTE',
+                            },
                             data: {
                                 status: 'PAGO',
                                 expiraEm: null, // Limpa o prazo de expiração pois foi pago
-                                historicoStatus: {
-                                    create: {
-                                        status: 'PAGO',
-                                        observacao: 'Pagamento aprovado via Webhook do Mercado Pago.'
-                                    }
-                                }
                             },
                         });
+                        if (atualizado.count > 0) {
+                            foiAprovado = true;
+                            await tx.historicoStatusPedido.create({
+                                data: {
+                                    pedidoId: pedidoExistente.id,
+                                    status: 'PAGO',
+                                    observacao: 'Pagamento aprovado via Webhook do Mercado Pago.',
+                                },
+                            });
+                        }
                     });
-                    const io = (0, socket_1.getIO)();
-                    if (io) {
-                        io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: 'PAGO' });
+                    if (foiAprovado) {
+                        const io = (0, socket_1.getIO)();
+                        if (io) {
+                            io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: 'PAGO' });
+                        }
                     }
                 }
                 // --- TRATATIVA DE PAGAMENTO RECUSADO, CANCELADO OU EXPIRADO ---
                 else if (['rejected', 'cancelled'].includes(String(paymentInfo.status)) && pedidoExistente.status === 'PENDENTE') {
                     const novoStatus = 'RECUSADO';
+                    let foiRecusado = false;
                     await prisma_1.prisma.$transaction(async (tx) => {
-                        await tx.pedido.update({
-                            where: { id: pedidoExistente.id },
+                        const atualizado = await tx.pedido.updateMany({
+                            where: {
+                                id: pedidoExistente.id,
+                                status: 'PENDENTE',
+                            },
                             data: {
                                 status: novoStatus,
-                                historicoStatus: {
-                                    create: {
-                                        status: novoStatus,
-                                        observacao: `Pagamento ${paymentInfo.status === 'rejected' ? 'recusado' : 'cancelado/expirado'} pelo Mercado Pago.`
-                                    }
-                                }
+                                expiraEm: null,
+                            },
+                        });
+                        if (atualizado.count === 0)
+                            return;
+                        foiRecusado = true;
+                        await tx.historicoStatusPedido.create({
+                            data: {
+                                pedidoId: pedidoExistente.id,
+                                status: novoStatus,
+                                observacao: `Pagamento ${paymentInfo.status === 'rejected' ? 'recusado' : 'cancelado/expirado'} pelo Mercado Pago.`,
                             },
                         });
                         // Devolve o estoque reservado para a loja
@@ -411,9 +445,11 @@ exports.pagamentoController = {
                             }
                         }
                     });
-                    const io = (0, socket_1.getIO)();
-                    if (io) {
-                        io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: novoStatus });
+                    if (foiRecusado) {
+                        const io = (0, socket_1.getIO)();
+                        if (io) {
+                            io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: novoStatus });
+                        }
                     }
                 }
             }
