@@ -49,28 +49,105 @@ exports.pagamentoController = {
             if (!user) {
                 return res.status(404).json({ message: 'Usuário não encontrado.' });
             }
-            const { pedidoParaRefazerId, // ID opcional enviado quando o cliente clica em refazer/tentar outro meio
-            transaction_amount, token, description, installments, payment_method_id, issuer_id, items, subtotal, valorFrete, servicoFrete, prazoEntrega, endereco, } = req.body;
+            const { pedidoParaRefazerId, transaction_amount, token, description, installments, payment_method_id, issuer_id, items, subtotal, descontoCupom, valorFrete, servicoFrete, prazoEntrega, endereco, } = req.body;
             if (!items || !Array.isArray(items) || items.length === 0) {
                 return res.status(400).json({ message: 'O pedido deve conter pelo menos um item.' });
             }
             if (!endereco || !endereco.cep || !endereco.rua || !endereco.numero) {
                 return res.status(400).json({ message: 'Endereço de entrega incompleto.' });
             }
-            // -------------------------------------------------------------------------
-            // Validação de valor mínimo para Cartão de Crédito (< R$ 1,00)
-            // -------------------------------------------------------------------------
-            const isCartaoCredito = payment_method_id === 'credit_card' || (payment_method_id && payment_method_id !== 'pix');
-            if (isCartaoCredito && Number(transaction_amount) < 1.00) {
-                return res.status(400).json({
-                    message: 'O valor mínimo para pagamentos com cartão de crédito é de R$ 1,00.'
-                });
-            }
             // Validação prévia de algoritmo de CPF
             const cpfLimpo = user.cpf ? String(user.cpf).replace(/\D/g, '') : '';
             if (!cpfLimpo || !validarCPF(cpfLimpo)) {
                 return res.status(400).json({
                     message: 'O CPF cadastrado na sua conta é inválido. Por favor, corrija o CPF em seus dados pessoais para continuar.'
+                });
+            }
+            // Recalcula subtotal no servidor com base nos itens enviados
+            const subtotalCalculado = Number(items.reduce((acc, item) => {
+                const precoUnit = Number(item.preco ?? item.precoUnitario ?? 0);
+                const qtd = Number(item.quantidade ?? 0);
+                return acc + precoUnit * qtd;
+            }, 0).toFixed(2));
+            const subtotalFinal = subtotal !== undefined && subtotal !== null
+                ? Number(Number(subtotal).toFixed(2))
+                : subtotalCalculado;
+            if (Math.abs(subtotalFinal - subtotalCalculado) > 0.02) {
+                return res.status(400).json({
+                    message: 'O subtotal informado não corresponde aos itens selecionados. Atualize a conferência do pedido.',
+                });
+            }
+            const descontoNum = Number(descontoCupom || 0);
+            const freteNum = Number(valorFrete || 0);
+            const totalCalculado = Number((Math.max(0, subtotalFinal - descontoNum) + freteNum).toFixed(2));
+            const valorCobranca = transaction_amount !== undefined && transaction_amount !== null
+                ? Number(Number(transaction_amount).toFixed(2))
+                : totalCalculado;
+            if (Math.abs(valorCobranca - totalCalculado) > 0.02) {
+                return res.status(400).json({
+                    message: 'O valor total da cobrança divergiu do cálculo dos itens. Revise o pedido antes de pagar.',
+                });
+            }
+            // Validação de valor mínimo para Cartão de Crédito (< R$ 1,00)
+            const isCartaoCredito = payment_method_id === 'credit_card' || (payment_method_id && payment_method_id !== 'pix');
+            if (isCartaoCredito && valorCobranca < 1.00) {
+                return res.status(400).json({
+                    message: 'O valor mínimo para pagamentos com cartão de crédito é de R$ 1,00.'
+                });
+            }
+            // -------------------------------------------------------------------------
+            // 3. PRÉ-VALIDAÇÃO DE ESTOQUE ANTES DE COBRAR NO MERCADO PAGO
+            // -------------------------------------------------------------------------
+            const itensIndisponiveis = [];
+            await prisma_1.prisma.$transaction(async (tx) => {
+                // Se estiver refazendo um pedido ativo, devolve temporariamente o estoque dele dentro da transação
+                // para checar a disponibilidade real (se falhar, a transação faz rollback automático)
+                if (pedidoParaRefazerId) {
+                    const pedidoAntigo = await tx.pedido.findUnique({
+                        where: { id: String(pedidoParaRefazerId) },
+                        include: { itens: true },
+                    });
+                    if (pedidoAntigo && (pedidoAntigo.status === 'PAGO' || pedidoAntigo.status === 'PENDENTE')) {
+                        for (const itemAntigo of pedidoAntigo.itens) {
+                            if (itemAntigo.produtoId) {
+                                await tx.produtoEstoque.updateMany({
+                                    where: {
+                                        produtoId: itemAntigo.produtoId,
+                                        ...(itemAntigo.tamanhoId ? { tamanhoId: itemAntigo.tamanhoId } : {}),
+                                        ...(itemAntigo.corId ? { corId: itemAntigo.corId } : {}),
+                                    },
+                                    data: { estoque: { increment: itemAntigo.quantidade } },
+                                });
+                            }
+                        }
+                    }
+                }
+                for (const item of items) {
+                    if (item.produtoId) {
+                        const estoqueDisponivel = await tx.produtoEstoque.findFirst({
+                            where: {
+                                produtoId: String(item.produtoId),
+                                ...(item.tamanhoId ? { tamanhoId: String(item.tamanhoId) } : {}),
+                                ...(item.corId ? { corId: String(item.corId) } : {}),
+                            },
+                        });
+                        const qtdDisp = estoqueDisponivel ? Number(estoqueDisponivel.estoque || 0) : 0;
+                        const qtdSol = Number(item.quantidade || 0);
+                        if (!estoqueDisponivel || qtdDisp < qtdSol) {
+                            itensIndisponiveis.push({
+                                produtoId: String(item.produtoId),
+                                nome: item.nome || 'Item',
+                                quantidadeSolicitada: qtdSol,
+                                quantidadeDisponivel: qtdDisp,
+                            });
+                        }
+                    }
+                }
+            });
+            if (itensIndisponiveis.length > 0) {
+                return res.status(409).json({
+                    message: `Estoque insuficiente para: ${itensIndisponiveis.map((i) => i.nome).join(', ')}.`,
+                    itensIndisponiveis,
                 });
             }
             // -------------------------------------------------------------------------
@@ -91,7 +168,6 @@ exports.pagamentoController = {
                 }
             }
             const isSandbox = mpAccessToken.startsWith('TEST-');
-            // Monta o objeto payer com CPF e endereço completos
             const payerData = {
                 email: isSandbox && payment_method_id === 'pix'
                     ? 'TESTUSER312184413725449474@testuser.com'
@@ -117,7 +193,7 @@ exports.pagamentoController = {
             if (payment_method_id === 'pix') {
                 paymentBody = {
                     ...paymentBody,
-                    transaction_amount: Number(transaction_amount),
+                    transaction_amount: valorCobranca,
                     description: description || 'Compra Ninho de Promessas',
                     payment_method_id: 'pix',
                     payer: payerData,
@@ -129,7 +205,7 @@ exports.pagamentoController = {
                     : 'master';
                 paymentBody = {
                     ...paymentBody,
-                    transaction_amount: Number(transaction_amount),
+                    transaction_amount: valorCobranca,
                     token: token,
                     description: description || 'Compra Ninho de Promessas',
                     installments: Number(installments || 1),
@@ -153,7 +229,6 @@ exports.pagamentoController = {
                     throw firstErr;
                 }
             }
-            // Mapeamento correto: Apenas 'approved' vira PAGO. Demais (pendente, em análise, etc.) continuam PENDENTE.
             let statusPedido = 'PENDENTE';
             if (mpResponse.status === 'approved') {
                 statusPedido = 'PAGO';
@@ -165,15 +240,13 @@ exports.pagamentoController = {
                 statusPedido = 'PENDENTE';
             }
             // -------------------------------------------------------------------------
-            // 3. TRANSAÇÃO PRISMA: ESTOQUE, RESERVA E EXPIRAÇÃO (15 min PIX / 48h Cartão)
+            // 4. TRANSAÇÃO PRISMA: ESTOQUE, RESERVA E EXPIRAÇÃO (15 min PIX / 48h Cartão)
             // -------------------------------------------------------------------------
             const resultado = await prisma_1.prisma.$transaction(async (tx) => {
-                // Se estiver refazendo um pedido, verificamos se o pedido anterior estava ATIVO (PAGO ou PENDENTE).
-                // Se já estava CANCELADO ou RECUSADO, o estoque já havia sido devolvido, logo não fazemos increment duplicado.
                 if (pedidoParaRefazerId) {
                     const pedidoAntigo = await tx.pedido.findUnique({
                         where: { id: String(pedidoParaRefazerId) },
-                        include: { itens: true }
+                        include: { itens: true },
                     });
                     if (pedidoAntigo && (pedidoAntigo.status === 'PAGO' || pedidoAntigo.status === 'PENDENTE')) {
                         for (const itemAntigo of pedidoAntigo.itens) {
@@ -191,7 +264,7 @@ exports.pagamentoController = {
                     }
                     await tx.itemPedido.deleteMany({ where: { pedidoId: String(pedidoParaRefazerId) } });
                 }
-                // Validação prévia de disponibilidade em estoque
+                // Revalidação final dentro da transação antes de decrementar
                 for (const item of items) {
                     if (item.produtoId) {
                         const estoqueDisponivel = await tx.produtoEstoque.findFirst({
@@ -206,7 +279,6 @@ exports.pagamentoController = {
                         }
                     }
                 }
-                // Reserva / Decrementa o estoque imediatamente se não for recusado
                 if (statusPedido !== 'RECUSADO') {
                     for (const item of items) {
                         if (item.produtoId) {
@@ -221,7 +293,6 @@ exports.pagamentoController = {
                         }
                     }
                 }
-                // Define o tempo de expiração da reserva: 15 minutos para PIX, 48 horas para Cartão
                 const expiraEm = new Date();
                 if (payment_method_id === 'pix') {
                     expiraEm.setMinutes(expiraEm.getMinutes() + 15);
@@ -242,7 +313,7 @@ exports.pagamentoController = {
                 let enderecoId;
                 const dadosTratados = {
                     cep: String(endereco.cep).replace(/\D/g, ''),
-                    rua: endereco.logradouro,
+                    rua: endereco.logradouro || endereco.rua,
                     numero: String(endereco.numero),
                     complemento: endereco.complemento || null,
                     bairro: endereco.bairro,
@@ -265,15 +336,15 @@ exports.pagamentoController = {
                 let pedidoFinal;
                 const dadosPayloadPedido = {
                     status: statusPedido,
-                    subtotal: Number(subtotal || Number(transaction_amount) - (Number(valorFrete) || 0)),
-                    valorFrete: Number(valorFrete || 0),
-                    valorTotal: Number(transaction_amount),
+                    subtotal: subtotalFinal,
+                    valorFrete: freteNum,
+                    valorTotal: valorCobranca,
                     servicoFrete: servicoFrete || 'Padrão',
                     prazoEntrega: prazoEntrega || null,
                     metodoPagamento: payment_method_id,
                     mpPaymentId: String(mpResponse.id),
                     expiraEm: statusPedido === 'PAGO' ? null : expiraEm,
-                    createdAt: new Date(), // Reinicia a data de criação para atualizar o cronômetro e expiração
+                    createdAt: new Date(),
                     enderecoId: enderecoId,
                     itens: {
                         create: items.map((item) => ({
@@ -281,7 +352,7 @@ exports.pagamentoController = {
                             tamanhoId: item.tamanhoId ? String(item.tamanhoId) : null,
                             corId: item.corId ? String(item.corId) : null,
                             nomeProduto: item.nome || 'Produto',
-                            precoUnitario: Number(item.preco),
+                            precoUnitario: Number(item.preco ?? item.precoUnitario ?? 0),
                             quantidade: Number(item.quantidade),
                         })),
                     },
@@ -295,8 +366,8 @@ exports.pagamentoController = {
                                 create: {
                                     status: statusPedido,
                                     observacao: 'Tentativa de pagamento refeita. Status reativado para PENDENTE e estoque reservado novamente.',
-                                }
-                            }
+                                },
+                            },
                         },
                         include: { itens: true, endereco: true, historicoStatus: true },
                     });
@@ -314,8 +385,8 @@ exports.pagamentoController = {
                                 create: {
                                     status: statusPedido,
                                     observacao: 'Pedido criado. Estoque reservado temporariamente.',
-                                }
-                            }
+                                },
+                            },
                         },
                         include: { itens: true, endereco: true, historicoStatus: true },
                     });
@@ -359,9 +430,6 @@ exports.pagamentoController = {
                 });
                 if (!pedidoExistente)
                     return;
-                // --- PEDIDO JÁ EXPIRADO / CANCELADO ---
-                // Se o pedido já expirou e foi CANCELADO, o estoque já foi recomposto.
-                // Permanece CANCELADO mesmo com aprovação tardia no Mercado Pago.
                 if (pedidoExistente.status === 'CANCELADO') {
                     if (paymentInfo.status === 'approved') {
                         await prisma_1.prisma.historicoStatusPedido.create({
@@ -374,7 +442,6 @@ exports.pagamentoController = {
                     }
                     return;
                 }
-                // --- TRATATIVA DE PAGAMENTO APROVADO ---
                 if (paymentInfo.status === 'approved' && pedidoExistente.status === 'PENDENTE') {
                     let foiAprovado = false;
                     await prisma_1.prisma.$transaction(async (tx) => {
@@ -385,7 +452,7 @@ exports.pagamentoController = {
                             },
                             data: {
                                 status: 'PAGO',
-                                expiraEm: null, // Limpa o prazo de expiração pois foi pago
+                                expiraEm: null,
                             },
                         });
                         if (atualizado.count > 0) {
@@ -406,7 +473,6 @@ exports.pagamentoController = {
                         }
                     }
                 }
-                // --- TRATATIVA DE PAGAMENTO RECUSADO, CANCELADO OU EXPIRADO ---
                 else if (['rejected', 'cancelled'].includes(String(paymentInfo.status)) && pedidoExistente.status === 'PENDENTE') {
                     const novoStatus = 'RECUSADO';
                     let foiRecusado = false;
@@ -431,7 +497,6 @@ exports.pagamentoController = {
                                 observacao: `Pagamento ${paymentInfo.status === 'rejected' ? 'recusado' : 'cancelado/expirado'} pelo Mercado Pago.`,
                             },
                         });
-                        // Devolve o estoque reservado para a loja
                         for (const item of pedidoExistente.itens) {
                             if (item.produtoId) {
                                 await tx.produtoEstoque.updateMany({

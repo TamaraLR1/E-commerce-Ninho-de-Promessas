@@ -509,3 +509,270 @@
   margin-top: 6px;
   text-align: center;
 }
+
+/* =========================================================
+   BLOCO DE CONFERÊNCIA DE ITENS E ESTOQUE (ETAPA 3)
+   ========================================================= */
+.reviewSection {
+  background-color: #FAF7F2;
+  border: 1px solid #e6dccf;
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.reviewHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.reviewHeader strong {
+  font-size: 0.95rem;
+  color: #3f362c;
+}
+
+.badgeWarning {
+  background-color: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.reviewList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 230px;
+  overflow-y: auto;
+}
+
+.reviewItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 0.7rem 0.85rem;
+  border-radius: 8px;
+  background-color: #fafafa;
+  border: 1px solid #ece5db;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.reviewItemAvailable {
+  border-left: 3px solid #D7B796;
+}
+
+.reviewItemAdjusted {
+  background-color: #fffbeb;
+  border-color: #fde68a;
+  border-left: 3px solid #d97706;
+}
+
+.reviewItemSoldOut {
+  background-color: #fef2f2;
+  border-color: #fecaca;
+  border-left: 3px solid #dc2626;
+  opacity: 0.9;
+}
+
+.reviewItemInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.reviewItemInfo strong {
+  font-size: 0.9rem;
+  color: #2f2923;
+}
+
+.reviewItemMeta {
+  font-size: 0.8rem;
+  color: #6b5e50;
+}
+
+.reviewItemReason {
+  font-size: 0.75rem;
+  color: #b45309;
+  font-weight: 500;
+}
+
+.reviewItemSoldOut .reviewItemReason {
+  color: #b91c1c;
+}
+
+.reviewItemRight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.reviewItemRight strong {
+  font-size: 0.9rem;
+  color: #2f2923;
+}
+
+.itemStrike {
+  text-decoration: line-through;
+  color: #9ca3af !important;
+}
+
+.statusPill {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.pillAvailable {
+  background-color: #f3ece2;
+  color: #6e563b;
+  border: 1px solid #D7B796;
+}
+
+.pillAdjusted {
+  background-color: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.pillSoldOut {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+.reviewActionsBox {
+  margin-top: 0.9rem;
+  padding-top: 0.85rem;
+  border-top: 1px dashed #d8cbb8;
+}
+
+.reviewNotice {
+  font-size: 0.85rem;
+  color: #4a3f35;
+  margin: 0 0 0.75rem 0;
+  line-height: 1.4;
+}
+
+.reviewAlertBox {
+  text-align: center;
+  padding: 1.5rem 1rem;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  margin: 0.75rem 0 1rem 0;
+}
+
+/* =========================================================
+   CUPOM E BANNERS INFORMATIVOS
+   ========================================================= */
+.couponBox {
+  margin-top: 0.8rem;
+  background-color: #FAF7F2;
+  padding: 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #e6dccf;
+}
+
+.couponLabel {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #4a3f35;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.couponApplied {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #166534;
+  font-weight: 600;
+}
+
+.couponRemoveBtn {
+  background: none;
+  border: none;
+  color: #dc2626;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.couponForm {
+  display: flex;
+  gap: 8px;
+}
+
+.infoBanner {
+  background-color: #FAF7F2;
+  border: 1px solid #D7B796;
+  padding: 10px 14px;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  color: #5c4934;
+}
+
+.cardBrickContainer {
+  min-height: 350px;
+}
+
+.reviewItemLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.reviewThumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 7px;
+  border: 1px solid #e2d6c5;
+  background-color: #ffffff;
+  flex-shrink: 0;
+}
+
+.reviewThumbSoldOut {
+  opacity: 0.45;
+  filter: grayscale(100%);
+}
+
+.reviewThumbPlaceholder {
+  width: 48px;
+  height: 48px;
+  border-radius: 7px;
+  border: 1px dashed #d8cbb8;
+  background-color: #f4efe6;
+  color: #8a7965;
+  font-size: 0.65rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  flex-shrink: 0;
+}

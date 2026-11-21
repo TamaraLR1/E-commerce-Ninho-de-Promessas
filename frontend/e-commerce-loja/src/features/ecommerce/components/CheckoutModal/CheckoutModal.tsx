@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { initMercadoPago, CardPayment } from '@mercadopago/sdk-react';
 import { useCart } from '../../components/CartContext/CartContext';
+import { socket } from '../../../../services/socket';
 import styles from './CheckoutModal.module.css';
 
 const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -42,6 +43,23 @@ interface OpcaoFrete {
   custom_delivery_time: number;
 }
 
+type StatusConferenciaItem = 'DISPONIVEL' | 'QUANTIDADE_AJUSTADA' | 'ESGOTADO';
+
+interface ItemConferido {
+  produtoId: string;
+  tamanhoId: string | null;
+  corId: string | null;
+  nome: string;
+  imagemUrl?: string;
+  precoUnitario: number;
+  quantidadeSolicitada: number;
+  quantidadeDisponivel: number;
+  quantidadeAprovada: number;
+  subtotalItem: number;
+  status: StatusConferenciaItem;
+  motivo: string | null;
+}
+
 const OPCAO_RETIRADA: OpcaoFrete = {
   id: 'pickup_store',
   name: 'Retirar na Loja',
@@ -50,8 +68,41 @@ const OPCAO_RETIRADA: OpcaoFrete = {
   custom_delivery_time: 0,
 };
 
+function chaveVariacaoItem(produtoId: any, tamanhoId: any, corId: any) {
+  return `${String(produtoId || '')}::${tamanhoId ? String(tamanhoId) : ''}::${corId ? String(corId) : ''}`;
+}
+
+function extrairIdsItem(item: any) {
+  const produtoId = String(item?.produtoId || item?.product?.id || item?.id || '');
+  const tamanhoId = item?.tamanhoId || item?.tamanho?.id ? String(item?.tamanhoId || item?.tamanho?.id) : null;
+  const corId = item?.corId || item?.cor?.id ? String(item?.corId || item?.cor?.id) : null;
+  const quantidade = Number(item?.quantidade || 1);
+  const precoUnitario =
+    item?.precoUnitario !== undefined
+      ? Number(item.precoUnitario)
+      : quantidade > 0
+      ? Number((Number(item?.totalItem || 0) / quantidade).toFixed(2))
+      : Number(item?.preco || 0);
+  const imagemUrl =
+    item?.imagemUrl ||
+    item?.imagem ||
+    item?.produto?.imagens?.[0]?.url ||
+    item?.product?.imagens?.[0]?.url ||
+    '';
+
+  return {
+    produtoId,
+    tamanhoId,
+    corId,
+    nome: item?.nome || item?.nomeProduto || item?.produto?.nome || item?.product?.nome || 'Produto',
+    imagemUrl,
+    precoUnitario,
+    quantidade,
+  };
+}
+
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPaymentSuccess, total }) => {
-  const { itens, subtotalSelecionados, limparCarrinho } = useCart();
+  const { itens, subtotalSelecionados, limparCarrinho, sincronizarItensComConferencia } = useCart();
 
   // Estados para suportar o refazer pedido do histórico
   const [itensPedidoRefazer, setItensPedidoRefazer] = useState<any[]>([]);
@@ -72,9 +123,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
               tamanhoId: i.tamanhoId || i.tamanho?.id,
               corId: i.corId || i.cor?.id,
               nome: i.produto?.nome || i.nomeProduto || 'Produto',
+              imagemUrl: i.produto?.imagens?.[0]?.url || i.imagemUrl || '',
               quantidade: i.quantidade,
+              precoUnitario: Number(i.precoUnitario),
               totalItem: Number(i.precoUnitario) * Number(i.quantidade),
-              selecionado: true
+              selecionado: true,
             }));
             setItensPedidoRefazer(itensFormatados);
           }
@@ -88,11 +141,39 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
     }
   }, [pedidoIdRefazer]);
 
-  // Se estiver a refazer, usa os itens do pedido antigo; senão, usa os itens selecionados do carrinho
-  const itensParaCompra = pedidoIdRefazer ? itensPedidoRefazer : itens.filter(item => item.selecionado);
-  const valorTotalBase = pedidoIdRefazer
-    ? itensPedidoRefazer.reduce((acc, item) => acc + item.totalItem, 0)
-    : (subtotalSelecionados || total);
+  // Itens iniciais selecionados (do pedido antigo ao refazer ou do carrinho)
+  const itensSelecionadosOriginais = pedidoIdRefazer
+    ? itensPedidoRefazer
+    : itens.filter((item) => item.selecionado);
+
+  // Lista ativa usada para pagamento (pode ser confirmada após conferência de estoque)
+  const [itensConfirmadosPagamento, setItensConfirmadosPagamento] = useState<any[] | null>(null);
+  const [itensConferidos, setItensConferidos] = useState<ItemConferido[]>([]);
+  const [quantidadesReferenciaEtapa3, setQuantidadesReferenciaEtapa3] = useState<Record<string, number>>({});
+  const [conferindoEstoque, setConferindoEstoque] = useState<boolean>(false);
+  const [erroConferencia, setErroConferencia] = useState<string>('');
+  const [revisaoConfirmada, setRevisaoConfirmada] = useState<boolean>(false);
+
+  // Reseta a conferência caso o pedido de refazer mude
+  useEffect(() => {
+    setItensConfirmadosPagamento(null);
+    setItensConferidos([]);
+    setQuantidadesReferenciaEtapa3({});
+    setErroConferencia('');
+    setRevisaoConfirmada(false);
+  }, [pedidoIdRefazer]);
+
+  const itensAtivos = itensConfirmadosPagamento ?? itensSelecionadosOriginais;
+
+  const valorTotalBase = itensConfirmadosPagamento
+    ? Number(
+        itensConfirmadosPagamento
+          .reduce((acc, item) => acc + Number(item.precoUnitario || 0) * Number(item.quantidade || 0), 0)
+          .toFixed(2)
+      )
+    : pedidoIdRefazer
+    ? Number(itensPedidoRefazer.reduce((acc, item) => acc + Number(item.totalItem || 0), 0).toFixed(2))
+    : Number((subtotalSelecionados || total).toFixed(2));
 
   const [step, setStep] = useState<number>(1);
   const [clienteLogadoId, setClienteLogadoId] = useState<string>('');
@@ -129,7 +210,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   // Resultado PIX e Cronômetro de 15 minutos
   const [dadosPix, setDadosPix] = useState<{ qrCode: string; qrCodeBase64: string } | null>(null);
   const [copiado, setCopiado] = useState<boolean>(false);
-  const [tempoRestantePix, setTempoRestantePix] = useState<number>(15 * 60); // 15 minutos
+  const [tempoRestantePix, setTempoRestantePix] = useState<number>(15 * 60);
 
   useEffect(() => {
     if (!dadosPix) return;
@@ -155,7 +236,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
     const carregarPerfilUsuario = async () => {
       try {
         const res = await axios.get(`${API_URL}/api/perfil`, {
-          withCredentials: true
+          withCredentials: true,
         });
 
         const dadosUsuario = res.data?.user;
@@ -186,7 +267,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   }, []);
 
   const handleBuscarCep = async (cepInput: string) => {
-    setEndereco(prev => ({ ...prev, cep: cepInput }));
+    setEndereco((prev) => ({ ...prev, cep: cepInput }));
     const cepLimpo = cepInput.replace(/\D/g, '');
 
     if (cepLimpo.length === 8) {
@@ -201,7 +282,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
           return;
         }
 
-        setEndereco(prev => ({
+        setEndereco((prev) => ({
           ...prev,
           cep: cepLimpo,
           logradouro: data.logradouro || prev.logradouro,
@@ -225,11 +306,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
       setLoadingCupom(true);
       setErroCupom('');
 
-      const response = await axios.post(`${API_URL}/api/cupons/validar`, {
-        codigo: codigoCupomInput.trim().toUpperCase(),
-        clienteId: clienteLogadoId,
-        subtotal: valorTotalBase
-      }, { withCredentials: true });
+      const response = await axios.post(
+        `${API_URL}/api/cupons/validar`,
+        {
+          codigo: codigoCupomInput.trim().toUpperCase(),
+          clienteId: clienteLogadoId,
+          subtotal: valorTotalBase,
+        },
+        { withCredentials: true }
+      );
 
       const dadosCupom = response.data?.cupom || response.data;
 
@@ -239,7 +324,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
         setCupomAplicado({
           codigo: dadosCupom.codigo || codigoCupomInput.trim().toUpperCase(),
           tipo: dadosCupom.tipo,
-          valor: isNaN(valorNumerico) ? 0 : valorNumerico
+          valor: isNaN(valorNumerico) ? 0 : valorNumerico,
         });
         setCodigoCupomInput('');
       } else {
@@ -270,7 +355,266 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   const valorFreteNum = freteSelecionado ? Number(parseFloat(freteSelecionado.price || '0').toFixed(2)) : 0;
   const totalGeral = Number((subtotalComDesconto + valorFreteNum).toFixed(2));
 
-  const permiteCartao = totalGeral >= 1.00;
+  const permiteCartao = totalGeral >= 1.0;
+
+  const conferirDisponibilidadeItens = async (listaBase: any[]) => {
+    if (!listaBase || listaBase.length === 0) {
+      setItensConferidos([]);
+      setRevisaoConfirmada(false);
+      return;
+    }
+
+    try {
+      setConferindoEstoque(true);
+      setErroConferencia('');
+      setErroPagamento('');
+
+      const mapaReferencia: Record<string, number> = {};
+      const payloadItems = listaBase.map((item) => {
+        const dados = extrairIdsItem(item);
+        const qtdDesejadaHistorico = Number((item as any)?.quantidadeDesejada || 0);
+        const quantidadeOriginalReferencia =
+          qtdDesejadaHistorico > dados.quantidade ? qtdDesejadaHistorico : dados.quantidade;
+
+        const chave = chaveVariacaoItem(dados.produtoId, dados.tamanhoId, dados.corId);
+        mapaReferencia[chave] = Math.max(mapaReferencia[chave] || 0, quantidadeOriginalReferencia);
+
+        return {
+          produtoId: dados.produtoId,
+          tamanhoId: dados.tamanhoId,
+          corId: dados.corId,
+          nome: dados.nome,
+          imagemUrl: dados.imagemUrl,
+          preco: dados.precoUnitario,
+          quantidade: dados.quantidade,
+          quantidadeReferencia: quantidadeOriginalReferencia,
+        };
+      });
+
+      setQuantidadesReferenciaEtapa3(mapaReferencia);
+
+      const res = await axios.post(
+        `${API_URL}/api/checkout/conferir-estoque`,
+        {
+          items: payloadItems.map(({ quantidadeReferencia, ...rest }) => rest),
+          pedidoParaRefazerId: pedidoIdRefazer || null,
+        },
+        { withCredentials: true }
+      );
+
+      const conferidos: ItemConferido[] = Array.isArray(res.data?.itens)
+        ? res.data.itens.map((c: any, idx: number) => {
+            const qtdRef = payloadItems[idx]?.quantidadeReferencia || Number(c.quantidadeSolicitada || 1);
+            const qtdAprov = Number(c.quantidadeAprovada || 0);
+            const foiReduzidoAntesOuAgora = c.status !== 'ESGOTADO' && qtdAprov < qtdRef;
+
+            return {
+              ...c,
+              imagemUrl: c.imagemUrl || payloadItems[idx]?.imagemUrl || '',
+              quantidadeSolicitada: qtdRef,
+              status: foiReduzidoAntesOuAgora ? 'QUANTIDADE_AJUSTADA' : c.status,
+              motivo:
+                c.motivo ||
+                (foiReduzidoAntesOuAgora
+                  ? `Quantidade ajustada de ${qtdRef} un. para ${qtdAprov} un. conforme estoque disponível.`
+                  : null),
+            };
+          })
+        : [];
+
+      setItensConferidos(conferidos);
+
+      if (!pedidoIdRefazer && conferidos.length > 0 && sincronizarItensComConferencia) {
+        await sincronizarItensComConferencia(conferidos);
+      }
+
+      const temProblema = conferidos.some(
+        (c) => c.status !== 'DISPONIVEL' || c.quantidadeAprovada !== c.quantidadeSolicitada
+      );
+      const temDisponivel = conferidos.some((c) => c.status !== 'ESGOTADO' && c.quantidadeAprovada > 0);
+
+      if (!temProblema && temDisponivel) {
+        const listaValidada = conferidos
+          .filter((c) => c.quantidadeAprovada > 0)
+          .map((c) => ({
+            produtoId: c.produtoId,
+            tamanhoId: c.tamanhoId,
+            corId: c.corId,
+            nome: c.nome,
+            imagemUrl: c.imagemUrl || '',
+            precoUnitario: c.precoUnitario,
+            quantidade: c.quantidadeAprovada,
+            totalItem: Number((c.quantidadeAprovada * c.precoUnitario).toFixed(2)),
+          }));
+        setItensConfirmadosPagamento(listaValidada);
+        setRevisaoConfirmada(true);
+      } else {
+        setItensConfirmadosPagamento(null);
+        setRevisaoConfirmada(false);
+      }
+    } catch (err: any) {
+      console.error('Erro ao conferir estoque:', err);
+      setErroConferencia(err.response?.data?.message || 'Não foi possível conferir a disponibilidade dos itens agora.');
+      setItensConfirmadosPagamento(null);
+      setRevisaoConfirmada(false);
+    } finally {
+      setConferindoEstoque(false);
+    }
+  };
+
+  // Escuta alterações de estoque/preço em tempo real enquanto estiver na Etapa 3
+  useEffect(() => {
+    if (step !== 3 || dadosPix) return;
+
+    const handleProdutoAtualizadoNaEtapa3 = (produtoAtualizado: any) => {
+      if (!produtoAtualizado || String(produtoAtualizado.id) === '') return;
+
+      const precoVigente =
+        produtoAtualizado.temOferta && produtoAtualizado.precoPromocional
+          ? Number(produtoAtualizado.precoPromocional)
+          : Number(produtoAtualizado.preco ?? 0);
+
+      const listaVariacoes = produtoAtualizado.estoques || produtoAtualizado.variacoes || [];
+
+      setItensConferidos((prevConferidos) => {
+        if (!prevConferidos.length) return prevConferidos;
+
+        const novosConferidos = prevConferidos.map((itemConf) => {
+          if (String(itemConf.produtoId) !== String(produtoAtualizado.id)) {
+            return itemConf;
+          }
+
+          const estoqueEncontrado = listaVariacoes.find((est: any) => {
+            const tamanhoItem = itemConf.tamanhoId;
+            const corItem = itemConf.corId;
+            const tamanhoEst = est.tamanho?.id || est.tamanhoId || est.tamanho?.nome || est.tamanho;
+            const corEst = est.cor?.id || est.corId || est.cor?.nome || est.cor;
+
+            const mesmoTamanho = !tamanhoItem || !tamanhoEst || String(tamanhoEst) === String(tamanhoItem);
+            const mesmaCor = !corItem || !corEst || String(corEst) === String(corItem);
+            return mesmoTamanho && mesmaCor;
+          });
+
+          const saldoDisponivel = estoqueEncontrado ? Number(estoqueEncontrado.estoque ?? 0) : 0;
+          const chave = chaveVariacaoItem(itemConf.produtoId, itemConf.tamanhoId, itemConf.corId);
+          const qtdReferencia = Math.max(
+            Number(quantidadesReferenciaEtapa3[chave] || 0),
+            Number(itemConf.quantidadeSolicitada || 0),
+            Number(itemConf.quantidadeAprovada || 0),
+            1
+          );
+
+          const precoFinalItem = precoVigente > 0 ? precoVigente : Number(itemConf.precoUnitario || 0);
+
+          if (saldoDisponivel <= 0) {
+            return {
+              ...itemConf,
+              precoUnitario: precoFinalItem,
+              quantidadeSolicitada: qtdReferencia,
+              quantidadeDisponivel: 0,
+              quantidadeAprovada: 0,
+              subtotalItem: 0,
+              status: 'ESGOTADO' as StatusConferenciaItem,
+              motivo: 'Item esgotado em tempo real no estoque.',
+            };
+          }
+
+          if (saldoDisponivel < qtdReferencia) {
+            const novaQtdAprovada = saldoDisponivel;
+            return {
+              ...itemConf,
+              precoUnitario: precoFinalItem,
+              quantidadeSolicitada: qtdReferencia,
+              quantidadeDisponivel: saldoDisponivel,
+              quantidadeAprovada: novaQtdAprovada,
+              subtotalItem: Number((precoFinalItem * novaQtdAprovada).toFixed(2)),
+              status: 'QUANTIDADE_AJUSTADA' as StatusConferenciaItem,
+              motivo: `Quantidade reduzida de ${qtdReferencia} un. para ${novaQtdAprovada} un. conforme estoque disponível.`,
+            };
+          }
+
+          return {
+            ...itemConf,
+            precoUnitario: precoFinalItem,
+            quantidadeSolicitada: qtdReferencia,
+            quantidadeDisponivel: saldoDisponivel,
+            quantidadeAprovada: qtdReferencia,
+            subtotalItem: Number((precoFinalItem * qtdReferencia).toFixed(2)),
+            status: 'DISPONIVEL' as StatusConferenciaItem,
+            motivo: null,
+          };
+        });
+
+        const atualizadosValidados = novosConferidos
+          .filter((c) => c.status !== 'ESGOTADO' && c.quantidadeAprovada > 0)
+          .map((c) => ({
+            produtoId: c.produtoId,
+            tamanhoId: c.tamanhoId,
+            corId: c.corId,
+            nome: c.nome,
+            imagemUrl: c.imagemUrl || '',
+            precoUnitario: c.precoUnitario,
+            quantidade: c.quantidadeAprovada,
+            totalItem: Number((c.quantidadeAprovada * c.precoUnitario).toFixed(2)),
+          }));
+
+        setItensConfirmadosPagamento(atualizadosValidados);
+        return novosConferidos;
+      });
+    };
+
+    socket.on('produtoAtualizado', handleProdutoAtualizadoNaEtapa3);
+    socket.on('produto-atualizado', handleProdutoAtualizadoNaEtapa3);
+
+    return () => {
+      socket.off('produtoAtualizado', handleProdutoAtualizadoNaEtapa3);
+      socket.off('produto-atualizado', handleProdutoAtualizadoNaEtapa3);
+    };
+  }, [step, dadosPix, quantidadesReferenciaEtapa3]);
+
+  const handleIrParaPagamento = async () => {
+    if (totalGeral < 1.0) {
+      setMetodoPagamento('pix');
+    }
+    setStep(3);
+    await conferirDisponibilidadeItens(itensSelecionadosOriginais);
+  };
+
+  const handleContinuarComDisponiveis = () => {
+    const aprovados = itensConferidos
+      .filter((c) => c.status !== 'ESGOTADO' && c.quantidadeAprovada > 0)
+      .map((c) => ({
+        produtoId: c.produtoId,
+        tamanhoId: c.tamanhoId,
+        corId: c.corId,
+        nome: c.nome,
+        imagemUrl: c.imagemUrl || '',
+        precoUnitario: c.precoUnitario,
+        quantidade: c.quantidadeAprovada,
+        totalItem: Number((c.quantidadeAprovada * c.precoUnitario).toFixed(2)),
+      }));
+
+    if (aprovados.length === 0) return;
+
+    const novoSubtotal = aprovados.reduce((acc, i) => acc + i.totalItem, 0);
+    const novoTotalEstimado = Number((Math.max(0, novoSubtotal - valorDesconto) + valorFreteNum).toFixed(2));
+
+    if (novoTotalEstimado < 1.0 && metodoPagamento === 'credit_card') {
+      setMetodoPagamento('pix');
+    }
+
+    setItensConfirmadosPagamento(aprovados);
+    setRevisaoConfirmada(true);
+    setErroPagamento('');
+  };
+
+  const handleCancelarEVoltarCarrinho = () => {
+    localStorage.removeItem('pedidoParaRefazerId');
+    setItensConfirmadosPagamento(null);
+    setItensConferidos([]);
+    setRevisaoConfirmada(false);
+    onClose();
+  };
 
   const handleAvancarParaFrete = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -286,16 +630,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
       setLoadingFrete(true);
       setStep(2);
 
-      const produtosParaEnvio = itensParaCompra.map((item) => ({
-        produtoId: (item as any).produtoId || (item as any).product?.id || (item as any).id,
-        quantidade: item.quantidade,
-      }));
+      const produtosParaEnvio = itensSelecionadosOriginais.map((item) => {
+        const dados = extrairIdsItem(item);
+        return {
+          produtoId: dados.produtoId,
+          quantidade: dados.quantidade,
+        };
+      });
 
-      const res = await axios.post(`${API_URL}/api/frete/calcular`, {
-        cepDestino: cepLimpo,
-        itens: produtosParaEnvio,
-        products: produtosParaEnvio,
-      }, { withCredentials: true });
+      const res = await axios.post(
+        `${API_URL}/api/frete/calcular`,
+        {
+          cepDestino: cepLimpo,
+          itens: produtosParaEnvio,
+          products: produtosParaEnvio,
+        },
+        { withCredentials: true }
+      );
 
       let listaOpcoes: OpcaoFrete[] = [OPCAO_RETIRADA];
 
@@ -322,7 +673,40 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   };
 
   const enviarPedidoParaBackend = async (payloadCard: any = null) => {
-    if (metodoPagamento === 'credit_card' && totalGeral < 1.00) {
+    const itensEnvioBase =
+      itensConfirmadosPagamento && itensConfirmadosPagamento.length > 0
+        ? itensConfirmadosPagamento
+        : itensConferidos.length > 0
+        ? itensConferidos
+            .filter((c) => c.status !== 'ESGOTADO' && c.quantidadeAprovada > 0)
+            .map((c) => ({
+              produtoId: c.produtoId,
+              tamanhoId: c.tamanhoId,
+              corId: c.corId,
+              nome: c.nome,
+              precoUnitario: c.precoUnitario,
+              quantidade: c.quantidadeAprovada,
+            }))
+        : itensAtivos;
+
+    const subtotalEnvio = Number(
+      itensEnvioBase
+        .reduce((acc, item) => {
+          const d = extrairIdsItem(item);
+          return acc + d.precoUnitario * d.quantidade;
+        }, 0)
+        .toFixed(2)
+    );
+
+    const descontoEnvio = cupomAplicado
+      ? cupomAplicado.tipo === 'PERCENTUAL'
+        ? Number(((subtotalEnvio * (Number(cupomAplicado.valor) || 0)) / 100).toFixed(2))
+        : Number((Number(cupomAplicado.valor) || 0).toFixed(2))
+      : 0;
+
+    const totalEnvio = Number((Math.max(0, subtotalEnvio - descontoEnvio) + valorFreteNum).toFixed(2));
+
+    if (metodoPagamento === 'credit_card' && totalEnvio < 1.0) {
       const msg = 'O valor mínimo para pagamentos com cartão de crédito é de R$ 1,00.';
       setErroPagamento(msg);
       alert(msg);
@@ -336,22 +720,37 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
 
       const endpoint = `${API_URL}/api/pagamento`;
 
+      const itemsFormatados = itensEnvioBase.map((item) => {
+        const dados = extrairIdsItem(item);
+        return {
+          produtoId: dados.produtoId,
+          tamanhoId: dados.tamanhoId,
+          corId: dados.corId,
+          nome: dados.nome,
+          preco: dados.precoUnitario,
+          quantidade: dados.quantidade,
+        };
+      });
+
       const payloadBackend = {
         pedidoParaRefazerId: pedidoIdRefazer || null,
-        transaction_amount: totalGeral,
+        transaction_amount: totalEnvio,
         token: payloadCard?.token || null,
         description: 'Compra Ninho de Promessas',
         installments: Number(payloadCard?.installments || 1),
-        payment_method_id: metodoPagamento === 'pix' ? 'pix' : (payloadCard?.payment_method_id || 'master'),
+        payment_method_id: metodoPagamento === 'pix' ? 'pix' : payloadCard?.payment_method_id || 'master',
         issuer_id: payloadCard?.issuer_id || null,
-        subtotal: valorTotalBase,
-        descontoCupom: valorDesconto,
+        subtotal: subtotalEnvio,
+        descontoCupom: descontoEnvio,
         cupomCodigo: cupomAplicado?.codigo || null,
         valorFrete: valorFreteNum,
         servicoFrete: freteSelecionado?.name || 'Padrão',
-        prazoEntrega: freteSelecionado?.id === 'pickup_store'
-          ? 'Retirada Imediata'
-          : (freteSelecionado ? `${freteSelecionado.custom_delivery_time} dias úteis` : ''),
+        prazoEntrega:
+          freteSelecionado?.id === 'pickup_store'
+            ? 'Retirada Imediata'
+            : freteSelecionado
+            ? `${freteSelecionado.custom_delivery_time} dias úteis`
+            : '',
         endereco: {
           cep: endereco.cep.replace(/\D/g, ''),
           rua: endereco.logradouro,
@@ -361,14 +760,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
           cidade: endereco.cidade,
           estado: endereco.uf,
         },
-        items: itensParaCompra.map((item) => ({
-          produtoId: (item as any).produtoId || (item as any).product?.id || (item as any).id,
-          tamanhoId: (item as any).tamanhoId || (item as any).tamanho?.id || null,
-          corId: (item as any).corId || (item as any).cor?.id || null,
-          nome: item.nome,
-          preco: item.totalItem / item.quantidade,
-          quantidade: item.quantidade,
-        })),
+        items: itemsFormatados,
       };
 
       const res = await axios.post(endpoint, payloadBackend, {
@@ -402,8 +794,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
       }
     } catch (err: any) {
       console.error('Erro ao processar pagamento:', err);
-      const mensagemErro = err.response?.data?.message || 'Erro ao processar o pagamento ou verificar estoque.';
 
+      if (err.response?.status === 409 && Array.isArray(err.response?.data?.itensIndisponiveis)) {
+        setRevisaoConfirmada(false);
+        setItensConfirmadosPagamento(null);
+        await conferirDisponibilidadeItens(itensSelecionadosOriginais);
+      }
+
+      const mensagemErro = err.response?.data?.message || 'Erro ao processar o pagamento ou verificar estoque.';
       setErroPagamento(mensagemErro);
       alert(mensagemErro);
     } finally {
@@ -419,13 +817,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
     }
   };
 
+  const haItensComDivergencia = itensConferidos.some(
+    (i) => i.status !== 'DISPONIVEL' || i.quantidadeAprovada !== i.quantidadeSolicitada
+  );
+  const haAlgumItemValido =
+    itensConferidos.length === 0
+      ? itensSelecionadosOriginais.length > 0
+      : itensConferidos.some((i) => i.status !== 'ESGOTADO' && i.quantidadeAprovada > 0);
+
+  const podeExibirPagamento =
+    haAlgumItemValido && (revisaoConfirmada || !haItensComDivergencia || Boolean(itensConfirmadosPagamento));
+
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-
         <div className={styles.header}>
           <h2>Finalizar Compra</h2>
-          <button type="button" className={styles.closeBtn} onClick={onClose}>✕</button>
+          <button type="button" className={styles.closeBtn} onClick={onClose}>
+            ✕
+          </button>
         </div>
 
         {!dadosPix && (
@@ -450,7 +860,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
               <h3>⚡ Pagamento PIX Gerado!</h3>
               <p>Escaneie o QR Code ou copie a chave abaixo:</p>
 
-              {/* CRONÔMETRO DE 15 MINUTOS */}
               <div className={styles.pixCountdownBox}>
                 ⏱️ Tempo restante para pagamento: <strong>{formatarTempoPix(tempoRestantePix)}</strong>
               </div>
@@ -459,7 +868,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
             {dadosPix.qrCodeBase64 && (
               <div className={styles.qrCodeWrapper}>
                 <img
-                  src={dadosPix.qrCodeBase64.startsWith('data:') ? dadosPix.qrCodeBase64 : `data:image/jpeg;base64,${dadosPix.qrCodeBase64}`}
+                  src={
+                    dadosPix.qrCodeBase64.startsWith('data:')
+                      ? dadosPix.qrCodeBase64
+                      : `data:image/jpeg;base64,${dadosPix.qrCodeBase64}`
+                  }
                   alt="QR Code PIX Mercado Pago"
                   className={styles.qrCodeImg}
                 />
@@ -490,7 +903,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                   onClose();
                 }
               }}
-              style={{ marginTop: '0.5rem' }}
             >
               Acompanhar Meus Pedidos
             </button>
@@ -601,10 +1013,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                 <h3>🚚 Etapa 2: Escolha a Forma de Envio</h3>
 
                 <div className={styles.addressSummary}>
-                  <strong>Entregar em:</strong> {endereco.logradouro}, {endereco.numero} {endereco.complemento ? `- ${endereco.complemento}` : ''}
+                  <strong>Entregar em:</strong> {endereco.logradouro}, {endereco.numero}{' '}
+                  {endereco.complemento ? `- ${endereco.complemento}` : ''}
                   <br />
                   {endereco.bairro} - {endereco.cidade}/{endereco.uf} (CEP: {endereco.cep})
-                  <button type="button" className={styles.editBtn} onClick={() => setStep(1)}>Editar</button>
+                  <button type="button" className={styles.editBtn} onClick={() => setStep(1)}>
+                    Editar
+                  </button>
                 </div>
 
                 {loadingFrete ? (
@@ -641,61 +1056,61 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                 )}
 
                 {/* CUPOM */}
-                <div style={{ marginTop: '0.8rem', background: '#f8fafc', padding: '0.8rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '6px' }}>
-                    🎟️ Possui cupom de desconto?
-                  </label>
+                <div className={styles.couponBox}>
+                  <label className={styles.couponLabel}>🎟️ Possui cupom de desconto?</label>
                   {cupomAplicado ? (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '6px 10px', borderRadius: '6px' }}>
-                      <span style={{ fontSize: '0.85rem', color: '#166534', fontWeight: 600 }}>
-                        Cupom <strong>{cupomAplicado.codigo}</strong> aplicado ({cupomAplicado.tipo === 'PERCENTUAL' ? `${cupomAplicado.valor}% OFF` : `R$ ${cupomAplicado.valor.toFixed(2)} OFF`})
+                    <div className={styles.couponApplied}>
+                      <span>
+                        Cupom <strong>{cupomAplicado.codigo}</strong> aplicado (
+                        {cupomAplicado.tipo === 'PERCENTUAL'
+                          ? `${cupomAplicado.valor}% OFF`
+                          : `R$ ${cupomAplicado.valor.toFixed(2)} OFF`}
+                        )
                       </span>
-                      <button
-                        type="button"
-                        onClick={handleRemoverCupom}
-                        style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
-                      >
+                      <button type="button" onClick={handleRemoverCupom} className={styles.couponRemoveBtn}>
                         Remover
                       </button>
                     </div>
                   ) : (
-                    <form onSubmit={handleAplicarCupom} style={{ display: 'flex', gap: '8px' }}>
+                    <form onSubmit={handleAplicarCupom} className={styles.couponForm}>
                       <input
                         type="text"
                         placeholder="Digite o código (ex: PRIMEIRACOMPRA)"
                         value={codigoCupomInput}
                         onChange={(e) => setCodigoCupomInput(e.target.value)}
                         className={styles.selectInput}
-                        style={{ flex: 1, padding: '0.5rem 0.8rem', fontSize: '0.85rem' }}
                       />
                       <button
                         type="submit"
                         className={styles.secondaryButton}
                         disabled={loadingCupom || !codigoCupomInput.trim()}
-                        style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
                       >
                         {loadingCupom ? 'Aplicando...' : 'Aplicar'}
                       </button>
                     </form>
                   )}
-                  {erroCupom && <p className={styles.errorText} style={{ marginTop: '4px' }}>{erroCupom}</p>}
+                  {erroCupom && <p className={styles.errorText}>{erroCupom}</p>}
                 </div>
 
                 <div className={styles.summaryFooter}>
                   <div className={styles.summaryRow}>
-                    <span>Subtotal ({itensParaCompra.length} itens selecionados):</span>
+                    <span>Subtotal ({itensSelecionadosOriginais.length} itens selecionados):</span>
                     <span>R$ {valorTotalBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                   </div>
                   {cupomAplicado && (
-                    <div className={styles.summaryRow} style={{ color: '#166534', fontWeight: 600 }}>
+                    <div className={styles.summaryRow}>
                       <span>Desconto ({cupomAplicado.codigo}):</span>
-                      <span>- R$ {valorDesconto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span>
+                        - R$ {valorDesconto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
                     </div>
                   )}
                   <div className={styles.summaryRow}>
                     <span>Frete ({freteSelecionado?.name || 'Não selecionado'}):</span>
                     <span>
-                      {valorFreteNum === 0 ? 'Grátis' : `R$ ${valorFreteNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
+                      {valorFreteNum === 0
+                        ? 'Grátis'
+                        : `R$ ${valorFreteNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
                     </span>
                   </div>
                   <div className={styles.totalRow}>
@@ -712,118 +1127,314 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                     type="button"
                     className={styles.primaryButton}
                     disabled={!freteSelecionado}
-                    onClick={() => {
-                      if (totalGeral < 1.00) {
-                        setMetodoPagamento('pix');
-                      }
-                      setStep(3);
-                    }}
+                    onClick={handleIrParaPagamento}
                   >
-                    Ir para Pagamento →
+                    Conferir Itens e Ir para Pagamento →
                   </button>
                 </div>
               </div>
             )}
 
-            {/* ETAPA 3: PAGAMENTO */}
+            {/* ETAPA 3: CONFERÊNCIA DE ITENS + PAGAMENTO */}
             {step === 3 && (
               <div className={styles.stepForm}>
-                <h3>💳 Etapa 3: Pagamento</h3>
+                <h3>💳 Etapa 3: Conferência e Pagamento</h3>
 
-                {carregandoRefazer ? (
-                  <div className={styles.loadingBox}>A carregar dados do pedido...</div>
-                ) : itensParaCompra.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '2rem 1rem', background: '#fef2f2', borderRadius: '8px', border: '1px solid #fecaca', margin: '1rem 0' }}>
-                    <p style={{ color: '#991b1b', fontWeight: 'bold', fontSize: '1rem', marginBottom: '0.5rem' }}>
-                      ⚠️ Ops! Não foram encontrados itens para este pedido.
-                    </p>
-                    <p style={{ color: '#7f1d1d', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
-                      Por favor, feche esta janela e tente novamente.
-                    </p>
+                {carregandoRefazer || conferindoEstoque ? (
+                  <div className={styles.loadingBox}>
+                    {carregandoRefazer
+                      ? 'Carregando dados do pedido...'
+                      : 'Conferindo disponibilidade dos itens no estoque...'}
+                  </div>
+                ) : erroConferencia ? (
+                  <div className={styles.reviewAlertBox}>
+                    <p className={styles.errorText}>{erroConferencia}</p>
+                    <div className={styles.actionButtons}>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={handleCancelarEVoltarCarrinho}
+                      >
+                        Cancelar e Voltar ao Carrinho
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.primaryButton}
+                        onClick={() => conferirDisponibilidadeItens(itensSelecionadosOriginais)}
+                      >
+                        Tentar Conferir Novamente
+                      </button>
+                    </div>
+                  </div>
+                ) : itensSelecionadosOriginais.length === 0 ? (
+                  <div className={styles.reviewAlertBox}>
+                    <p className={styles.errorText}>⚠️ Não foram encontrados itens selecionados para este pedido.</p>
                     <button
                       type="button"
-                      className={styles.primaryButton}
-                      onClick={onClose}
-                      style={{ backgroundColor: '#dc2626' }}
+                      className={styles.secondaryButton}
+                      onClick={handleCancelarEVoltarCarrinho}
                     >
-                      Fechar
+                      Cancelar e Voltar ao Carrinho
                     </button>
                   </div>
                 ) : (
                   <>
-                    <div className={styles.paymentMethodsGrid}>
-                      <button
-                        type="button"
-                        className={`${styles.paymentMethodCard} ${metodoPagamento === 'pix' ? styles.paymentMethodSelected : ''}`}
-                        onClick={() => setMetodoPagamento('pix')}
-                      >
-                        <span className={styles.paymentIcon}>⚡</span>
-                        <strong>PIX</strong>
-                        <small>Reserva de 15 minutos</small>
-                      </button>
+                    {/* BLOCO DE CONFERÊNCIA DE TODOS OS ITENS SELECIONADOS */}
+                    <div className={styles.reviewSection}>
+                      <div className={styles.reviewHeader}>
+                        <strong>Itens selecionados ({itensConferidos.length || itensSelecionadosOriginais.length})</strong>
+                        {haItensComDivergencia && (
+                          <span className={styles.badgeWarning}>Quantidade / estoque alterado</span>
+                        )}
+                      </div>
 
-                      {permiteCartao && (
-                        <button
-                          type="button"
-                          className={`${styles.paymentMethodCard} ${metodoPagamento === 'credit_card' ? styles.paymentMethodSelected : ''}`}
-                          onClick={() => setMetodoPagamento('credit_card')}
-                        >
-                          <span className={styles.paymentIcon}>💳</span>
-                          <strong>Cartão de Crédito</strong>
-                          <small>Reserva de até 48h úteis</small>
-                        </button>
+                      {haItensComDivergencia && (
+                        <div className={styles.infoBanner}>
+                          ⚠️ Houve alteração de estoque/quantidade em um ou mais itens. Confira antes de concluir.
+                        </div>
+                      )}
+
+                      <ul className={styles.reviewList}>
+                        {(itensConferidos.length > 0
+                          ? itensConferidos
+                          : itensSelecionadosOriginais.map((item) => {
+                              const d = extrairIdsItem(item);
+                              return {
+                                produtoId: d.produtoId,
+                                tamanhoId: d.tamanhoId,
+                                corId: d.corId,
+                                nome: d.nome,
+                                imagemUrl: d.imagemUrl,
+                                precoUnitario: d.precoUnitario,
+                                quantidadeSolicitada: d.quantidade,
+                                quantidadeDisponivel: d.quantidade,
+                                quantidadeAprovada: d.quantidade,
+                                subtotalItem: Number((d.precoUnitario * d.quantidade).toFixed(2)),
+                                status: 'DISPONIVEL' as StatusConferenciaItem,
+                                motivo: null,
+                              };
+                            })
+                        ).map((itemConf, idx) => {
+                          const isEsgotado = itemConf.status === 'ESGOTADO';
+                          const isAjustado =
+                            itemConf.status === 'QUANTIDADE_AJUSTADA' ||
+                            (!isEsgotado && itemConf.quantidadeAprovada !== itemConf.quantidadeSolicitada);
+
+                          const valorOriginalItem = Number(
+                            (Number(itemConf.precoUnitario || 0) * Number(itemConf.quantidadeSolicitada || 0)).toFixed(2)
+                          );
+
+                          return (
+                            <li
+                              key={`${itemConf.produtoId}-${itemConf.tamanhoId || ''}-${itemConf.corId || ''}-${idx}`}
+                              className={`${styles.reviewItem} ${
+                                isEsgotado
+                                  ? styles.reviewItemSoldOut
+                                  : isAjustado
+                                  ? styles.reviewItemAdjusted
+                                  : styles.reviewItemAvailable
+                              }`}
+                            >
+                              <div className={styles.reviewItemLeft}>
+                                {itemConf.imagemUrl ? (
+                                  <img
+                                    src={itemConf.imagemUrl}
+                                    alt={itemConf.nome}
+                                    className={`${styles.reviewThumb} ${isEsgotado ? styles.reviewThumbSoldOut : ''}`}
+                                  />
+                                ) : (
+                                  <div className={styles.reviewThumbPlaceholder}>Sem foto</div>
+                                )}
+
+                                <div className={styles.reviewItemInfo}>
+                                  <strong className={isEsgotado ? styles.itemStrike : ''}>{itemConf.nome}</strong>
+                                  {isEsgotado ? (
+                                    <span className={styles.reviewItemMeta}>
+                                      Solicitado: {itemConf.quantidadeSolicitada} un. — Esgotado
+                                    </span>
+                                  ) : isAjustado ? (
+                                    <span className={styles.reviewItemMeta}>
+                                      <strong>
+                                        Quantidade reduzida de {itemConf.quantidadeSolicitada} un. para{' '}
+                                        {itemConf.quantidadeAprovada} un.
+                                      </strong>{' '}
+                                      · R${' '}
+                                      {Number(itemConf.precoUnitario || 0).toLocaleString('pt-BR', {
+                                        minimumFractionDigits: 2,
+                                      })}{' '}
+                                      / un.
+                                    </span>
+                                  ) : (
+                                    <span className={styles.reviewItemMeta}>
+                                      {itemConf.quantidadeAprovada} un. × R${' '}
+                                      {Number(itemConf.precoUnitario || 0).toLocaleString('pt-BR', {
+                                        minimumFractionDigits: 2,
+                                      })}{' '}
+                                      / un.
+                                    </span>
+                                  )}
+                                  {itemConf.motivo && (
+                                    <small className={styles.reviewItemReason}>{itemConf.motivo}</small>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className={styles.reviewItemRight}>
+                                <span
+                                  className={`${styles.statusPill} ${
+                                    isEsgotado
+                                      ? styles.pillSoldOut
+                                      : isAjustado
+                                      ? styles.pillAdjusted
+                                      : styles.pillAvailable
+                                  }`}
+                                >
+                                  {isEsgotado ? 'Esgotado' : isAjustado ? 'Qtd. reduzida' : 'Disponível'}
+                                </span>
+
+                                {isAjustado && valorOriginalItem > Number(itemConf.subtotalItem || 0) && (
+                                  <small className={styles.itemStrike}>
+                                    R${' '}
+                                    {valorOriginalItem.toLocaleString('pt-BR', {
+                                      minimumFractionDigits: 2,
+                                    })}
+                                  </small>
+                                )}
+
+                                <strong className={isEsgotado ? styles.itemStrike : ''}>
+                                  R${' '}
+                                  {Number(itemConf.subtotalItem || 0).toLocaleString('pt-BR', {
+                                    minimumFractionDigits: 2,
+                                  })}
+                                </strong>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+
+                      {/* Ações quando há divergência de estoque (esgotado ou quantidade ajustada) */}
+                      {haItensComDivergencia && !revisaoConfirmada && (
+                        <div className={styles.reviewActionsBox}>
+                          {haAlgumItemValido ? (
+                            <p className={styles.reviewNotice}>
+                              Um ou mais itens alteraram a disponibilidade ou tiveram a quantidade reduzida. Deseja
+                              continuar com os itens disponíveis ou cancelar e voltar ao carrinho?
+                            </p>
+                          ) : (
+                            <p className={styles.errorText}>
+                              Todos os itens selecionados esgotaram no momento. Cancele para voltar ao carrinho e revisar
+                              outros produtos.
+                            </p>
+                          )}
+
+                          <div className={styles.actionButtons}>
+                            <button
+                              type="button"
+                              className={styles.secondaryButton}
+                              onClick={handleCancelarEVoltarCarrinho}
+                            >
+                              Cancelar / Voltar ao Carrinho
+                            </button>
+
+                            {haAlgumItemValido && (
+                              <button
+                                type="button"
+                                className={styles.primaryButton}
+                                onClick={handleContinuarComDisponiveis}
+                              >
+                                Continuar com Itens Disponíveis
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       )}
                     </div>
 
-                    {!permiteCartao && (
-                      <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', padding: '10px 14px', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.85rem', color: '#92400e' }}>
-                        ℹ️ O pagamento com Cartão de Crédito está disponível apenas para pedidos a partir de <strong>R$ 1,00</strong>. Para este valor, utilize o <strong>PIX</strong>.
-                      </div>
-                    )}
+                    {/* MÉTODOS DE PAGAMENTO */}
+                    {podeExibirPagamento && itensAtivos.length > 0 && (
+                      <>
+                        <div className={styles.paymentMethodsGrid}>
+                          <button
+                            type="button"
+                            className={`${styles.paymentMethodCard} ${
+                              metodoPagamento === 'pix' ? styles.paymentMethodSelected : ''
+                            }`}
+                            onClick={() => setMetodoPagamento('pix')}
+                          >
+                            <span className={styles.paymentIcon}>⚡</span>
+                            <strong>PIX</strong>
+                            <small>Reserva de 15 minutos</small>
+                          </button>
 
-                    {metodoPagamento === 'pix' && (
-                      <div className={styles.pixContainer}>
-                        <p className={styles.pixInfo}>
-                          Ao clicar em <strong>Finalizar Pedido</strong>, o estoque será reservado por <strong>15 minutos</strong> e o QR Code PIX será gerado.
-                        </p>
+                          {permiteCartao && (
+                            <button
+                              type="button"
+                              className={`${styles.paymentMethodCard} ${
+                                metodoPagamento === 'credit_card' ? styles.paymentMethodSelected : ''
+                              }`}
+                              onClick={() => setMetodoPagamento('credit_card')}
+                            >
+                              <span className={styles.paymentIcon}>💳</span>
+                              <strong>Cartão de Crédito</strong>
+                              <small>Reserva de até 48h úteis</small>
+                            </button>
+                          )}
+                        </div>
 
-                        <button
-                          type="button"
-                          className={styles.primaryButton}
-                          onClick={() => enviarPedidoParaBackend()}
-                          disabled={loadingPagamento}
-                          style={{ marginTop: '1rem' }}
-                        >
-                          {loadingPagamento ? 'Reservando estoque e gerando PIX...' : 'Finalizar Pedido'}
-                        </button>
-                      </div>
-                    )}
+                        {!permiteCartao && (
+                          <div className={styles.infoBanner}>
+                            ℹ️ O pagamento com Cartão de Crédito está disponível apenas para pedidos a partir de{' '}
+                            <strong>R$ 1,00</strong>. Para este valor, utilize o <strong>PIX</strong>.
+                          </div>
+                        )}
 
-                    {permiteCartao && metodoPagamento === 'credit_card' && totalGeral >= 1.0 && (
-                      <div style={{ minHeight: '350px' }}>
-                        <CardPayment
-                          initialization={{
-                            amount: totalGeral,
-                          }}
-                          customization={{
-                            paymentMethods: {
-                              maxInstallments: 6,
-                            },
-                            visual: {
-                              style: {
-                                theme: 'default',
-                              },
-                            },
-                          }}
-                          onSubmit={async (param) => {
-                            await enviarPedidoParaBackend(param);
-                          }}
-                          onError={(error) => {
-                            console.error('Erro no Card Brick:', JSON.stringify(error, null, 2), error);
-                          }}
-                          onReady={() => console.log('Card Payment Brick pronto e montado!')}
-                        />
-                      </div>
+                        {metodoPagamento === 'pix' && (
+                          <div className={styles.pixContainer}>
+                            <p className={styles.pixInfo}>
+                              Ao clicar em <strong>Finalizar Pedido</strong>, o estoque será reservado por{' '}
+                              <strong>15 minutos</strong> e o QR Code PIX será gerado.
+                            </p>
+
+                            <button
+                              type="button"
+                              className={styles.primaryButton}
+                              onClick={() => enviarPedidoParaBackend()}
+                              disabled={loadingPagamento}
+                            >
+                              {loadingPagamento ? 'Reservando estoque e gerando PIX...' : 'Finalizar Pedido'}
+                            </button>
+                          </div>
+                        )}
+
+                        {permiteCartao && metodoPagamento === 'credit_card' && totalGeral >= 1.0 && (
+                          <div className={styles.cardBrickContainer}>
+                            <CardPayment
+                              key={`card-${totalGeral}`}
+                              initialization={{
+                                amount: totalGeral,
+                              }}
+                              customization={{
+                                paymentMethods: {
+                                  maxInstallments: 6,
+                                },
+                                visual: {
+                                  style: {
+                                    theme: 'default',
+                                  },
+                                },
+                              }}
+                              onSubmit={async (param) => {
+                                await enviarPedidoParaBackend(param);
+                              }}
+                              onError={(error) => {
+                                console.error('Erro no Card Brick:', JSON.stringify(error, null, 2), error);
+                              }}
+                              onReady={() => console.log('Card Payment Brick pronto e montado!')}
+                            />
+                          </div>
+                        )}
+                      </>
                     )}
                   </>
                 )}
@@ -834,15 +1445,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                     <span>R$ {valorTotalBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                   </div>
                   {cupomAplicado && (
-                    <div className={styles.summaryRow} style={{ color: '#166534', fontWeight: 600 }}>
+                    <div className={styles.summaryRow}>
                       <span>Desconto ({cupomAplicado.codigo}):</span>
-                      <span>- R$ {valorDesconto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span>
+                        - R$ {valorDesconto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
                     </div>
                   )}
                   <div className={styles.summaryRow}>
                     <span>Frete ({freteSelecionado?.name}):</span>
                     <span>
-                      {valorFreteNum === 0 ? 'Grátis' : `R$ ${valorFreteNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
+                      {valorFreteNum === 0
+                        ? 'Grátis'
+                        : `R$ ${valorFreteNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
                     </span>
                   </div>
                   <div className={styles.totalRow}>
@@ -858,16 +1473,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                     type="button"
                     className={styles.secondaryButton}
                     onClick={() => setStep(2)}
-                    disabled={loadingPagamento}
+                    disabled={loadingPagamento || conferindoEstoque}
                   >
                     ← Voltar para Envio
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={handleCancelarEVoltarCarrinho}
+                    disabled={loadingPagamento}
+                  >
+                    Cancelar Compra
                   </button>
                 </div>
               </div>
             )}
           </>
         )}
-
       </div>
     </div>
   );
