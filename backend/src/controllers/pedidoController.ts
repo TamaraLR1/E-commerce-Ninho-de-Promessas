@@ -12,8 +12,7 @@ const BACKEND_URL = process.env.BACKEND_URL || 'https://ninhoback.tamaralr.com.b
 export const pedidoController = {
 
   // 🛒 0. Método para Criar Pedido (ou Atualizar se vier de "Refazer Pagamento" via Checkout)
- 
- async criarPedido(req: Request, res: Response) {
+  async criarPedido(req: Request, res: Response) {
     try {
       const rawUserId = (req as any).user?.id || (req as any).userId || (req as any).user?.userId;
       const userId = rawUserId ? Number(rawUserId) : null;
@@ -76,13 +75,13 @@ export const pedidoController = {
             historicoStatus: {
               create: {
                 status: statusMapeado,
-                observacao: statusMapeado === 'PAGO' 
-                  ? 'Pagamento aprovado via Cartão de Crédito no Checkout.' 
+                observacao: statusMapeado === 'PAGO'
+                  ? 'Pagamento aprovado via Cartão de Crédito no Checkout.'
                   : 'Novo código PIX gerado no Checkout.'
               }
             }
           },
-          include: { itens: true, historicoStatus: true, endereco: true }
+          include: { itens: true, historicoStatus: { orderBy: { data: 'asc' } }, endereco: true }
         });
 
         const io = getIO();
@@ -149,7 +148,7 @@ export const pedidoController = {
             servicoFrete: servicoFrete || 'Entrega Padrão',
             metodoPagamento: metodoPagamento || 'PIX',
             status: 'PENDENTE',
-            
+
             ...(userId && {
               user: { connect: { id: Number(userId) } },
             }),
@@ -184,6 +183,9 @@ export const pedidoController = {
           include: {
             itens: true,
             endereco: true,
+            historicoStatus: {
+              orderBy: { data: 'asc' },
+            },
           },
         });
 
@@ -262,22 +264,22 @@ export const pedidoController = {
       const pedidosFormatados = pedidos.map((p: any) => ({
         id: p.id,
         codigoPedido: p.numeroPedido ? String(p.numeroPedido) : (p.codigoPedido || p.id.slice(0, 8)),
-        
+
         clienteNome: p.clienteNome || p.user?.nome || 'Cliente Não Identificado',
         clienteEmail: p.clienteEmail || p.user?.email || '',
         clienteTelefone: p.clienteFone || p.clienteTelefone || p.user?.telefone || p.telefone,
         cpf: p.clienteCpf || p.user?.cpf || p.cpf,
-        
-        status: p.status, 
+
+        status: p.status,
         total: Number(p.valorTotal ?? p.total ?? p.subtotal ?? 0),
         freteValor: Number(p.valorFrete ?? p.freteValor ?? 0),
-        
+
         metodoPagamento: p.metodoPagamento || p.formaPagamento || 'PIX / Cartão',
         servicoFrete: p.servicoFrete || p.metodoFrete || p.transportadora || 'Retirar na Loja',
-        
+
         rastreioCodigo: p.codigoRastreio || p.rastreioCodigo || '',
         dataCriacao: p.createdAt || p.dataCriacao,
-        
+
         pesoTotal: Number(p.pesoTotal ?? 0.3),
         alturaCaixa: Number(p.alturaCaixa ?? 8.0),
         larguraCaixa: Number(p.larguraCaixa ?? 16.0),
@@ -294,7 +296,7 @@ export const pedidoController = {
               cep: p.endereco.cep || '',
             }
           : undefined,
-        
+
         historicoStatus: p.historicoStatus || [],
 
         itens: (p.itens || []).map((i: any) => ({
@@ -359,14 +361,14 @@ export const pedidoController = {
 
       const pedidosFormatados = pedidos.map((p) => ({
         id: p.id,
-        codigoPedido: (p as any).codigoPedido || (p as any).numeroPedido ? String((p as any).numeroPedido) : p.id.slice(0, 8),
+        codigoPedido: (p as any).codigoPedido || ((p as any).numeroPedido ? String((p as any).numeroPedido) : p.id.slice(0, 8)),
         status: p.status,
         total: Number((p as any).total || (p as any).valorTotal || 0),
         valorFrete: Number((p as any).valorFrete || (p as any).freteValor || 0),
         servicoFrete: (p as any).servicoFrete || (p as any).metodoFrete || 'Entrega Padrão',
         codigoRastreio: (p as any).codigoRastreio || (p as any).rastreioCodigo || '',
         createdAt: p.createdAt,
-        
+
         historicoStatus: (p as any).historicoStatus || [],
 
         itens: p.itens.map((item: any) => {
@@ -481,7 +483,7 @@ export const pedidoController = {
 
       const pedidoFormatado = {
         id: pedidoAtualizado.id,
-        codigoPedido: (pedidoAtualizado as any).codigoPedido || (pedidoAtualizado as any).numeroPedido ? String((pedidoAtualizado as any).numeroPedido) : pedidoAtualizado.id.slice(0, 8),
+        codigoPedido: (pedidoAtualizado as any).codigoPedido || ((pedidoAtualizado as any).numeroPedido ? String((pedidoAtualizado as any).numeroPedido) : pedidoAtualizado.id.slice(0, 8)),
         status: pedidoAtualizado.status,
         total: Number((pedidoAtualizado as any).total || (pedidoAtualizado as any).valorTotal || 0),
         valorFrete: Number((pedidoAtualizado as any).valorFrete || (pedidoAtualizado as any).freteValor || 0),
@@ -489,7 +491,7 @@ export const pedidoController = {
         codigoRastreio: (pedidoAtualizado as any).codigoRastreio || (pedidoAtualizado as any).rastreioCodigo || '',
         createdAt: pedidoAtualizado.createdAt,
         userId: pedidoAtualizado.userId,
-        
+
         historicoStatus: (pedidoAtualizado as any).historicoStatus || [],
 
         itens: pedidoAtualizado.itens.map((item: any) => ({
@@ -605,7 +607,7 @@ export const pedidoController = {
             }
           }
         },
-        include: { itens: true, historicoStatus: true }
+        include: { itens: true, historicoStatus: { orderBy: { data: 'asc' } } }
       });
 
       return res.status(200).json({

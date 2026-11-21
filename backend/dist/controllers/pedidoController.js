@@ -72,7 +72,7 @@ exports.pedidoController = {
                             }
                         }
                     },
-                    include: { itens: true, historicoStatus: true, endereco: true }
+                    include: { itens: true, historicoStatus: { orderBy: { data: 'asc' } }, endereco: true }
                 });
                 const io = (0, socket_1.getIO)();
                 if (io && userId) {
@@ -162,6 +162,9 @@ exports.pedidoController = {
                     include: {
                         itens: true,
                         endereco: true,
+                        historicoStatus: {
+                            orderBy: { data: 'asc' },
+                        },
                     },
                 });
                 for (const item of itens) {
@@ -315,7 +318,7 @@ exports.pedidoController = {
             }
             const pedidosFormatados = pedidos.map((p) => ({
                 id: p.id,
-                codigoPedido: p.codigoPedido || p.numeroPedido ? String(p.numeroPedido) : p.id.slice(0, 8),
+                codigoPedido: p.codigoPedido || (p.numeroPedido ? String(p.numeroPedido) : p.id.slice(0, 8)),
                 status: p.status,
                 total: Number(p.total || p.valorTotal || 0),
                 valorFrete: Number(p.valorFrete || p.freteValor || 0),
@@ -424,7 +427,7 @@ exports.pedidoController = {
             });
             const pedidoFormatado = {
                 id: pedidoAtualizado.id,
-                codigoPedido: pedidoAtualizado.codigoPedido || pedidoAtualizado.numeroPedido ? String(pedidoAtualizado.numeroPedido) : pedidoAtualizado.id.slice(0, 8),
+                codigoPedido: pedidoAtualizado.codigoPedido || (pedidoAtualizado.numeroPedido ? String(pedidoAtualizado.numeroPedido) : pedidoAtualizado.id.slice(0, 8)),
                 status: pedidoAtualizado.status,
                 total: Number(pedidoAtualizado.total || pedidoAtualizado.valorTotal || 0),
                 valorFrete: Number(pedidoAtualizado.valorFrete || pedidoAtualizado.freteValor || 0),
@@ -535,7 +538,7 @@ exports.pedidoController = {
                         }
                     }
                 },
-                include: { itens: true, historicoStatus: true }
+                include: { itens: true, historicoStatus: { orderBy: { data: 'asc' } } }
             });
             return res.status(200).json({
                 success: true,

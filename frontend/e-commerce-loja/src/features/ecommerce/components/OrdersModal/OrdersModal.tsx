@@ -74,7 +74,7 @@ const isPixValido = (dataCriacao?: string) => {
   if (!dataCriacao) return false;
   const dataPedido = new Date(dataCriacao).getTime();
   const agora = new Date().getTime();
-  const quinzeMinutosMs = 15 * 60 * 1000; // Alinhado com a regra de 15 minutos do PIX
+  const quinzeMinutosMs = 15 * 60 * 1000;
   return (agora - dataPedido) < quinzeMinutosMs;
 };
 
@@ -126,9 +126,23 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
 
     const handlePedidoAtualizado = (pedidoAtualizado: any) => {
       setPedidos((pedidosAnteriores) =>
-        pedidosAnteriores.map((p) =>
-          p.id === pedidoAtualizado.id ? { ...p, ...pedidoAtualizado } : p
-        )
+        pedidosAnteriores.map((p) => {
+          if (p.id !== pedidoAtualizado.id) return p;
+
+          const historicoRecebido =
+            pedidoAtualizado.historicoStatus || pedidoAtualizado.HistoricoStatusPedido;
+
+          const novoHistorico =
+            Array.isArray(historicoRecebido) && historicoRecebido.length > 0
+              ? historicoRecebido
+              : p.historicoStatus;
+
+          return {
+            ...p,
+            ...pedidoAtualizado,
+            historicoStatus: novoHistorico,
+          };
+        })
       );
     };
 
@@ -146,7 +160,11 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
     try {
       const response = await axios.get(`${apiUrl}/api/pedidos/meus`, { withCredentials: true });
       if (response.data && Array.isArray(response.data)) {
-        setPedidos(response.data);
+        const normalizados = response.data.map((p: any) => ({
+          ...p,
+          historicoStatus: p.historicoStatus || p.HistoricoStatusPedido || [],
+        }));
+        setPedidos(normalizados);
       }
     } catch (err) {
       console.error('Erro ao carregar histórico de pedidos', err);
@@ -177,26 +195,25 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
   const renderProgressBar = (pedido: Pedido) => {
     const statusUpper = (pedido.status || '').toUpperCase();
 
-    // Pedido só é considerado expirado/recusado se o status real no banco for CANCELADO ou RECUSADO
-    const foiRecusadoOuExpirado = 
-      statusUpper === 'CANCELADO' || 
+    const foiRecusadoOuExpirado =
+      statusUpper === 'CANCELADO' ||
       statusUpper === 'RECUSADO';
 
     const currentIndex = statusSteps.indexOf(statusUpper);
-    const percentage = currentIndex >= 0 && !foiRecusadoOuExpirado 
-      ? (currentIndex / (statusSteps.length - 1)) * 100 
+    const percentage = currentIndex >= 0 && !foiRecusadoOuExpirado
+      ? (currentIndex / (statusSteps.length - 1)) * 100
       : 0;
 
     return (
       <div className={styles.progressContainer}>
         <div className={styles.progressTrack}>
-          <div 
-            className={styles.progressBarFill} 
+          <div
+            className={styles.progressBarFill}
             style={{ width: `${percentage}%` }}
           />
         </div>
         <div className={styles.stepsRow}>
-          <div 
+          <div
             className={`${styles.stepDot} ${currentIndex >= 0 && !foiRecusadoOuExpirado ? styles.stepActive : ''}`}
             style={foiRecusadoOuExpirado ? { color: '#ef4444' } : undefined}
           >
@@ -256,7 +273,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
                 });
                 const valorFinal = Number(pedido.total || pedido.valorTotal || 0);
                 const codigoRastreio = pedido.codigoRastreio || pedido.rastreioCodigo;
-                
+
                 const previsao = calcularPrevisaoEntrega(dataCriacaoBase);
                 const pixAindaValido = isPixValido(dataCriacaoBase);
 
@@ -267,6 +284,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
                 const base64Pix = pedido.qrCodeBase64Pix || pedido.qrCodeBase64 || pedido.pix?.qrCodeBase64 || '';
 
                 const isExpiradoOuCancelado = statusUpper === 'CANCELADO' || statusUpper === 'RECUSADO';
+                const listaHistorico = pedido.historicoStatus || [];
 
                 return (
                   <div key={pedido.id} className={styles.orderCard}>
@@ -296,7 +314,6 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
                       </div>
                     )}
 
-                    {/* BOTÕES DE AÇÃO COM TRATATIVA DE CARTÃO/ANÁLISE */}
                     {(statusUpper === 'PENDENTE' || isExpiradoOuCancelado) && (
                       <div className={styles.paymentActionBox}>
                         {pixAindaValido && codigoPix && !isExpiradoOuCancelado ? (
@@ -327,7 +344,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
                                     style={{ width: '140px', height: '140px', display: 'block', margin: '0 auto' }}
                                   />
                                 )}
-                                
+
                                 <div className={styles.pixCodeBox}>
                                   <input type="text" readOnly value={codigoPix} className={styles.pixInput} />
                                   <button
@@ -369,13 +386,13 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
                     )}
 
                     {/* HISTÓRICO DE STATUS */}
-                    {pedido.historicoStatus && pedido.historicoStatus.length > 0 && (
+                    {listaHistorico.length > 0 && (
                       <div style={{ marginTop: '12px', marginBottom: '12px', padding: '10px', backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                         <h4 style={{ margin: '0 0 8px 0', fontSize: '0.8rem', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           ⏱️ Histórico
                         </h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          {pedido.historicoStatus.map((hist, idx) => (
+                          {listaHistorico.map((hist, idx) => (
                             <div key={hist.id || idx} style={{ display: 'flex', gap: '10px', fontSize: '0.8rem', borderLeft: '2px solid #cbd5e1', paddingLeft: '8px' }}>
                               <span style={{ color: '#64748b', minWidth: '110px', fontWeight: 500 }}>
                                 {new Date(hist.data).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -420,7 +437,6 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
         </div>
       </div>
 
-      {/* CHECKOUT MODAL PARA REFAZER O PAGAMENTO DO PEDIDO SELECIONADO */}
       {pedidoRefazendo && (
         <CheckoutModal
           total={Number(pedidoRefazendo.total || pedidoRefazendo.valorTotal || 0)}
