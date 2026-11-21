@@ -8,6 +8,7 @@ const authAdminMiddleware_1 = require("../middlewares/authAdminMiddleware");
 const router = (0, express_1.Router)();
 exports.produtoRoutes = router;
 router.get('/produtos', produtoController_1.produtoController.listar);
+router.get('/produtos/:id', produtoController_1.produtoController.buscarPorId);
 router.delete('/produtos/:id', authAdminMiddleware_1.ensureAdminAuthenticated, produtoController_1.produtoController.excluir);
 router.post('/produtos', authAdminMiddleware_1.ensureAdminAuthenticated, (0, upload_middleware_1.parseUpload)(), produtoController_1.produtoController.criar);
 router.put('/produtos/:id', authAdminMiddleware_1.ensureAdminAuthenticated, (0, upload_middleware_1.parseUpload)(), produtoController_1.produtoController.atualizar);
