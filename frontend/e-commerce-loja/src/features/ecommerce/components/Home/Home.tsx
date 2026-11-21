@@ -233,40 +233,6 @@ export const Home: React.FC = () => {
     }, 3000);
   };
 
-  const handleRefazerPagamento = async (pedido: any) => {
-    try {
-      if (!pedido.itens || pedido.itens.length === 0) {
-        showToast('Nenhum item encontrado neste pedido.');
-        return;
-      }
-
-      for (const item of pedido.itens) {
-        const targetProdutoId = item.produtoId;
-        const targetTamanhoId = item.tamanhoId;
-        const targetCorId = item.corId;
-        const qtd = Number(item.quantidade) || 1;
-
-        if (!targetProdutoId || !targetTamanhoId || !targetCorId) {
-          showToast(`O item "${item.nomeProduto || 'Produto'}" não possui variações válidas vinculadas.`);
-          return;
-        }
-
-        await adicionarAoCarrinho({
-          produtoId: targetProdutoId,
-          tamanhoId: targetTamanhoId,
-          corId: targetCorId,
-          quantidade: qtd,
-        });
-      }
-
-      setIsCheckoutOpen(true);
-      showToast('Itens adicionados ao carrinho com sucesso! Finalize seu novo pagamento.');
-    } catch (error: any) {
-      console.error('Erro ao refazer pagamento do pedido:', error);
-      showToast(error.response?.data?.message || 'Erro ao adicionar itens ao carrinho.');
-    }
-  };
-
   const handleShare = async (product: Product, e: React.MouseEvent) => {
     e.stopPropagation();
     const productUrl = `${window.location.origin}/produto/${product.id}?utm_source=whatsapp&utm_medium=social&utm_campaign=compartilhamento_vitrine`;    
@@ -1050,6 +1016,7 @@ export const Home: React.FC = () => {
                               disabled={!temEstoque}
                               title={!temEstoque ? 'Tamanho esgotado' : `Selecionar tamanho ${size}`}
                               className={`${styles.sizeBadge} ${isSelected ? styles.selectedSizeBadge : ''} ${!temEstoque ? styles.sizeBadgeDisabled : ''}`}
+                              style={!temEstoque ? { opacity: 0.45, textDecoration: 'line-through', cursor: 'not-allowed' } : undefined}
                               onClick={() => {
                                 if (!temEstoque) return;
                                 setSelectedSizes(prev => ({
@@ -1232,7 +1199,6 @@ export const Home: React.FC = () => {
         onClose={() => setIsOrdersOpen(false)}
         apiUrl={API_URL}
         userId={user?.id ? Number(user.id) : undefined}
-        onRefazerPagamento={handleRefazerPagamento}
       />
 
       {/* CartDrawer Responsivo com Cálculo de Frete */}
