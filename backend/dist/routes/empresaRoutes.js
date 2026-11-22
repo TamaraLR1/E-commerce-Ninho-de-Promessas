@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.empresaRoutes = void 0;
+const express_1 = require("express");
+const empresaController_1 = require("../controllers/empresaController");
+const auth_1 = require("../middlewares/auth");
+const router = (0, express_1.Router)();
+exports.empresaRoutes = router;
+const empresaController = new empresaController_1.EmpresaController();
+router.get('/empresa', auth_1.authMiddleware, empresaController.getEmpresa);
+router.post('/empresa', auth_1.authMiddleware, empresaController.upsertEmpresa);
+router.put('/empresa', auth_1.authMiddleware, empresaController.upsertEmpresa);
+router.put('/empresa/endereco-fiscal', auth_1.authMiddleware, empresaController.upsertEnderecoFiscal);

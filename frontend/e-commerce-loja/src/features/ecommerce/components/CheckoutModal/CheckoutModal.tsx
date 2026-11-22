@@ -4,6 +4,11 @@ import { initMercadoPago, CardPayment } from '@mercadopago/sdk-react';
 import { useCart } from '../../components/CartContext/CartContext';
 import { socket } from '../../../../services/socket';
 import styles from './CheckoutModal.module.css';
+import {
+  formatarCep,
+  formatarCnpjAlfanumerico,
+  formatarCpf,
+} from '../../../../utils/documento'; // ajuste o caminho relativo conforme a pasta do CheckoutModal.tsx
 
 const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const API_URL = isLocal
@@ -33,6 +38,30 @@ interface EnderecoEntrega {
   bairro: string;
   cidade: string;
   uf: string;
+}
+
+interface EnderecoSalvoApi {
+  id: string;
+  tipo?: 'ENTREGA' | 'FISCAL' | 'AMBOS';
+  cep: string;
+  rua: string;
+  numero: string;
+  complemento?: string | null;
+  bairro: string;
+  cidade: string;
+  estado: string;
+  destinatario?: string | null;
+}
+
+interface EmpresaPerfil {
+  id: string;
+  cnpj: string;
+  razaoSocial: string;
+  nomeFantasia?: string | null;
+  indicadorIE?: string;
+  inscricaoEstadual?: string | null;
+  enderecoFiscalId?: string | null;
+  enderecoFiscal?: EnderecoSalvoApi | null;
 }
 
 interface OpcaoFrete {
@@ -178,7 +207,35 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   const [step, setStep] = useState<number>(1);
   const [clienteLogadoId, setClienteLogadoId] = useState<string>('');
 
-  // Etapa 1: Endereço
+  // Dados PF / PJ e Endereço Fiscal para NF-e
+  const [dadosCliente, setDadosCliente] = useState<{
+    nomeCompleto: string;
+    cpf: string;
+    email: string;
+    telefone: string;
+  }>({
+    nomeCompleto: '',
+    cpf: '',
+    email: '',
+    telefone: '',
+  });
+  const [empresaUsuario, setEmpresaUsuario] = useState<EmpresaPerfil | null>(null);
+  const [faturarParaEmpresa, setFaturarParaEmpresa] = useState<boolean>(false);
+  const [enderecosFiscaisSalvos, setEnderecosFiscaisSalvos] = useState<EnderecoSalvoApi[]>([]);
+  const [usarOutroEnderecoFiscal, setUsarOutroEnderecoFiscal] = useState<boolean>(false);
+  const [enderecoFiscalSelecionadoId, setEnderecoFiscalSelecionadoId] = useState<string>('');
+  const [enderecoFiscalForm, setEnderecoFiscalForm] = useState<EnderecoEntrega>({
+    cep: '',
+    logradouro: '',
+    numero: '',
+    complemento: '',
+    bairro: '',
+    cidade: '',
+    uf: '',
+  });
+  const [salvandoEnderecoFiscal, setSalvandoEnderecoFiscal] = useState<boolean>(false);
+
+  // Etapa 1: Endereço de Entrega
   const [endereco, setEndereco] = useState<EnderecoEntrega>({
     cep: '',
     logradouro: '',
@@ -242,19 +299,45 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
         const dadosUsuario = res.data?.user;
         if (dadosUsuario) {
           setClienteLogadoId(dadosUsuario.id || dadosUsuario.email || '');
+          setDadosCliente({
+            nomeCompleto: `${dadosUsuario.nome || ''} ${dadosUsuario.sobrenome || ''}`.trim(),
+            cpf: formatarCpf(dadosUsuario.cpf || ''),
+            email: dadosUsuario.email || '',
+            telefone: dadosUsuario.telefone || '',
+          });
 
-          const enderecos = dadosUsuario.enderecos;
-          if (enderecos && enderecos.length > 0) {
-            const endSalvo = enderecos[0];
+          if (dadosUsuario.empresa) {
+            setEmpresaUsuario(dadosUsuario.empresa);
+            setFaturarParaEmpresa(true);
+            if (dadosUsuario.empresa.enderecoFiscalId) {
+              setEnderecoFiscalSelecionadoId(dadosUsuario.empresa.enderecoFiscalId);
+            }
+          }
 
+          const enderecos: EnderecoSalvoApi[] = Array.isArray(dadosUsuario.enderecos)
+            ? dadosUsuario.enderecos
+            : [];
+
+          const fiscais = enderecos.filter(
+            (e) => e.tipo === 'FISCAL' || e.tipo === 'AMBOS'
+          );
+          if (dadosUsuario.empresa?.enderecoFiscal && !fiscais.some((e) => e.id === dadosUsuario.empresa.enderecoFiscal.id)) {
+            fiscais.unshift(dadosUsuario.empresa.enderecoFiscal);
+          }
+          setEnderecosFiscaisSalvos(fiscais);
+
+          const endEntrega =
+            enderecos.find((e) => e.tipo === 'ENTREGA' || e.tipo === 'AMBOS') || enderecos[0];
+
+          if (endEntrega) {
             setEndereco({
-              cep: endSalvo.cep || '',
-              logradouro: endSalvo.rua || '',
-              numero: endSalvo.numero || '',
-              complemento: endSalvo.complemento || '',
-              bairro: endSalvo.bairro || '',
-              cidade: endSalvo.cidade || '',
-              uf: endSalvo.estado || '',
+              cep: formatarCep(endEntrega.cep || ''),
+              logradouro: endEntrega.rua || '',
+              numero: endEntrega.numero || '',
+              complemento: endEntrega.complemento || '',
+              bairro: endEntrega.bairro || '',
+              cidade: endEntrega.cidade || '',
+              uf: endEntrega.estado || '',
             });
           }
         }
@@ -266,9 +349,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
     carregarPerfilUsuario();
   }, []);
 
-  const handleBuscarCep = async (cepInput: string) => {
-    setEndereco((prev) => ({ ...prev, cep: cepInput }));
-    const cepLimpo = cepInput.replace(/\D/g, '');
+  const handleBuscarCep = async (cepInput: string, alvo: 'entrega' | 'fiscal' = 'entrega') => {
+    const cepFormatado = formatarCep(cepInput);
+
+    if (alvo === 'fiscal') {
+      setEnderecoFiscalForm((prev) => ({ ...prev, cep: cepFormatado }));
+    } else {
+      setEndereco((prev) => ({ ...prev, cep: cepFormatado }));
+    }
+
+    const cepLimpo = cepFormatado.replace(/\D/g, '');
 
     if (cepLimpo.length === 8) {
       try {
@@ -282,14 +372,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
           return;
         }
 
-        setEndereco((prev) => ({
-          ...prev,
-          cep: cepLimpo,
-          logradouro: data.logradouro || prev.logradouro,
-          bairro: data.bairro || prev.bairro,
-          cidade: data.localidade || prev.cidade,
-          uf: data.uf || prev.uf,
-        }));
+        if (alvo === 'fiscal') {
+          setEnderecoFiscalForm((prev) => ({
+            ...prev,
+            cep: cepFormatado,
+            logradouro: data.logradouro || prev.logradouro,
+            bairro: data.bairro || prev.bairro,
+            cidade: data.localidade || prev.cidade,
+            uf: data.uf || prev.uf,
+          }));
+        } else {
+          setEndereco((prev) => ({
+            ...prev,
+            cep: cepFormatado,
+            logradouro: data.logradouro || prev.logradouro,
+            bairro: data.bairro || prev.bairro,
+            cidade: data.localidade || prev.cidade,
+            uf: data.uf || prev.uf,
+          }));
+        }
       } catch (err) {
         console.error('Erro ao buscar ViaCEP:', err);
       } finally {
@@ -416,7 +517,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
               motivo:
                 c.motivo ||
                 (foiReduzidoAntesOuAgora
-                  ? `Quantidade ajustada de ${qtdRef} un. para ${qtdAprov} un. conforme estoque disponível.`
+                  ? `Quantidade reduzida de ${qtdRef} un. para ${qtdAprov} un. conforme estoque disponível.`
                   : null),
             };
           })
@@ -616,11 +717,74 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
     onClose();
   };
 
+  const resolverEnderecoFiscalIdParaEnvio = async (): Promise<string | null> => {
+    if (!usarOutroEnderecoFiscal) {
+      if (faturarParaEmpresa && empresaUsuario?.enderecoFiscalId) {
+        return empresaUsuario.enderecoFiscalId;
+      }
+      return null;
+    }
+
+    if (enderecoFiscalSelecionadoId && enderecoFiscalSelecionadoId !== '__NOVO__') {
+      return enderecoFiscalSelecionadoId;
+    }
+
+    if (
+      !enderecoFiscalForm.cep ||
+      !enderecoFiscalForm.logradouro ||
+      !enderecoFiscalForm.numero ||
+      !enderecoFiscalForm.bairro ||
+      !enderecoFiscalForm.cidade ||
+      !enderecoFiscalForm.uf
+    ) {
+      throw new Error('Preencha todos os campos obrigatórios do endereço fiscal.');
+    }
+
+    setSalvandoEnderecoFiscal(true);
+    try {
+      const res = await axios.put(
+        `${API_URL}/api/empresa/endereco-fiscal`,
+        {
+          destinatario:
+            faturarParaEmpresa && empresaUsuario?.razaoSocial
+              ? empresaUsuario.razaoSocial
+              : dadosCliente.nomeCompleto || undefined,
+          cep: enderecoFiscalForm.cep.replace(/\D/g, ''),
+          rua: enderecoFiscalForm.logradouro,
+          numero: enderecoFiscalForm.numero,
+          complemento: enderecoFiscalForm.complemento || null,
+          bairro: enderecoFiscalForm.bairro,
+          cidade: enderecoFiscalForm.cidade,
+          estado: enderecoFiscalForm.uf.toUpperCase(),
+        },
+        { withCredentials: true }
+      );
+
+      const salvo: EnderecoSalvoApi | undefined = res.data?.enderecoFiscal;
+      if (salvo?.id) {
+        setEnderecoFiscalSelecionadoId(salvo.id);
+        setEnderecosFiscaisSalvos((prev) => [salvo, ...prev.filter((item) => item.id !== salvo.id)]);
+        return salvo.id;
+      }
+      return null;
+    } finally {
+      setSalvandoEnderecoFiscal(false);
+    }
+  };
+
   const handleAvancarParaFrete = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!endereco.cep || !endereco.logradouro || !endereco.numero || !endereco.bairro || !endereco.cidade || !endereco.uf) {
       setErroCep('Por favor, preencha todos os campos obrigatórios do endereço.');
+      return;
+    }
+
+    try {
+      setErroCep('');
+      await resolverEnderecoFiscalIdParaEnvio();
+    } catch (err: any) {
+      setErroCep(err.message || 'Erro ao salvar endereço fiscal.');
       return;
     }
 
@@ -718,6 +882,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
       setLoadingPagamento(true);
       setErroPagamento('');
 
+      const enderecoFiscalIdEnvio = await resolverEnderecoFiscalIdParaEnvio();
+      const usarPJ = Boolean(faturarParaEmpresa && empresaUsuario);
+
       const endpoint = `${API_URL}/api/pagamento`;
 
       const itemsFormatados = itensEnvioBase.map((item) => {
@@ -734,6 +901,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
 
       const payloadBackend = {
         pedidoParaRefazerId: pedidoIdRefazer || null,
+        faturarParaEmpresa: usarPJ,
+        tipoFaturamento: usarPJ ? 'PJ' : 'PF',
+        clienteNome: usarPJ
+          ? empresaUsuario!.razaoSocial
+          : dadosCliente.nomeCompleto || undefined,
+        clienteEmail: dadosCliente.email || undefined,
+        clienteCpf: usarPJ
+          ? empresaUsuario!.cnpj
+          : dadosCliente.cpf || undefined,
+        clienteFone: dadosCliente.telefone || undefined,
+        enderecoFiscalId: enderecoFiscalIdEnvio,
         transaction_amount: totalEnvio,
         token: payloadCard?.token || null,
         description: 'Compra Ninho de Promessas',
@@ -909,10 +1087,48 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
           </div>
         ) : (
           <>
-            {/* ETAPA 1: ENDEREÇO */}
+            {/* ETAPA 1: ENDEREÇO E DADOS DA NOTA FISCAL */}
             {step === 1 && (
               <form onSubmit={handleAvancarParaFrete} className={styles.stepForm}>
                 <h3>📍 Etapa 1: Endereço de Entrega</h3>
+
+                {empresaUsuario && (
+                  <div className={styles.couponBox} style={{ marginBottom: '1rem' }}>
+                    <label className={styles.couponLabel}>🧾 Faturamento / Nota Fiscal (NF-e)</label>
+                    <div className={styles.formRow}>
+                      <label className={styles.shippingCard}>
+                        <input
+                          type="radio"
+                          name="tipoFaturamentoCheckout"
+                          checked={!faturarParaEmpresa}
+                          onChange={() => setFaturarParaEmpresa(false)}
+                        />
+                        <div className={styles.shippingInfo}>
+                          <strong>Pessoa Física</strong>
+                          <span>
+                            {dadosCliente.nomeCompleto || 'Titular da conta'}
+                            {dadosCliente.cpf ? ` · CPF ${formatarCpf(dadosCliente.cpf)}` : ''}
+                          </span>
+                        </div>
+                      </label>
+
+                      <label className={styles.shippingCard}>
+                        <input
+                          type="radio"
+                          name="tipoFaturamentoCheckout"
+                          checked={faturarParaEmpresa}
+                          onChange={() => setFaturarParaEmpresa(true)}
+                        />
+                        <div className={styles.shippingInfo}>
+                          <strong>Pessoa Jurídica</strong>
+                          <span>
+                            {empresaUsuario.razaoSocial} · CNPJ {formatarCnpjAlfanumerico(empresaUsuario.cnpj)}
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
 
                 <div className={styles.formRow}>
                   <div className={styles.inputGroup}>
@@ -922,7 +1138,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                       placeholder="00000-000"
                       maxLength={9}
                       value={endereco.cep}
-                      onChange={(e) => handleBuscarCep(e.target.value)}
+                      onChange={(e) => handleBuscarCep(e.target.value, 'entrega')}
                       required
                     />
                     {loadingCep && <span className={styles.helperText}>Buscando CEP...</span>}
@@ -999,10 +1215,147 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                   </div>
                 </div>
 
+                {/* Opção discreta: Usar outro endereço para a nota fiscal */}
+                <div className={styles.couponBox} style={{ marginTop: '0.75rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={usarOutroEnderecoFiscal}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setUsarOutroEnderecoFiscal(checked);
+                        if (checked && enderecosFiscaisSalvos.length > 0 && !enderecoFiscalSelecionadoId) {
+                          setEnderecoFiscalSelecionadoId(enderecosFiscaisSalvos[0].id);
+                        }
+                      }}
+                    />
+                    <span>Usar outro endereço para a nota fiscal</span>
+                  </label>
+
+                  {usarOutroEnderecoFiscal && (
+                    <div style={{ marginTop: '0.75rem' }}>
+                      {enderecosFiscaisSalvos.length > 0 && (
+                        <div className={styles.inputGroup}>
+                          <label>Endereço fiscal salvo</label>
+                          <select
+                            className={styles.selectInput}
+                            value={enderecoFiscalSelecionadoId}
+                            onChange={(e) => setEnderecoFiscalSelecionadoId(e.target.value)}
+                          >
+                            {enderecosFiscaisSalvos.map((ef) => (
+                              <option key={ef.id} value={ef.id}>
+                                {ef.rua}, {ef.numero} - {ef.bairro}, {ef.cidade}/{ef.estado}
+                              </option>
+                            ))}
+                            <option value="__NOVO__">+ Cadastrar novo endereço fiscal</option>
+                          </select>
+                        </div>
+                      )}
+
+                      {(enderecosFiscaisSalvos.length === 0 || enderecoFiscalSelecionadoId === '__NOVO__') && (
+                        <>
+                          <div className={styles.formRow}>
+                            <div className={styles.inputGroup}>
+                              <label>CEP Fiscal *</label>
+                              <input
+                                type="text"
+                                placeholder="00000-000"
+                                maxLength={9}
+                                value={enderecoFiscalForm.cep}
+                                onChange={(e) => handleBuscarCep(e.target.value, 'fiscal')}
+                                required={usarOutroEnderecoFiscal}
+                              />
+                            </div>
+                            <div className={styles.inputGroup}>
+                              <label>UF Fiscal *</label>
+                              <input
+                                type="text"
+                                placeholder="SC"
+                                maxLength={2}
+                                value={enderecoFiscalForm.uf}
+                                onChange={(e) =>
+                                  setEnderecoFiscalForm({ ...enderecoFiscalForm, uf: e.target.value.toUpperCase() })
+                                }
+                                required={usarOutroEnderecoFiscal}
+                              />
+                            </div>
+                          </div>
+
+                          <div className={styles.inputGroup}>
+                            <label>Rua / Logradouro Fiscal *</label>
+                            <input
+                              type="text"
+                              placeholder="Ex: Rua Comercial"
+                              value={enderecoFiscalForm.logradouro}
+                              onChange={(e) =>
+                                setEnderecoFiscalForm({ ...enderecoFiscalForm, logradouro: e.target.value })
+                              }
+                              required={usarOutroEnderecoFiscal}
+                            />
+                          </div>
+
+                          <div className={styles.formRow}>
+                            <div className={styles.inputGroup}>
+                              <label>Número Fiscal *</label>
+                              <input
+                                type="text"
+                                placeholder="123 ou S/N"
+                                value={enderecoFiscalForm.numero}
+                                onChange={(e) =>
+                                  setEnderecoFiscalForm({ ...enderecoFiscalForm, numero: e.target.value })
+                                }
+                                required={usarOutroEnderecoFiscal}
+                              />
+                            </div>
+                            <div className={styles.inputGroup}>
+                              <label>Complemento Fiscal</label>
+                              <input
+                                type="text"
+                                placeholder="Sala, Conj..."
+                                value={enderecoFiscalForm.complemento}
+                                onChange={(e) =>
+                                  setEnderecoFiscalForm({ ...enderecoFiscalForm, complemento: e.target.value })
+                                }
+                              />
+                            </div>
+                          </div>
+
+                          <div className={styles.formRow}>
+                            <div className={styles.inputGroup}>
+                              <label>Bairro Fiscal *</label>
+                              <input
+                                type="text"
+                                placeholder="Centro"
+                                value={enderecoFiscalForm.bairro}
+                                onChange={(e) =>
+                                  setEnderecoFiscalForm({ ...enderecoFiscalForm, bairro: e.target.value })
+                                }
+                                required={usarOutroEnderecoFiscal}
+                              />
+                            </div>
+                            <div className={styles.inputGroup}>
+                              <label>Cidade Fiscal *</label>
+                              <input
+                                type="text"
+                                placeholder="Palhoça"
+                                value={enderecoFiscalForm.cidade}
+                                onChange={(e) =>
+                                  setEnderecoFiscalForm({ ...enderecoFiscalForm, cidade: e.target.value })
+                                }
+                                required={usarOutroEnderecoFiscal}
+                              />
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 {erroCep && <p className={styles.errorText}>{erroCep}</p>}
 
-                <button type="submit" className={styles.primaryButton}>
-                  Ir para Opções de Envio →
+                <button type="submit" className={styles.primaryButton} disabled={salvandoEnderecoFiscal}>
+                  {salvandoEnderecoFiscal ? 'Salvando endereço fiscal...' : 'Ir para Opções de Envio →'}
                 </button>
               </form>
             )}
@@ -1016,7 +1369,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                   <strong>Entregar em:</strong> {endereco.logradouro}, {endereco.numero}{' '}
                   {endereco.complemento ? `- ${endereco.complemento}` : ''}
                   <br />
-                  {endereco.bairro} - {endereco.cidade}/{endereco.uf} (CEP: {endereco.cep})
+                  {endereco.bairro} - {endereco.cidade}/{endereco.uf} (CEP: {formatarCep(endereco.cep)})
                   <button type="button" className={styles.editBtn} onClick={() => setStep(1)}>
                     Editar
                   </button>

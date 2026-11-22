@@ -7,79 +7,201 @@ exports.AuthController = void 0;
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const prisma_1 = require("../lib/prisma");
+const documento_1 = require("../utils/documento");
+const UFS_VALIDAS = new Set([
+    'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO',
+    'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI',
+    'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+]);
+const onlyDigits = (value) => (value ? value.replace(/\D/g, '') : '');
+const cleanText = (value) => (typeof value === 'string' ? value.trim() : '');
+function validarCpf(cpfRaw) {
+    const cpf = onlyDigits(cpfRaw);
+    if (cpf.length !== 11)
+        return false;
+    if (/^(\d)\1{10}$/.test(cpf))
+        return false;
+    let soma = 0;
+    for (let i = 0; i < 9; i++) {
+        soma += Number(cpf[i]) * (10 - i);
+    }
+    let resto = (soma * 10) % 11;
+    if (resto === 10)
+        resto = 0;
+    if (resto !== Number(cpf[9]))
+        return false;
+    soma = 0;
+    for (let i = 0; i < 10; i++) {
+        soma += Number(cpf[i]) * (11 - i);
+    }
+    resto = (soma * 10) % 11;
+    if (resto === 10)
+        resto = 0;
+    return resto === Number(cpf[10]);
+}
+function validarTelefone(telRaw) {
+    const digits = onlyDigits(telRaw);
+    return digits.length === 10 || digits.length === 11;
+}
 class AuthController {
     async register(req, res) {
-        const { nome, sobrenome, cpf, email, telefone, senha, confirmarSenha, dataNascimento, sexo, receberNovidades } = req.body;
+        const { tipoPessoa = 'PF', nome, sobrenome, cpf, email, telefone, senha, confirmarSenha, dataNascimento, sexo, receberNovidades, 
+        // Campos PJ
+        cnpj, razaoSocial, nomeFantasia, indicadorIE, inscricaoEstadual, 
+        // Endereço Fiscal (obrigatório quando PJ)
+        cep, rua, numero, complemento, bairro, cidade, estado, } = req.body;
+        const nomeLimpo = cleanText(nome);
+        const sobrenomeLimpo = cleanText(sobrenome);
+        const emailLimpo = cleanText(email).toLowerCase();
+        const cleanCpf = onlyDigits(cpf);
+        const cleanTelefone = onlyDigits(telefone);
+        const cleanCnpj = (0, documento_1.limparDocumento)(cnpj);
+        const cleanCep = onlyDigits(cep);
+        const ufLimpa = cleanText(estado).toUpperCase();
+        const razaoSocialLimpa = cleanText(razaoSocial);
+        const nomeFantasiaLimpo = cleanText(nomeFantasia);
+        const ruaLimpa = cleanText(rua);
+        const numeroLimpo = cleanText(numero);
+        const complementoLimpo = cleanText(complemento);
+        const bairroLimpo = cleanText(bairro);
+        const cidadeLimpa = cleanText(cidade);
+        const ieLimpa = cleanText(inscricaoEstadual);
         if (!senha || senha.length < 8) {
             return res.status(400).json({ error: 'A senha deve ter no mínimo 8 dígitos.' });
         }
         if (senha !== confirmarSenha) {
             return res.status(400).json({ error: 'As senhas não conferem.' });
         }
-        if (!nome || !sobrenome || !cpf || !email || !telefone || !senha || !confirmarSenha) {
+        if (!nomeLimpo || !sobrenomeLimpo || !cleanCpf || !emailLimpo || !cleanTelefone) {
             return res.status(400).json({ error: 'Preencha todos os campos obrigatórios.' });
         }
+        if (!validarCpf(cleanCpf)) {
+            return res.status(400).json({ error: 'Informe um CPF válido.' });
+        }
+        if (!validarTelefone(cleanTelefone)) {
+            return res.status(400).json({ error: 'Informe um telefone válido com DDD (10 ou 11 dígitos).' });
+        }
+        if (tipoPessoa === 'PJ') {
+            if (!cleanCnpj ||
+                !razaoSocialLimpa ||
+                cleanCep.length !== 8 ||
+                !ruaLimpa ||
+                !numeroLimpo ||
+                !bairroLimpo ||
+                !cidadeLimpa ||
+                !UFS_VALIDAS.has(ufLimpa)) {
+                return res.status(400).json({
+                    error: 'Para Pessoa Jurídica, preencha CNPJ, Razão Social e o endereço fiscal completo com CEP (8 dígitos) e UF válidos.',
+                });
+            }
+            if (!(0, documento_1.validarCnpjAlfanumerico)(cleanCnpj)) {
+                return res.status(400).json({
+                    error: 'Informe um CNPJ válido com 14 caracteres (números ou letras/números).',
+                });
+            }
+            if (indicadorIE === 'CONTRIBUINTE' && ieLimpa.length < 2) {
+                return res.status(400).json({
+                    error: 'Informe uma Inscrição Estadual válida para contribuintes do ICMS.',
+                });
+            }
+        }
         try {
-            // 1. Verifica se o e-mail já existe
-            const userByEmail = await prisma_1.prisma.user.findUnique({ where: { email } });
+            const userByEmail = await prisma_1.prisma.user.findUnique({ where: { email: emailLimpo } });
             if (userByEmail) {
                 return res.status(400).json({ error: 'E-mail já cadastrado.' });
             }
-            // 2. Verifica se o CPF já existe
-            const userByCpf = await prisma_1.prisma.user.findUnique({ where: { cpf } });
+            const userByCpf = await prisma_1.prisma.user.findUnique({ where: { cpf: cleanCpf } });
             if (userByCpf) {
                 return res.status(400).json({ error: 'Este CPF já está cadastrado em nossa base de dados.' });
             }
+            if (tipoPessoa === 'PJ') {
+                const empresaByCnpj = await prisma_1.prisma.empresa.findUnique({ where: { cnpj: cleanCnpj } });
+                if (empresaByCnpj) {
+                    return res.status(400).json({ error: 'Este CNPJ já está cadastrado em nossa base de dados.' });
+                }
+            }
             const senhaHash = await bcryptjs_1.default.hash(senha, 8);
-            const formattedDataNascimento = dataNascimento && dataNascimento.trim() !== ''
+            const formattedDataNascimento = dataNascimento && String(dataNascimento).trim() !== ''
                 ? new Date(dataNascimento)
                 : null;
-            const userData = {
-                nome,
-                sobrenome,
-                cpf,
-                email,
-                telefone,
-                senhaHash,
-                sexo: sexo || null,
-                receberNovidades: Boolean(receberNovidades)
-            };
-            if (formattedDataNascimento) {
-                userData.dataNascimento = formattedDataNascimento;
-            }
-            const newUser = await prisma_1.prisma.user.create({
-                data: userData
+            const createdUser = await prisma_1.prisma.$transaction(async (tx) => {
+                const newUser = await tx.user.create({
+                    data: {
+                        nome: nomeLimpo,
+                        sobrenome: sobrenomeLimpo,
+                        cpf: cleanCpf,
+                        email: emailLimpo,
+                        telefone: cleanTelefone,
+                        senhaHash,
+                        dataNascimento: formattedDataNascimento,
+                        sexo: cleanText(sexo) || null,
+                        receberNovidades: Boolean(receberNovidades),
+                    },
+                });
+                if (tipoPessoa === 'PJ') {
+                    const enderecoFiscal = await tx.endereco.create({
+                        data: {
+                            tipo: 'FISCAL',
+                            principal: true,
+                            destinatario: razaoSocialLimpa,
+                            cep: cleanCep,
+                            rua: ruaLimpa,
+                            numero: numeroLimpo,
+                            complemento: complementoLimpo || null,
+                            bairro: bairroLimpo,
+                            cidade: cidadeLimpa,
+                            estado: ufLimpa,
+                            userId: newUser.id,
+                        },
+                    });
+                    await tx.empresa.create({
+                        data: {
+                            userId: newUser.id,
+                            cnpj: cleanCnpj,
+                            razaoSocial: razaoSocialLimpa,
+                            nomeFantasia: nomeFantasiaLimpo || null,
+                            indicadorIE: indicadorIE || 'NAO_CONTRIBUINTE',
+                            inscricaoEstadual: indicadorIE === 'CONTRIBUINTE' ? ieLimpa : null,
+                            enderecoFiscalId: enderecoFiscal.id,
+                        },
+                    });
+                }
+                return newUser;
             });
             return res.status(201).json({
                 message: 'Usuário cadastrado com sucesso!',
                 user: {
-                    id: newUser.id,
-                    nome: newUser.nome,
-                    email: newUser.email
-                }
+                    id: createdUser.id,
+                    nome: createdUser.nome,
+                    email: createdUser.email,
+                },
             });
         }
         catch (error) {
-            // Tratamento de segurança caso escape alguma restrição única do banco (P2002 do Prisma)
             if (error.code === 'P2002') {
                 const campo = error.meta?.target?.[0];
                 if (campo === 'cpf') {
                     return res.status(400).json({ error: 'Este CPF já está cadastrado em nossa base de dados.' });
+                }
+                if (campo === 'cnpj') {
+                    return res.status(400).json({ error: 'Este CNPJ já está cadastrado em nossa base de dados.' });
                 }
                 if (campo === 'email') {
                     return res.status(400).json({ error: 'E-mail já cadastrado.' });
                 }
                 return res.status(400).json({ error: 'Este registro já existe no sistema.' });
             }
+            console.error('Erro ao cadastrar usuário:', error);
             return res.status(500).json({ error: 'Erro interno ao cadastrar usuário.' });
         }
     }
     async login(req, res) {
         const { email, senha } = req.body;
-        if (!email || !senha) {
+        const emailLimpo = cleanText(email).toLowerCase();
+        if (!emailLimpo || !senha) {
             return res.status(400).json({ error: 'E-mail e senha são obrigatórios.' });
         }
-        const user = await prisma_1.prisma.user.findUnique({ where: { email } });
+        const user = await prisma_1.prisma.user.findUnique({ where: { email: emailLimpo } });
         if (!user) {
             return res.status(401).json({ error: 'E-mail ou senha inválidos.' });
         }
@@ -93,17 +215,16 @@ class AuthController {
         const oneDayInMs = 24 * 60 * 60 * 1000;
         res.cookie('token', token, {
             httpOnly: true,
-            secure: isProduction, // true em produção (HTTPS)
-            sameSite: 'lax', // 'lax' é essencial para permitir o envio do cookie entre subdomínios
+            secure: isProduction,
+            sameSite: 'lax',
             maxAge: oneDayInMs,
         });
-        // Retorna apenas os dados do usuário de forma silenciosa (sem expor o token no JSON)
         return res.json({
             user: {
                 id: user.id,
                 nome: user.nome,
-                email: user.email
-            }
+                email: user.email,
+            },
         });
     }
     async logout(req, res) {
@@ -112,7 +233,7 @@ class AuthController {
     }
     async getProfile(req, res) {
         try {
-            const userId = req.userId; // Conforme o seu middleware de autenticação
+            const userId = req.userId;
             const user = await prisma_1.prisma.user.findUnique({
                 where: { id: userId },
                 select: {
@@ -125,11 +246,15 @@ class AuthController {
                     dataNascimento: true,
                     sexo: true,
                     receberNovidades: true,
+                    empresa: {
+                        include: {
+                            enderecoFiscal: true,
+                        },
+                    },
                     enderecos: {
                         orderBy: { createdAt: 'desc' },
-                        take: 1 // Traz o endereço mais recente do usuário
-                    }
-                }
+                    },
+                },
             });
             if (!user) {
                 return res.status(404).json({ error: 'Usuário não encontrado.' });
@@ -143,18 +268,38 @@ class AuthController {
     }
     async updateProfile(req, res) {
         try {
-            const userId = req.userId; // ID do utilizador logado extraído pelo middleware
+            const userId = req.userId;
             const { nome, sobrenome, telefone, dataNascimento, sexo, receberNovidades } = req.body;
+            const nomeLimpo = cleanText(nome);
+            const sobrenomeLimpo = cleanText(sobrenome);
+            const cleanTelefone = onlyDigits(telefone);
+            if (!nomeLimpo || !sobrenomeLimpo) {
+                return res.status(400).json({ error: 'Nome e sobrenome são obrigatórios.' });
+            }
+            if (cleanTelefone && !validarTelefone(cleanTelefone)) {
+                return res.status(400).json({ error: 'Informe um telefone válido com DDD (10 ou 11 dígitos).' });
+            }
             const updatedUser = await prisma_1.prisma.user.update({
                 where: { id: userId },
                 data: {
-                    nome,
-                    sobrenome,
-                    telefone,
+                    nome: nomeLimpo,
+                    sobrenome: sobrenomeLimpo,
+                    telefone: cleanTelefone || undefined,
                     dataNascimento: dataNascimento ? new Date(dataNascimento) : null,
-                    sexo,
+                    sexo: cleanText(sexo) || null,
                     receberNovidades: Boolean(receberNovidades),
-                }
+                },
+                select: {
+                    id: true,
+                    nome: true,
+                    sobrenome: true,
+                    cpf: true,
+                    email: true,
+                    telefone: true,
+                    dataNascimento: true,
+                    sexo: true,
+                    receberNovidades: true,
+                },
             });
             return res.json({ message: 'Perfil atualizado com sucesso!', user: updatedUser });
         }

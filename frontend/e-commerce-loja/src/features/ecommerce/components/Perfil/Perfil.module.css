@@ -49,14 +49,61 @@
   padding-bottom: 1rem;
 }
 
+.companyHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.sectionTitle {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #222222;
+  margin: 0 0 0.35rem;
+}
+
+.sectionSubtitle {
+  font-size: 0.9rem;
+  color: #666666;
+  margin: 0;
+}
+
+.subGroupTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #8f7254;
+  margin: 0.5rem 0 0;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid #efe7de;
+}
+
+.outlineGoldButton {
+  padding: 0.6rem 1rem;
+  background-color: #ffffff;
+  color: #8f7254;
+  border: 1px solid #D7B796;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.outlineGoldButton:hover {
+  background-color: #faf6f1;
+}
+
 .formGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1.25rem;
+  margin-top: 1.25rem;
 }
 
 .formGroup {
-  margin-bottom: 1.25rem;
+  margin-bottom: 0.5rem;
   grid-column: span 1;
 }
 
@@ -95,6 +142,18 @@
   cursor: not-allowed;
 }
 
+.birthDateRow {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 0.4rem;
+}
+
+.birthSelect {
+  min-width: 0;
+  padding: 0.65rem 0.5rem;
+  font-size: 0.88rem;
+}
+
 .checkboxGroup {
   display: flex;
   align-items: center;
@@ -121,7 +180,7 @@
 
 .saveButton {
   flex: 1;
-  height: 42px; /* Altura fixa para alinhar perfeitamente com o botão de sair */
+  height: 42px;
   padding: 0 1rem;
   background-color: #D7B796;
   color: white;
@@ -148,7 +207,7 @@
 
 .logoutButton {
   flex: 1;
-  height: 42px; /* Altura fixa para alinhar perfeitamente com o botão de salvar */
+  height: 42px;
   padding: 0 1rem;
   background-color: #ffffff;
   color: #dc3545;
@@ -168,11 +227,34 @@
   background-color: #fff5f5;
 }
 
+.cancelButton {
+  flex: 1;
+  height: 42px;
+  padding: 0 1rem;
+  background-color: #ffffff;
+  color: #555555;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cancelButton:hover {
+  background-color: #f8f9fa;
+}
+
 .message {
   padding: 10px 14px;
   border-radius: 6px;
   font-size: 0.9rem;
-  margin-bottom: 1.5rem;
+  margin-top: 1.25rem;
+  margin-bottom: 1rem;
 }
 
 .success {
@@ -193,5 +275,8 @@
   }
   .formGroup, .fullWidth {
     grid-column: span 1;
+  }
+  .actionsFooter {
+    flex-direction: column;
   }
 }

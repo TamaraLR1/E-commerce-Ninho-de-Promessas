@@ -6,6 +6,23 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum IndicadorIE {
+  CONTRIBUINTE     // 1 no Bling / SEFAZ
+  ISENTO           // 2 no Bling / SEFAZ
+  NAO_CONTRIBUINTE // 9 no Bling / SEFAZ
+}
+
+enum TipoEndereco {
+  ENTREGA
+  FISCAL
+  AMBOS
+}
+
+enum TipoFaturamento {
+  PF
+  PJ
+}
+
 model User {
   id               Int       @id @default(autoincrement())
   nome             String
@@ -17,15 +34,44 @@ model User {
   dataNascimento   DateTime?
   sexo             String?
   receberNovidades Boolean   @default(false)
+
+  // ID do contato PF sincronizado no Bling (opcional)
+  blingContatoId   BigInt?
+
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  // Relações com Endereços, Pedidos e Carrinho do Cliente
-  enderecos Endereco[]
-  pedidos   Pedido[]
-  carrinho  Carrinho?
+  // Relações
+  empresa          Empresa?
+  enderecos        Endereco[]
+  pedidos          Pedido[]
+  carrinho         Carrinho?
 
   @@map("users")
+}
+
+model Empresa {
+  id                String      @id @default(uuid())
+  userId            Int         @unique
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  cnpj              String      @unique
+  razaoSocial       String
+  nomeFantasia      String?
+  indicadorIE       IndicadorIE @default(NAO_CONTRIBUINTE)
+  inscricaoEstadual String?
+
+  // Endereço fiscal opcional vinculado à empresa (para NF-e no Bling)
+  enderecoFiscalId  String?
+  enderecoFiscal    Endereco?   @relation("EmpresaEnderecoFiscal", fields: [enderecoFiscalId], references: [id], onDelete: SetNull)
+
+  // ID do contato PJ sincronizado no Bling (opcional)
+  blingContatoId    BigInt?
+
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@map("empresas")
 }
 
 model Admin {
@@ -207,7 +253,10 @@ model LogAtividade {
 // ========================================================
 
 model Endereco {
-  id           String   @id @default(uuid())
+  id           String       @id @default(uuid())
+  tipo         TipoEndereco @default(ENTREGA)
+  principal    Boolean      @default(false)
+
   cep          String
   rua          String
   numero       String
@@ -215,12 +264,15 @@ model Endereco {
   bairro       String
   cidade       String
   estado       String
-  destinatario String?  // Nome de quem receberá o pacote no local
+  codigoIbge   String?      // Código IBGE de 7 dígitos do município para NF-e / Bling
+  destinatario String?      // Nome de quem receberá o pacote ou razão social/nome no endereço
 
   userId Int?
   user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  pedidos Pedido[]
+  pedidosEntrega Pedido[]  @relation("PedidoEntrega")
+  pedidosFiscal  Pedido[]  @relation("PedidoFiscal")
+  empresasFiscal Empresa[] @relation("EmpresaEnderecoFiscal")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -263,22 +315,34 @@ model Pedido {
   metodoPagamento String? // Ex: "credit_card", "pix", "ticket"
   mpPaymentId     String? // ID do pagamento retornado pelo Mercado Pago
 
-  // NOVO: Controle de expiração do estoque (15 min para PIX ou 48h úteis para Cartão)
+  // Integração com Bling / NF-e
+  blingNfeId      BigInt?
+  chaveAcessoNfe  String?
+
+  // Controle de expiração do estoque (15 min para PIX ou 48h úteis para Cartão)
   expiraEm         DateTime?
 
-  // Snapshot do Cliente
-  clienteNome  String
-  clienteEmail String
-  clienteCpf   String
-  clienteFone  String?
+  // Snapshot do Cliente / Destinatário no momento do pedido
+  tipoFaturamento          TipoFaturamento @default(PF)
+  clienteNome              String          // Nome completo (PF) ou Razão Social (PJ)
+  clienteNomeFantasia      String?         // Preenchido quando PJ
+  clienteEmail             String
+  clienteCpf               String          // CPF do comprador (PF) ou CNPJ (PJ)
+  clienteIndicadorIE       IndicadorIE?    // Usado para NF-e no Bling
+  clienteInscricaoEstadual String?         // Preenchido quando PJ contribuinte
+  clienteFone              String?
 
   // Relação opcional com o cadastro de User
   userId Int?
   user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  // Endereço do Pedido
+  // Endereço de Entrega do Pedido
   enderecoId String
-  endereco   Endereco @relation(fields: [enderecoId], references: [id], onDelete: Restrict)
+  endereco   Endereco @relation("PedidoEntrega", fields: [enderecoId], references: [id], onDelete: Restrict)
+
+  // Endereço Fiscal opcional (quando diferente do endereço de entrega, ex: "Usar outro endereço para a nota fiscal" ou PJ)
+  enderecoFiscalId String?
+  enderecoFiscal   Endereco? @relation("PedidoFiscal", fields: [enderecoFiscalId], references: [id], onDelete: SetNull)
 
   itens ItemPedido[]
   

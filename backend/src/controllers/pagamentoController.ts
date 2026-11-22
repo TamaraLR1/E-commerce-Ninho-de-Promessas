@@ -2,8 +2,11 @@ import { Request, Response } from 'express';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { prisma } from '../lib/prisma';
 import { getIO } from '../socket';
+import { limparDocumento, validarCnpjAlfanumerico } from '../utils/documento';
 
-const mpAccessToken = process.env.MERCADOPAGO_ACCESS_TOKEN || 'APP_USR-6241648762325115-101109-22bbdb4d167baad86cf6c9f6f2776dc8-3529610690';
+const mpAccessToken =
+  process.env.MERCADOPAGO_ACCESS_TOKEN ||
+  'APP_USR-6241648762325115-101109-22bbdb4d167baad86cf6c9f6f2776dc8-3529610690';
 const client = new MercadoPagoConfig({ accessToken: mpAccessToken });
 const paymentClient = new Payment(client);
 
@@ -18,19 +21,19 @@ function validarCPF(cpf: string): boolean {
   let resto: number;
 
   for (let i = 1; i <= 9; i++) {
-    soma += parseInt(cpfLimpo.substring(i - 1, i)) * (11 - i);
+    soma += parseInt(cpfLimpo.substring(i - 1, i), 10) * (11 - i);
   }
   resto = (soma * 10) % 11;
   if (resto === 10 || resto === 11) resto = 0;
-  if (resto !== parseInt(cpfLimpo.substring(9, 10))) return false;
+  if (resto !== parseInt(cpfLimpo.substring(9, 10), 10)) return false;
 
   soma = 0;
   for (let i = 1; i <= 10; i++) {
-    soma += parseInt(cpfLimpo.substring(i - 1, i)) * (12 - i);
+    soma += parseInt(cpfLimpo.substring(i - 1, i), 10) * (12 - i);
   }
   resto = (soma * 10) % 11;
   if (resto === 10 || resto === 11) resto = 0;
-  if (resto !== parseInt(cpfLimpo.substring(10, 11))) return false;
+  if (resto !== parseInt(cpfLimpo.substring(10, 11), 10)) return false;
 
   return true;
 }
@@ -45,9 +48,14 @@ export const pagamentoController = {
         return res.status(401).json({ message: 'Você precisa estar logado para finalizar a compra.' });
       }
 
-      // 2. Busca os dados do usuário no banco de dados
+      // 2. Busca os dados do usuário e da empresa (se houver) no banco de dados
       const user = await prisma.user.findUnique({
         where: { id: Number(userIdLogado) },
+        include: {
+          empresa: {
+            include: { enderecoFiscal: true },
+          },
+        },
       });
 
       if (!user) {
@@ -56,6 +64,13 @@ export const pagamentoController = {
 
       const {
         pedidoParaRefazerId,
+        faturarParaEmpresa,
+        tipoFaturamento: tipoFaturamentoBody,
+        enderecoFiscalId: enderecoFiscalIdBody,
+        clienteNome: clienteNomeBody,
+        clienteEmail: clienteEmailBody,
+        clienteCpf: clienteCpfBody,
+        clienteFone: clienteFoneBody,
         transaction_amount,
         token,
         description,
@@ -79,26 +94,72 @@ export const pagamentoController = {
         return res.status(400).json({ message: 'Endereço de entrega incompleto.' });
       }
 
-      // Validação prévia de algoritmo de CPF
-      const cpfLimpo = user.cpf ? String(user.cpf).replace(/\D/g, '') : '';
-      if (!cpfLimpo || !validarCPF(cpfLimpo)) {
+      const desejaPJ = Boolean(faturarParaEmpresa) || tipoFaturamentoBody === 'PJ';
+      const usarPJ = Boolean(desejaPJ && user.empresa);
+
+      if (desejaPJ && !user.empresa) {
         return res.status(400).json({
-          message: 'O CPF cadastrado na sua conta é inválido. Por favor, corrija o CPF em seus dados pessoais para continuar.'
+          message: 'Nenhuma empresa vinculada encontrada para faturamento em Pessoa Jurídica.',
         });
       }
 
+      const cpfLimpo = user.cpf ? String(user.cpf).replace(/\D/g, '') : '';
+      const cnpjLimpo = user.empresa?.cnpj ? limparDocumento(user.empresa.cnpj) : '';
+
+      if (usarPJ) {
+        if (!cnpjLimpo || !validarCnpjAlfanumerico(cnpjLimpo)) {
+          return res.status(400).json({
+            message: 'O CNPJ cadastrado na empresa é inválido. Verifique os dados da empresa para continuar.',
+          });
+        }
+      } else {
+        if (!cpfLimpo || !validarCPF(cpfLimpo)) {
+          return res.status(400).json({
+            message:
+              'O CPF cadastrado na sua conta é inválido. Por favor, corrija o CPF em seus dados pessoais para continuar.',
+          });
+        }
+      }
+
+      const nomeCompletoUser = `${user.nome || ''} ${user.sobrenome || ''}`.trim();
+      const snapshotTipoFaturamento: 'PF' | 'PJ' = usarPJ ? 'PJ' : 'PF';
+      const snapshotClienteNome = usarPJ
+        ? user.empresa!.razaoSocial
+        : String(clienteNomeBody || nomeCompletoUser || 'Cliente').trim();
+      const snapshotClienteNomeFantasia = usarPJ ? user.empresa!.nomeFantasia || null : null;
+      const snapshotClienteCpf = usarPJ
+        ? cnpjLimpo
+        : String(clienteCpfBody || cpfLimpo || '').trim();
+      const snapshotClienteIndicadorIE = usarPJ ? user.empresa!.indicadorIE : 'NAO_CONTRIBUINTE';
+      const snapshotClienteInscricaoEstadual =
+        usarPJ && user.empresa!.indicadorIE === 'CONTRIBUINTE'
+          ? user.empresa!.inscricaoEstadual || null
+          : null;
+      const snapshotClienteEmail = String(clienteEmailBody || user.email || '').trim();
+      const snapshotClienteFone = clienteFoneBody || user.telefone || null;
+
+      let enderecoFiscalFinalId: string | null = null;
+      if (enderecoFiscalIdBody) {
+        enderecoFiscalFinalId = String(enderecoFiscalIdBody);
+      } else if (usarPJ && user.empresa?.enderecoFiscalId) {
+        enderecoFiscalFinalId = user.empresa.enderecoFiscalId;
+      }
+
+      const documentoCobrancaLimpo = usarPJ ? cnpjLimpo : cpfLimpo;
+
       // Recalcula subtotal no servidor com base nos itens enviados
       const subtotalCalculado = Number(
-        items.reduce((acc: number, item: any) => {
-          const precoUnit = Number(item.preco ?? item.precoUnitario ?? 0);
-          const qtd = Number(item.quantidade ?? 0);
-          return acc + precoUnit * qtd;
-        }, 0).toFixed(2)
+        items
+          .reduce((acc: number, item: any) => {
+            const precoUnit = Number(item.preco ?? item.precoUnitario ?? 0);
+            const qtd = Number(item.quantidade ?? 0);
+            return acc + precoUnit * qtd;
+          }, 0)
+          .toFixed(2)
       );
 
-      const subtotalFinal = subtotal !== undefined && subtotal !== null
-        ? Number(Number(subtotal).toFixed(2))
-        : subtotalCalculado;
+      const subtotalFinal =
+        subtotal !== undefined && subtotal !== null ? Number(Number(subtotal).toFixed(2)) : subtotalCalculado;
 
       if (Math.abs(subtotalFinal - subtotalCalculado) > 0.02) {
         return res.status(400).json({
@@ -109,9 +170,10 @@ export const pagamentoController = {
       const descontoNum = Number(descontoCupom || 0);
       const freteNum = Number(valorFrete || 0);
       const totalCalculado = Number((Math.max(0, subtotalFinal - descontoNum) + freteNum).toFixed(2));
-      const valorCobranca = transaction_amount !== undefined && transaction_amount !== null
-        ? Number(Number(transaction_amount).toFixed(2))
-        : totalCalculado;
+      const valorCobranca =
+        transaction_amount !== undefined && transaction_amount !== null
+          ? Number(Number(transaction_amount).toFixed(2))
+          : totalCalculado;
 
       if (Math.abs(valorCobranca - totalCalculado) > 0.02) {
         return res.status(400).json({
@@ -120,11 +182,12 @@ export const pagamentoController = {
       }
 
       // Validação de valor mínimo para Cartão de Crédito (< R$ 1,00)
-      const isCartaoCredito = payment_method_id === 'credit_card' || (payment_method_id && payment_method_id !== 'pix');
+      const isCartaoCredito =
+        payment_method_id === 'credit_card' || (payment_method_id && payment_method_id !== 'pix');
 
-      if (isCartaoCredito && valorCobranca < 1.00) {
+      if (isCartaoCredito && valorCobranca < 1.0) {
         return res.status(400).json({
-          message: 'O valor mínimo para pagamentos com cartão de crédito é de R$ 1,00.'
+          message: 'O valor mínimo para pagamentos com cartão de crédito é de R$ 1,00.',
         });
       }
 
@@ -138,55 +201,52 @@ export const pagamentoController = {
         quantidadeDisponivel: number;
       }> = [];
 
-      await prisma.$transaction(async (tx) => {
-        // Se estiver refazendo um pedido ativo, devolve temporariamente o estoque dele dentro da transação
-        // para checar a disponibilidade real (se falhar, a transação faz rollback automático)
-        if (pedidoParaRefazerId) {
-          const pedidoAntigo = await tx.pedido.findUnique({
+      const pedidoAntigoPre = pedidoParaRefazerId
+        ? await prisma.pedido.findUnique({
             where: { id: String(pedidoParaRefazerId) },
             include: { itens: true },
+          })
+        : null;
+
+      const reservaAntigaPorChave = new Map<string, number>();
+      if (pedidoAntigoPre && (pedidoAntigoPre.status === 'PAGO' || pedidoAntigoPre.status === 'PENDENTE')) {
+        for (const itemAntigo of pedidoAntigoPre.itens) {
+          if (itemAntigo.produtoId) {
+            const chave = `${String(itemAntigo.produtoId)}::${itemAntigo.tamanhoId ? String(itemAntigo.tamanhoId) : ''}::${
+              itemAntigo.corId ? String(itemAntigo.corId) : ''
+            }`;
+            reservaAntigaPorChave.set(chave, (reservaAntigaPorChave.get(chave) || 0) + Number(itemAntigo.quantidade || 0));
+          }
+        }
+      }
+
+      for (const item of items) {
+        if (item.produtoId) {
+          const estoqueDisponivel = await prisma.produtoEstoque.findFirst({
+            where: {
+              produtoId: String(item.produtoId),
+              ...(item.tamanhoId ? { tamanhoId: String(item.tamanhoId) } : {}),
+              ...(item.corId ? { corId: String(item.corId) } : {}),
+            },
           });
 
-          if (pedidoAntigo && (pedidoAntigo.status === 'PAGO' || pedidoAntigo.status === 'PENDENTE')) {
-            for (const itemAntigo of pedidoAntigo.itens) {
-              if (itemAntigo.produtoId) {
-                await tx.produtoEstoque.updateMany({
-                  where: {
-                    produtoId: itemAntigo.produtoId,
-                    ...(itemAntigo.tamanhoId ? { tamanhoId: itemAntigo.tamanhoId } : {}),
-                    ...(itemAntigo.corId ? { corId: itemAntigo.corId } : {}),
-                  },
-                  data: { estoque: { increment: itemAntigo.quantidade } },
-                });
-              }
-            }
-          }
-        }
+          const chave = `${String(item.produtoId)}::${item.tamanhoId ? String(item.tamanhoId) : ''}::${
+            item.corId ? String(item.corId) : ''
+          }`;
+          const estoqueFisico = estoqueDisponivel ? Number(estoqueDisponivel.estoque || 0) : 0;
+          const qtdEfetivaDisponivel = estoqueFisico + (reservaAntigaPorChave.get(chave) || 0);
+          const qtdSol = Number(item.quantidade || 0);
 
-        for (const item of items) {
-          if (item.produtoId) {
-            const estoqueDisponivel = await tx.produtoEstoque.findFirst({
-              where: {
-                produtoId: String(item.produtoId),
-                ...(item.tamanhoId ? { tamanhoId: String(item.tamanhoId) } : {}),
-                ...(item.corId ? { corId: String(item.corId) } : {}),
-              },
+          if (!estoqueDisponivel || qtdEfetivaDisponivel < qtdSol) {
+            itensIndisponiveis.push({
+              produtoId: String(item.produtoId),
+              nome: item.nome || 'Item',
+              quantidadeSolicitada: qtdSol,
+              quantidadeDisponivel: qtdEfetivaDisponivel,
             });
-
-            const qtdDisp = estoqueDisponivel ? Number(estoqueDisponivel.estoque || 0) : 0;
-            const qtdSol = Number(item.quantidade || 0);
-
-            if (!estoqueDisponivel || qtdDisp < qtdSol) {
-              itensIndisponiveis.push({
-                produtoId: String(item.produtoId),
-                nome: item.nome || 'Item',
-                quantidadeSolicitada: qtdSol,
-                quantidadeDisponivel: qtdDisp,
-              });
-            }
           }
         }
-      });
+      }
 
       if (itensIndisponiveis.length > 0) {
         return res.status(409).json({
@@ -198,32 +258,32 @@ export const pagamentoController = {
       // -------------------------------------------------------------------------
       // TRATATIVA DE REFAZER: Se houver um pedido anterior, cancela o pagamento antigo no MP
       // -------------------------------------------------------------------------
-      if (pedidoParaRefazerId) {
-        const pedidoAntigo = await prisma.pedido.findUnique({
-          where: { id: String(pedidoParaRefazerId) },
-        });
-
-        if (pedidoAntigo && pedidoAntigo.mpPaymentId) {
-          try {
-            await paymentClient.cancel({ id: String(pedidoAntigo.mpPaymentId) });
-            console.log(`Pagamento anterior ${pedidoAntigo.mpPaymentId} cancelado com sucesso no Mercado Pago.`);
-          } catch (cancelErr) {
-            console.warn(`Não foi possível cancelar o pagamento anterior ${pedidoAntigo.mpPaymentId} no MP:`, cancelErr);
-          }
+      if (pedidoParaRefazerId && pedidoAntigoPre?.mpPaymentId) {
+        try {
+          await paymentClient.cancel({ id: String(pedidoAntigoPre.mpPaymentId) });
+          console.log(`Pagamento anterior ${pedidoAntigoPre.mpPaymentId} cancelado com sucesso no Mercado Pago.`);
+        } catch (cancelErr) {
+          console.warn(
+            `Não foi possível cancelar o pagamento anterior ${pedidoAntigoPre.mpPaymentId} no MP:`,
+            cancelErr
+          );
         }
       }
 
       const isSandbox = mpAccessToken.startsWith('TEST-');
 
       const payerData: any = {
-        email: isSandbox && payment_method_id === 'pix'
-          ? 'TESTUSER312184413725449474@testuser.com'
-          : user.email,
-        first_name: (user.nome || 'Cliente').trim(),
-        last_name: (user.sobrenome || '').trim(),
+        email:
+          isSandbox && payment_method_id === 'pix'
+            ? 'TESTUSER312184413725449474@testuser.com'
+            : snapshotClienteEmail || user.email,
+        first_name: usarPJ ? snapshotClienteNome.trim().split(' ')[0] : (user.nome || 'Cliente').trim(),
+        last_name: usarPJ
+          ? snapshotClienteNome.trim().split(' ').slice(1).join(' ')
+          : (user.sobrenome || '').trim(),
         identification: {
-          type: 'CPF',
-          number: cpfLimpo,
+          type: usarPJ ? 'CNPJ' : 'CPF',
+          number: documentoCobrancaLimpo,
         },
         address: {
           zip_code: String(endereco.cep).replace(/\D/g, ''),
@@ -231,7 +291,7 @@ export const pagamentoController = {
           street_number: String(endereco.numero),
           neighborhood: endereco.bairro,
           city: endereco.cidade,
-          federal_unit: endereco.estado,
+          federal_unit: String(endereco.estado || '').trim().toUpperCase(),
         },
       };
 
@@ -248,9 +308,8 @@ export const pagamentoController = {
           payer: payerData,
         };
       } else {
-        const bandeiraFinal = (payment_method_id && payment_method_id !== 'credit_card')
-          ? payment_method_id
-          : 'master';
+        const bandeiraFinal =
+          payment_method_id && payment_method_id !== 'credit_card' ? payment_method_id : 'master';
 
         paymentBody = {
           ...paymentBody,
@@ -268,7 +327,9 @@ export const pagamentoController = {
       try {
         mpResponse = await paymentClient.create({ body: paymentBody });
       } catch (firstErr: any) {
-        const isTokenErr = firstErr?.causes?.some((c: any) => c.code === 2006 || String(c.description).includes('Card Token'));
+        const isTokenErr = firstErr?.causes?.some(
+          (c: any) => c.code === 2006 || String(c.description).includes('Card Token')
+        );
         if (isTokenErr && paymentBody.payment_method_id && payment_method_id !== 'pix') {
           delete paymentBody.payment_method_id;
           mpResponse = await paymentClient.create({ body: paymentBody });
@@ -353,7 +414,10 @@ export const pagamentoController = {
         }
 
         let enderecoExistente = await tx.endereco.findFirst({
-          where: { userId: user.id },
+          where: {
+            userId: user.id,
+            tipo: { in: ['ENTREGA', 'AMBOS'] },
+          },
           orderBy: { createdAt: 'desc' },
         });
 
@@ -366,14 +430,15 @@ export const pagamentoController = {
 
         let enderecoId: string;
         const dadosTratados = {
+          tipo: 'ENTREGA' as const,
           cep: String(endereco.cep).replace(/\D/g, ''),
           rua: endereco.logradouro || endereco.rua,
           numero: String(endereco.numero),
           complemento: endereco.complemento || null,
           bairro: endereco.bairro,
           cidade: endereco.cidade,
-          estado: endereco.estado,
-          destinatario: endereco.destinatario || `${user.nome} ${user.sobrenome}`,
+          estado: String(endereco.estado || '').trim().toUpperCase(),
+          destinatario: endereco.destinatario || snapshotClienteNome,
           userId: user.id,
         };
 
@@ -401,6 +466,15 @@ export const pagamentoController = {
           expiraEm: statusPedido === 'PAGO' ? null : expiraEm,
           createdAt: new Date(),
           enderecoId: enderecoId,
+          ...(enderecoFiscalFinalId ? { enderecoFiscalId: enderecoFiscalFinalId } : {}),
+          tipoFaturamento: snapshotTipoFaturamento,
+          clienteNome: snapshotClienteNome,
+          clienteNomeFantasia: snapshotClienteNomeFantasia,
+          clienteEmail: snapshotClienteEmail,
+          clienteCpf: snapshotClienteCpf,
+          clienteIndicadorIE: snapshotClienteIndicadorIE,
+          clienteInscricaoEstadual: snapshotClienteInscricaoEstadual,
+          clienteFone: snapshotClienteFone,
           itens: {
             create: items.map((item: any) => ({
               produtoId: String(item.produtoId),
@@ -421,20 +495,17 @@ export const pagamentoController = {
               historicoStatus: {
                 create: {
                   status: statusPedido,
-                  observacao: 'Tentativa de pagamento refeita. Status reativado para PENDENTE e estoque reservado novamente.',
+                  observacao:
+                    'Tentativa de pagamento refeita. Status reativado para PENDENTE e estoque reservado novamente.',
                 },
               },
             },
-            include: { itens: true, endereco: true, historicoStatus: true },
+            include: { itens: true, endereco: true, enderecoFiscal: true, historicoStatus: true },
           });
         } else {
           pedidoFinal = await tx.pedido.create({
             data: {
               ...dadosPayloadPedido,
-              clienteNome: `${user.nome} ${user.sobrenome}`,
-              clienteEmail: user.email,
-              clienteCpf: user.cpf,
-              clienteFone: user.telefone,
               userId: user.id,
               historicoStatus: {
                 create: {
@@ -443,7 +514,7 @@ export const pagamentoController = {
                 },
               },
             },
-            include: { itens: true, endereco: true, historicoStatus: true },
+            include: { itens: true, endereco: true, enderecoFiscal: true, historicoStatus: true },
           });
         }
 
@@ -541,7 +612,10 @@ export const pagamentoController = {
               io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: 'PAGO' });
             }
           }
-        } else if (['rejected', 'cancelled'].includes(String(paymentInfo.status)) && pedidoExistente.status === 'PENDENTE') {
+        } else if (
+          ['rejected', 'cancelled'].includes(String(paymentInfo.status)) &&
+          pedidoExistente.status === 'PENDENTE'
+        ) {
           const novoStatus = 'RECUSADO' as const;
           let foiRecusado = false;
 

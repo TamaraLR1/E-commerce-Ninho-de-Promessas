@@ -4,7 +4,9 @@ exports.pagamentoController = void 0;
 const mercadopago_1 = require("mercadopago");
 const prisma_1 = require("../lib/prisma");
 const socket_1 = require("../socket");
-const mpAccessToken = process.env.MERCADOPAGO_ACCESS_TOKEN || 'APP_USR-6241648762325115-101109-22bbdb4d167baad86cf6c9f6f2776dc8-3529610690';
+const documento_1 = require("../utils/documento");
+const mpAccessToken = process.env.MERCADOPAGO_ACCESS_TOKEN ||
+    'APP_USR-6241648762325115-101109-22bbdb4d167baad86cf6c9f6f2776dc8-3529610690';
 const client = new mercadopago_1.MercadoPagoConfig({ accessToken: mpAccessToken });
 const paymentClient = new mercadopago_1.Payment(client);
 // URL base do Backend em produção para o Webhook
@@ -16,21 +18,21 @@ function validarCPF(cpf) {
     let soma = 0;
     let resto;
     for (let i = 1; i <= 9; i++) {
-        soma += parseInt(cpfLimpo.substring(i - 1, i)) * (11 - i);
+        soma += parseInt(cpfLimpo.substring(i - 1, i), 10) * (11 - i);
     }
     resto = (soma * 10) % 11;
     if (resto === 10 || resto === 11)
         resto = 0;
-    if (resto !== parseInt(cpfLimpo.substring(9, 10)))
+    if (resto !== parseInt(cpfLimpo.substring(9, 10), 10))
         return false;
     soma = 0;
     for (let i = 1; i <= 10; i++) {
-        soma += parseInt(cpfLimpo.substring(i - 1, i)) * (12 - i);
+        soma += parseInt(cpfLimpo.substring(i - 1, i), 10) * (12 - i);
     }
     resto = (soma * 10) % 11;
     if (resto === 10 || resto === 11)
         resto = 0;
-    if (resto !== parseInt(cpfLimpo.substring(10, 11)))
+    if (resto !== parseInt(cpfLimpo.substring(10, 11), 10))
         return false;
     return true;
 }
@@ -42,36 +44,80 @@ exports.pagamentoController = {
             if (!userIdLogado) {
                 return res.status(401).json({ message: 'Você precisa estar logado para finalizar a compra.' });
             }
-            // 2. Busca os dados do usuário no banco de dados
+            // 2. Busca os dados do usuário e da empresa (se houver) no banco de dados
             const user = await prisma_1.prisma.user.findUnique({
                 where: { id: Number(userIdLogado) },
+                include: {
+                    empresa: {
+                        include: { enderecoFiscal: true },
+                    },
+                },
             });
             if (!user) {
                 return res.status(404).json({ message: 'Usuário não encontrado.' });
             }
-            const { pedidoParaRefazerId, transaction_amount, token, description, installments, payment_method_id, issuer_id, items, subtotal, descontoCupom, valorFrete, servicoFrete, prazoEntrega, endereco, } = req.body;
+            const { pedidoParaRefazerId, faturarParaEmpresa, tipoFaturamento: tipoFaturamentoBody, enderecoFiscalId: enderecoFiscalIdBody, clienteNome: clienteNomeBody, clienteEmail: clienteEmailBody, clienteCpf: clienteCpfBody, clienteFone: clienteFoneBody, transaction_amount, token, description, installments, payment_method_id, issuer_id, items, subtotal, descontoCupom, valorFrete, servicoFrete, prazoEntrega, endereco, } = req.body;
             if (!items || !Array.isArray(items) || items.length === 0) {
                 return res.status(400).json({ message: 'O pedido deve conter pelo menos um item.' });
             }
             if (!endereco || !endereco.cep || !endereco.rua || !endereco.numero) {
                 return res.status(400).json({ message: 'Endereço de entrega incompleto.' });
             }
-            // Validação prévia de algoritmo de CPF
-            const cpfLimpo = user.cpf ? String(user.cpf).replace(/\D/g, '') : '';
-            if (!cpfLimpo || !validarCPF(cpfLimpo)) {
+            const desejaPJ = Boolean(faturarParaEmpresa) || tipoFaturamentoBody === 'PJ';
+            const usarPJ = Boolean(desejaPJ && user.empresa);
+            if (desejaPJ && !user.empresa) {
                 return res.status(400).json({
-                    message: 'O CPF cadastrado na sua conta é inválido. Por favor, corrija o CPF em seus dados pessoais para continuar.'
+                    message: 'Nenhuma empresa vinculada encontrada para faturamento em Pessoa Jurídica.',
                 });
             }
+            const cpfLimpo = user.cpf ? String(user.cpf).replace(/\D/g, '') : '';
+            const cnpjLimpo = user.empresa?.cnpj ? (0, documento_1.limparDocumento)(user.empresa.cnpj) : '';
+            if (usarPJ) {
+                if (!cnpjLimpo || !(0, documento_1.validarCnpjAlfanumerico)(cnpjLimpo)) {
+                    return res.status(400).json({
+                        message: 'O CNPJ cadastrado na empresa é inválido. Verifique os dados da empresa para continuar.',
+                    });
+                }
+            }
+            else {
+                if (!cpfLimpo || !validarCPF(cpfLimpo)) {
+                    return res.status(400).json({
+                        message: 'O CPF cadastrado na sua conta é inválido. Por favor, corrija o CPF em seus dados pessoais para continuar.',
+                    });
+                }
+            }
+            const nomeCompletoUser = `${user.nome || ''} ${user.sobrenome || ''}`.trim();
+            const snapshotTipoFaturamento = usarPJ ? 'PJ' : 'PF';
+            const snapshotClienteNome = usarPJ
+                ? user.empresa.razaoSocial
+                : String(clienteNomeBody || nomeCompletoUser || 'Cliente').trim();
+            const snapshotClienteNomeFantasia = usarPJ ? user.empresa.nomeFantasia || null : null;
+            const snapshotClienteCpf = usarPJ
+                ? cnpjLimpo
+                : String(clienteCpfBody || cpfLimpo || '').trim();
+            const snapshotClienteIndicadorIE = usarPJ ? user.empresa.indicadorIE : 'NAO_CONTRIBUINTE';
+            const snapshotClienteInscricaoEstadual = usarPJ && user.empresa.indicadorIE === 'CONTRIBUINTE'
+                ? user.empresa.inscricaoEstadual || null
+                : null;
+            const snapshotClienteEmail = String(clienteEmailBody || user.email || '').trim();
+            const snapshotClienteFone = clienteFoneBody || user.telefone || null;
+            let enderecoFiscalFinalId = null;
+            if (enderecoFiscalIdBody) {
+                enderecoFiscalFinalId = String(enderecoFiscalIdBody);
+            }
+            else if (usarPJ && user.empresa?.enderecoFiscalId) {
+                enderecoFiscalFinalId = user.empresa.enderecoFiscalId;
+            }
+            const documentoCobrancaLimpo = usarPJ ? cnpjLimpo : cpfLimpo;
             // Recalcula subtotal no servidor com base nos itens enviados
-            const subtotalCalculado = Number(items.reduce((acc, item) => {
+            const subtotalCalculado = Number(items
+                .reduce((acc, item) => {
                 const precoUnit = Number(item.preco ?? item.precoUnitario ?? 0);
                 const qtd = Number(item.quantidade ?? 0);
                 return acc + precoUnit * qtd;
-            }, 0).toFixed(2));
-            const subtotalFinal = subtotal !== undefined && subtotal !== null
-                ? Number(Number(subtotal).toFixed(2))
-                : subtotalCalculado;
+            }, 0)
+                .toFixed(2));
+            const subtotalFinal = subtotal !== undefined && subtotal !== null ? Number(Number(subtotal).toFixed(2)) : subtotalCalculado;
             if (Math.abs(subtotalFinal - subtotalCalculado) > 0.02) {
                 return res.status(400).json({
                     message: 'O subtotal informado não corresponde aos itens selecionados. Atualize a conferência do pedido.',
@@ -90,60 +136,53 @@ exports.pagamentoController = {
             }
             // Validação de valor mínimo para Cartão de Crédito (< R$ 1,00)
             const isCartaoCredito = payment_method_id === 'credit_card' || (payment_method_id && payment_method_id !== 'pix');
-            if (isCartaoCredito && valorCobranca < 1.00) {
+            if (isCartaoCredito && valorCobranca < 1.0) {
                 return res.status(400).json({
-                    message: 'O valor mínimo para pagamentos com cartão de crédito é de R$ 1,00.'
+                    message: 'O valor mínimo para pagamentos com cartão de crédito é de R$ 1,00.',
                 });
             }
             // -------------------------------------------------------------------------
             // 3. PRÉ-VALIDAÇÃO DE ESTOQUE ANTES DE COBRAR NO MERCADO PAGO
             // -------------------------------------------------------------------------
             const itensIndisponiveis = [];
-            await prisma_1.prisma.$transaction(async (tx) => {
-                // Se estiver refazendo um pedido ativo, devolve temporariamente o estoque dele dentro da transação
-                // para checar a disponibilidade real (se falhar, a transação faz rollback automático)
-                if (pedidoParaRefazerId) {
-                    const pedidoAntigo = await tx.pedido.findUnique({
-                        where: { id: String(pedidoParaRefazerId) },
-                        include: { itens: true },
+            const pedidoAntigoPre = pedidoParaRefazerId
+                ? await prisma_1.prisma.pedido.findUnique({
+                    where: { id: String(pedidoParaRefazerId) },
+                    include: { itens: true },
+                })
+                : null;
+            const reservaAntigaPorChave = new Map();
+            if (pedidoAntigoPre && (pedidoAntigoPre.status === 'PAGO' || pedidoAntigoPre.status === 'PENDENTE')) {
+                for (const itemAntigo of pedidoAntigoPre.itens) {
+                    if (itemAntigo.produtoId) {
+                        const chave = `${String(itemAntigo.produtoId)}::${itemAntigo.tamanhoId ? String(itemAntigo.tamanhoId) : ''}::${itemAntigo.corId ? String(itemAntigo.corId) : ''}`;
+                        reservaAntigaPorChave.set(chave, (reservaAntigaPorChave.get(chave) || 0) + Number(itemAntigo.quantidade || 0));
+                    }
+                }
+            }
+            for (const item of items) {
+                if (item.produtoId) {
+                    const estoqueDisponivel = await prisma_1.prisma.produtoEstoque.findFirst({
+                        where: {
+                            produtoId: String(item.produtoId),
+                            ...(item.tamanhoId ? { tamanhoId: String(item.tamanhoId) } : {}),
+                            ...(item.corId ? { corId: String(item.corId) } : {}),
+                        },
                     });
-                    if (pedidoAntigo && (pedidoAntigo.status === 'PAGO' || pedidoAntigo.status === 'PENDENTE')) {
-                        for (const itemAntigo of pedidoAntigo.itens) {
-                            if (itemAntigo.produtoId) {
-                                await tx.produtoEstoque.updateMany({
-                                    where: {
-                                        produtoId: itemAntigo.produtoId,
-                                        ...(itemAntigo.tamanhoId ? { tamanhoId: itemAntigo.tamanhoId } : {}),
-                                        ...(itemAntigo.corId ? { corId: itemAntigo.corId } : {}),
-                                    },
-                                    data: { estoque: { increment: itemAntigo.quantidade } },
-                                });
-                            }
-                        }
-                    }
-                }
-                for (const item of items) {
-                    if (item.produtoId) {
-                        const estoqueDisponivel = await tx.produtoEstoque.findFirst({
-                            where: {
-                                produtoId: String(item.produtoId),
-                                ...(item.tamanhoId ? { tamanhoId: String(item.tamanhoId) } : {}),
-                                ...(item.corId ? { corId: String(item.corId) } : {}),
-                            },
+                    const chave = `${String(item.produtoId)}::${item.tamanhoId ? String(item.tamanhoId) : ''}::${item.corId ? String(item.corId) : ''}`;
+                    const estoqueFisico = estoqueDisponivel ? Number(estoqueDisponivel.estoque || 0) : 0;
+                    const qtdEfetivaDisponivel = estoqueFisico + (reservaAntigaPorChave.get(chave) || 0);
+                    const qtdSol = Number(item.quantidade || 0);
+                    if (!estoqueDisponivel || qtdEfetivaDisponivel < qtdSol) {
+                        itensIndisponiveis.push({
+                            produtoId: String(item.produtoId),
+                            nome: item.nome || 'Item',
+                            quantidadeSolicitada: qtdSol,
+                            quantidadeDisponivel: qtdEfetivaDisponivel,
                         });
-                        const qtdDisp = estoqueDisponivel ? Number(estoqueDisponivel.estoque || 0) : 0;
-                        const qtdSol = Number(item.quantidade || 0);
-                        if (!estoqueDisponivel || qtdDisp < qtdSol) {
-                            itensIndisponiveis.push({
-                                produtoId: String(item.produtoId),
-                                nome: item.nome || 'Item',
-                                quantidadeSolicitada: qtdSol,
-                                quantidadeDisponivel: qtdDisp,
-                            });
-                        }
                     }
                 }
-            });
+            }
             if (itensIndisponiveis.length > 0) {
                 return res.status(409).json({
                     message: `Estoque insuficiente para: ${itensIndisponiveis.map((i) => i.nome).join(', ')}.`,
@@ -153,30 +192,27 @@ exports.pagamentoController = {
             // -------------------------------------------------------------------------
             // TRATATIVA DE REFAZER: Se houver um pedido anterior, cancela o pagamento antigo no MP
             // -------------------------------------------------------------------------
-            if (pedidoParaRefazerId) {
-                const pedidoAntigo = await prisma_1.prisma.pedido.findUnique({
-                    where: { id: String(pedidoParaRefazerId) },
-                });
-                if (pedidoAntigo && pedidoAntigo.mpPaymentId) {
-                    try {
-                        await paymentClient.cancel({ id: String(pedidoAntigo.mpPaymentId) });
-                        console.log(`Pagamento anterior ${pedidoAntigo.mpPaymentId} cancelado com sucesso no Mercado Pago.`);
-                    }
-                    catch (cancelErr) {
-                        console.warn(`Não foi possível cancelar o pagamento anterior ${pedidoAntigo.mpPaymentId} no MP:`, cancelErr);
-                    }
+            if (pedidoParaRefazerId && pedidoAntigoPre?.mpPaymentId) {
+                try {
+                    await paymentClient.cancel({ id: String(pedidoAntigoPre.mpPaymentId) });
+                    console.log(`Pagamento anterior ${pedidoAntigoPre.mpPaymentId} cancelado com sucesso no Mercado Pago.`);
+                }
+                catch (cancelErr) {
+                    console.warn(`Não foi possível cancelar o pagamento anterior ${pedidoAntigoPre.mpPaymentId} no MP:`, cancelErr);
                 }
             }
             const isSandbox = mpAccessToken.startsWith('TEST-');
             const payerData = {
                 email: isSandbox && payment_method_id === 'pix'
                     ? 'TESTUSER312184413725449474@testuser.com'
-                    : user.email,
-                first_name: (user.nome || 'Cliente').trim(),
-                last_name: (user.sobrenome || '').trim(),
+                    : snapshotClienteEmail || user.email,
+                first_name: usarPJ ? snapshotClienteNome.trim().split(' ')[0] : (user.nome || 'Cliente').trim(),
+                last_name: usarPJ
+                    ? snapshotClienteNome.trim().split(' ').slice(1).join(' ')
+                    : (user.sobrenome || '').trim(),
                 identification: {
-                    type: 'CPF',
-                    number: cpfLimpo,
+                    type: usarPJ ? 'CNPJ' : 'CPF',
+                    number: documentoCobrancaLimpo,
                 },
                 address: {
                     zip_code: String(endereco.cep).replace(/\D/g, ''),
@@ -184,7 +220,7 @@ exports.pagamentoController = {
                     street_number: String(endereco.numero),
                     neighborhood: endereco.bairro,
                     city: endereco.cidade,
-                    federal_unit: endereco.estado,
+                    federal_unit: String(endereco.estado || '').trim().toUpperCase(),
                 },
             };
             let paymentBody = {
@@ -200,9 +236,7 @@ exports.pagamentoController = {
                 };
             }
             else {
-                const bandeiraFinal = (payment_method_id && payment_method_id !== 'credit_card')
-                    ? payment_method_id
-                    : 'master';
+                const bandeiraFinal = payment_method_id && payment_method_id !== 'credit_card' ? payment_method_id : 'master';
                 paymentBody = {
                     ...paymentBody,
                     transaction_amount: valorCobranca,
@@ -301,7 +335,10 @@ exports.pagamentoController = {
                     expiraEm.setHours(expiraEm.getHours() + 48);
                 }
                 let enderecoExistente = await tx.endereco.findFirst({
-                    where: { userId: user.id },
+                    where: {
+                        userId: user.id,
+                        tipo: { in: ['ENTREGA', 'AMBOS'] },
+                    },
                     orderBy: { createdAt: 'desc' },
                 });
                 if (!enderecoExistente) {
@@ -312,14 +349,15 @@ exports.pagamentoController = {
                 }
                 let enderecoId;
                 const dadosTratados = {
+                    tipo: 'ENTREGA',
                     cep: String(endereco.cep).replace(/\D/g, ''),
                     rua: endereco.logradouro || endereco.rua,
                     numero: String(endereco.numero),
                     complemento: endereco.complemento || null,
                     bairro: endereco.bairro,
                     cidade: endereco.cidade,
-                    estado: endereco.estado,
-                    destinatario: endereco.destinatario || `${user.nome} ${user.sobrenome}`,
+                    estado: String(endereco.estado || '').trim().toUpperCase(),
+                    destinatario: endereco.destinatario || snapshotClienteNome,
                     userId: user.id,
                 };
                 if (enderecoExistente) {
@@ -346,6 +384,15 @@ exports.pagamentoController = {
                     expiraEm: statusPedido === 'PAGO' ? null : expiraEm,
                     createdAt: new Date(),
                     enderecoId: enderecoId,
+                    ...(enderecoFiscalFinalId ? { enderecoFiscalId: enderecoFiscalFinalId } : {}),
+                    tipoFaturamento: snapshotTipoFaturamento,
+                    clienteNome: snapshotClienteNome,
+                    clienteNomeFantasia: snapshotClienteNomeFantasia,
+                    clienteEmail: snapshotClienteEmail,
+                    clienteCpf: snapshotClienteCpf,
+                    clienteIndicadorIE: snapshotClienteIndicadorIE,
+                    clienteInscricaoEstadual: snapshotClienteInscricaoEstadual,
+                    clienteFone: snapshotClienteFone,
                     itens: {
                         create: items.map((item) => ({
                             produtoId: String(item.produtoId),
@@ -369,17 +416,13 @@ exports.pagamentoController = {
                                 },
                             },
                         },
-                        include: { itens: true, endereco: true, historicoStatus: true },
+                        include: { itens: true, endereco: true, enderecoFiscal: true, historicoStatus: true },
                     });
                 }
                 else {
                     pedidoFinal = await tx.pedido.create({
                         data: {
                             ...dadosPayloadPedido,
-                            clienteNome: `${user.nome} ${user.sobrenome}`,
-                            clienteEmail: user.email,
-                            clienteCpf: user.cpf,
-                            clienteFone: user.telefone,
                             userId: user.id,
                             historicoStatus: {
                                 create: {
@@ -388,7 +431,7 @@ exports.pagamentoController = {
                                 },
                             },
                         },
-                        include: { itens: true, endereco: true, historicoStatus: true },
+                        include: { itens: true, endereco: true, enderecoFiscal: true, historicoStatus: true },
                     });
                 }
                 return pedidoFinal;
@@ -473,7 +516,8 @@ exports.pagamentoController = {
                         }
                     }
                 }
-                else if (['rejected', 'cancelled'].includes(String(paymentInfo.status)) && pedidoExistente.status === 'PENDENTE') {
+                else if (['rejected', 'cancelled'].includes(String(paymentInfo.status)) &&
+                    pedidoExistente.status === 'PENDENTE') {
                     const novoStatus = 'RECUSADO';
                     let foiRecusado = false;
                     await prisma_1.prisma.$transaction(async (tx) => {

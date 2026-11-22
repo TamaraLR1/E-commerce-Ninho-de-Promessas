@@ -3,20 +3,42 @@ import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { prisma } from '../lib/prisma';
 import { getIO } from '../socket';
 import { formatarProduto } from './produtoController';
+import { limparDocumento, validarCnpjAlfanumerico } from '../utils/documento';
 
-const mpAccessToken = process.env.MERCADOPAGO_ACCESS_TOKEN || 'APP_USR-6241648762325115-101109-22bbdb4d167baad86cf6c9f6f2776dc8-3529610690';
+const mpAccessToken =
+  process.env.MERCADOPAGO_ACCESS_TOKEN ||
+  'APP_USR-6241648762325115-101109-22bbdb4d167baad86cf6c9f6f2776dc8-3529610690';
 const client = new MercadoPagoConfig({ accessToken: mpAccessToken });
 const paymentClient = new Payment(client);
 const BACKEND_URL = process.env.BACKEND_URL || 'https://ninhoback.tamaralr.com.br';
 
 export const pedidoController = {
-
   // 🛒 0. Método para Criar Pedido (ou Atualizar se vier de "Refazer Pagamento" via Checkout)
   async criarPedido(req: Request, res: Response) {
     try {
       const rawUserId = (req as any).user?.id || (req as any).userId || (req as any).user?.userId;
       const userId = rawUserId ? Number(rawUserId) : null;
-      const { itens, enderecoId, valorTotal, valorFrete, servicoFrete, metodoPagamento, pedidoParaRefazerId, transaction_amount, token, installments, issuer_id, description } = req.body;
+      const {
+        itens,
+        enderecoId,
+        enderecoFiscalId: enderecoFiscalIdBody,
+        faturarParaEmpresa,
+        tipoFaturamento: tipoFaturamentoBody,
+        valorTotal,
+        valorFrete,
+        servicoFrete,
+        metodoPagamento,
+        pedidoParaRefazerId,
+        transaction_amount,
+        token,
+        installments,
+        issuer_id,
+        description,
+        clienteNome: clienteNomeBody,
+        clienteEmail: clienteEmailBody,
+        clienteCpf: clienteCpfBody,
+        clienteFone: clienteFoneBody,
+      } = req.body;
 
       const valorFinalPedido = Number(valorTotal || transaction_amount || 0);
 
@@ -28,29 +50,36 @@ export const pedidoController = {
       if (pedidoParaRefazerId) {
         const pedidoExistente = await prisma.pedido.findFirst({
           where: { id: String(pedidoParaRefazerId), userId: userId ? Number(userId) : undefined },
-          include: { itens: true }
+          include: { itens: true },
         });
 
         if (!pedidoExistente) {
           return res.status(404).json({ message: 'Pedido original para refazer não encontrado.' });
         }
 
-        const user = await prisma.user.findUnique({ where: { id: Number(userId) } });
+        const user = userId
+          ? await prisma.user.findUnique({ where: { id: Number(userId) } })
+          : null;
         const isCartao = metodoPagamento === 'credit_card' || metodoPagamento !== 'pix';
+
+        const docBruto = pedidoExistente.clienteCpf || user?.cpf || '';
+        const documentoLimpo = limparDocumento(docBruto) || '00000000000';
+        const isCnpj =
+          (pedidoExistente as any).tipoFaturamento === 'PJ' || validarCnpjAlfanumerico(documentoLimpo);
 
         let paymentBody: any = {
           transaction_amount: Number(pedidoExistente.valorTotal),
           description: `Refazendo pagamento Pedido #${pedidoExistente.id.slice(0, 8)}`,
           notification_url: `${BACKEND_URL}/api/webhooks/mercadopago`,
           payer: {
-            email: user?.email || 'cliente@ninhodepromessas.com.br',
-            first_name: (user?.nome || 'Cliente').trim(),
+            email: pedidoExistente.clienteEmail || user?.email || 'cliente@ninhodepromessas.com.br',
+            first_name: (user?.nome || pedidoExistente.clienteNome || 'Cliente').trim().split(' ')[0],
             last_name: (user?.sobrenome || '').trim(),
             identification: {
-              type: 'CPF',
-              number: user?.cpf ? String(user.cpf).replace(/\D/g, '') : '00000000000',
-            }
-          }
+              type: isCnpj ? 'CNPJ' : 'CPF',
+              number: documentoLimpo,
+            },
+          },
         };
 
         if (isCartao) {
@@ -75,13 +104,19 @@ export const pedidoController = {
             historicoStatus: {
               create: {
                 status: statusMapeado,
-                observacao: statusMapeado === 'PAGO'
-                  ? 'Pagamento aprovado via Cartão de Crédito no Checkout.'
-                  : 'Novo código PIX gerado no Checkout.'
-              }
-            }
+                observacao:
+                  statusMapeado === 'PAGO'
+                    ? 'Pagamento aprovado via Cartão de Crédito no Checkout.'
+                    : 'Novo código PIX gerado no Checkout.',
+              },
+            },
           },
-          include: { itens: true, historicoStatus: { orderBy: { data: 'asc' } }, endereco: true }
+          include: {
+            itens: true,
+            historicoStatus: { orderBy: { data: 'asc' } },
+            endereco: true,
+            enderecoFiscal: true,
+          },
         });
 
         const io = getIO();
@@ -97,7 +132,7 @@ export const pedidoController = {
             ...pedidoAtualizado,
             qrCodePix: mpResponse.point_of_interaction?.transaction_data?.qr_code,
             qrCodeBase64Pix: mpResponse.point_of_interaction?.transaction_data?.qr_code_base64,
-          }
+          },
         });
       }
 
@@ -140,6 +175,69 @@ export const pedidoController = {
         produtosParaAtualizarIds.add(produtoId);
       }
 
+      // Busca dados do usuário e da empresa (se houver) para montar o snapshot fiscal corretamente
+      const usuarioLogado = userId
+        ? await prisma.user.findUnique({
+            where: { id: Number(userId) },
+            include: {
+              empresa: {
+                include: { enderecoFiscal: true },
+              },
+            },
+          })
+        : null;
+
+      const desejaPJ = Boolean(faturarParaEmpresa) || tipoFaturamentoBody === 'PJ';
+      const usarPJ = Boolean(desejaPJ && usuarioLogado?.empresa);
+
+      if (desejaPJ && !usuarioLogado?.empresa) {
+        return res.status(400).json({
+          message: 'Nenhuma empresa vinculada encontrada para faturamento em Pessoa Jurídica.',
+        });
+      }
+
+      const nomeCompletoUser = usuarioLogado
+        ? `${usuarioLogado.nome || ''} ${usuarioLogado.sobrenome || ''}`.trim()
+        : '';
+
+      const snapshotTipoFaturamento: 'PF' | 'PJ' = usarPJ ? 'PJ' : 'PF';
+      const snapshotClienteNome = usarPJ
+        ? usuarioLogado!.empresa!.razaoSocial
+        : String(clienteNomeBody || nomeCompletoUser || 'Cliente').trim();
+
+      const snapshotClienteNomeFantasia = usarPJ
+        ? usuarioLogado!.empresa!.nomeFantasia || null
+        : null;
+
+      const snapshotClienteCpf = usarPJ
+        ? limparDocumento(usuarioLogado!.empresa!.cnpj)
+        : String(clienteCpfBody || usuarioLogado?.cpf || '').replace(/\D/g, '');
+
+      const snapshotClienteIndicadorIE = usarPJ
+        ? usuarioLogado!.empresa!.indicadorIE
+        : 'NAO_CONTRIBUINTE';
+
+      const snapshotClienteInscricaoEstadual =
+        usarPJ && usuarioLogado!.empresa!.indicadorIE === 'CONTRIBUINTE'
+          ? usuarioLogado!.empresa!.inscricaoEstadual || null
+          : null;
+
+      const snapshotClienteEmail = String(
+        clienteEmailBody || usuarioLogado?.email || ''
+      ).trim();
+
+      const snapshotClienteFone = clienteFoneBody || usuarioLogado?.telefone || null;
+
+      // Resolve o endereço fiscal (se informado no checkout via "Usar outro endereço para a nota fiscal",
+      // ou o endereço fiscal da empresa PJ; se não houver, fica null e a NF-e usa o endereço de entrega)
+      let enderecoFiscalFinalId: string | null = null;
+
+      if (enderecoFiscalIdBody) {
+        enderecoFiscalFinalId = String(enderecoFiscalIdBody);
+      } else if (usarPJ && usuarioLogado?.empresa?.enderecoFiscalId) {
+        enderecoFiscalFinalId = usuarioLogado.empresa.enderecoFiscalId;
+      }
+
       const novoPedido = await prisma.$transaction(async (tx) => {
         const pedidoCriado = await tx.pedido.create({
           data: {
@@ -149,12 +247,26 @@ export const pedidoController = {
             metodoPagamento: metodoPagamento || 'PIX',
             status: 'PENDENTE',
 
+            // Snapshot do cliente / destinatário fiscal
+            tipoFaturamento: snapshotTipoFaturamento,
+            clienteNome: snapshotClienteNome,
+            clienteNomeFantasia: snapshotClienteNomeFantasia,
+            clienteEmail: snapshotClienteEmail,
+            clienteCpf: snapshotClienteCpf,
+            clienteIndicadorIE: snapshotClienteIndicadorIE,
+            clienteInscricaoEstadual: snapshotClienteInscricaoEstadual,
+            clienteFone: snapshotClienteFone,
+
             ...(userId && {
               user: { connect: { id: Number(userId) } },
             }),
 
             ...(enderecoId && {
               endereco: { connect: { id: String(enderecoId) } },
+            }),
+
+            ...(enderecoFiscalFinalId && {
+              enderecoFiscal: { connect: { id: enderecoFiscalFinalId } },
             }),
 
             historicoStatus: {
@@ -183,6 +295,7 @@ export const pedidoController = {
           include: {
             itens: true,
             endereco: true,
+            enderecoFiscal: true,
             historicoStatus: {
               orderBy: { data: 'asc' },
             },
@@ -243,9 +356,10 @@ export const pedidoController = {
         orderBy: { createdAt: 'desc' },
         include: {
           user: {
-            select: { nome: true, email: true, telefone: true, cpf: true },
+            select: { nome: true, sobrenome: true, email: true, telefone: true, cpf: true },
           },
           endereco: true,
+          enderecoFiscal: true,
           historicoStatus: {
             orderBy: { data: 'asc' },
           },
@@ -265,10 +379,14 @@ export const pedidoController = {
         id: p.id,
         codigoPedido: p.numeroPedido ? String(p.numeroPedido) : (p.codigoPedido || p.id.slice(0, 8)),
 
+        tipoFaturamento: p.tipoFaturamento || 'PF',
         clienteNome: p.clienteNome || p.user?.nome || 'Cliente Não Identificado',
+        clienteNomeFantasia: p.clienteNomeFantasia || '',
         clienteEmail: p.clienteEmail || p.user?.email || '',
         clienteTelefone: p.clienteFone || p.clienteTelefone || p.user?.telefone || p.telefone,
         cpf: p.clienteCpf || p.user?.cpf || p.cpf,
+        clienteIndicadorIE: p.clienteIndicadorIE || null,
+        clienteInscricaoEstadual: p.clienteInscricaoEstadual || null,
 
         status: p.status,
         total: Number(p.valorTotal ?? p.total ?? p.subtotal ?? 0),
@@ -294,6 +412,18 @@ export const pedidoController = {
               cidade: p.endereco.cidade || '',
               uf: p.endereco.estado || p.endereco.uf || '',
               cep: p.endereco.cep || '',
+            }
+          : undefined,
+
+        enderecoFiscal: p.enderecoFiscal
+          ? {
+              logradouro: p.enderecoFiscal.rua || '',
+              numero: p.enderecoFiscal.numero || '',
+              complemento: p.enderecoFiscal.complemento || '',
+              bairro: p.enderecoFiscal.bairro || '',
+              cidade: p.enderecoFiscal.cidade || '',
+              uf: p.enderecoFiscal.estado || '',
+              cep: p.enderecoFiscal.cep || '',
             }
           : undefined,
 
@@ -348,6 +478,7 @@ export const pedidoController = {
             },
           },
           endereco: true,
+          enderecoFiscal: true,
           historicoStatus: {
             orderBy: { data: 'asc' },
           },
@@ -362,6 +493,12 @@ export const pedidoController = {
       const pedidosFormatados = pedidos.map((p) => ({
         id: p.id,
         codigoPedido: (p as any).codigoPedido || ((p as any).numeroPedido ? String((p as any).numeroPedido) : p.id.slice(0, 8)),
+        tipoFaturamento: (p as any).tipoFaturamento || 'PF',
+        clienteNome: (p as any).clienteNome || '',
+        clienteNomeFantasia: (p as any).clienteNomeFantasia || '',
+        clienteCpf: (p as any).clienteCpf || '',
+        clienteIndicadorIE: (p as any).clienteIndicadorIE || null,
+        clienteInscricaoEstadual: (p as any).clienteInscricaoEstadual || null,
         status: p.status,
         total: Number((p as any).total || (p as any).valorTotal || 0),
         valorFrete: Number((p as any).valorFrete || (p as any).freteValor || 0),
@@ -413,6 +550,7 @@ export const pedidoController = {
             },
           },
           endereco: true,
+          enderecoFiscal: true,
           user: true,
           historicoStatus: {
             orderBy: { data: 'asc' },
@@ -475,6 +613,7 @@ export const pedidoController = {
             },
           },
           endereco: true,
+          enderecoFiscal: true,
           historicoStatus: {
             orderBy: { data: 'asc' },
           },
@@ -568,12 +707,16 @@ export const pedidoController = {
 
       const pedido = await prisma.pedido.findFirst({
         where: { id: String(id), userId: Number(userIdLogado) },
-        include: { itens: true }
+        include: { itens: true },
       });
 
       if (!pedido) return res.status(404).json({ message: 'Pedido não encontrado.' });
 
       const user = await prisma.user.findUnique({ where: { id: Number(userIdLogado) } });
+      const docBruto = pedido.clienteCpf || user?.cpf || '';
+      const documentoLimpo = limparDocumento(docBruto) || '00000000000';
+      const isCnpj =
+        (pedido as any).tipoFaturamento === 'PJ' || validarCnpjAlfanumerico(documentoLimpo);
 
       const paymentBody = {
         transaction_amount: Number(pedido.valorTotal),
@@ -581,14 +724,14 @@ export const pedidoController = {
         notification_url: `${BACKEND_URL}/api/webhooks/mercadopago`,
         payment_method_id: 'pix',
         payer: {
-          email: user?.email || 'cliente@ninhodepromessas.com.br',
-          first_name: (user?.nome || 'Cliente').trim(),
+          email: pedido.clienteEmail || user?.email || 'cliente@ninhodepromessas.com.br',
+          first_name: (user?.nome || pedido.clienteNome || 'Cliente').trim().split(' ')[0],
           last_name: (user?.sobrenome || '').trim(),
           identification: {
-            type: 'CPF',
-            number: user?.cpf ? String(user.cpf).replace(/\D/g, '') : '00000000000',
-          }
-        }
+            type: isCnpj ? 'CNPJ' : 'CPF',
+            number: documentoLimpo,
+          },
+        },
       };
 
       const mpResponse = await paymentClient.create({ body: paymentBody });
@@ -603,11 +746,11 @@ export const pedidoController = {
           historicoStatus: {
             create: {
               status: 'PENDENTE',
-              observacao: 'Novo código PIX gerado para nova tentativa de pagamento.'
-            }
-          }
+              observacao: 'Novo código PIX gerado para nova tentativa de pagamento.',
+            },
+          },
         },
-        include: { itens: true, historicoStatus: { orderBy: { data: 'asc' } } }
+        include: { itens: true, historicoStatus: { orderBy: { data: 'asc' } } },
       });
 
       return res.status(200).json({
@@ -617,12 +760,11 @@ export const pedidoController = {
           ...pedidoAtualizado,
           qrCodePix: mpResponse.point_of_interaction?.transaction_data?.qr_code,
           qrCodeBase64Pix: mpResponse.point_of_interaction?.transaction_data?.qr_code_base64,
-        }
+        },
       });
-
     } catch (error: any) {
       console.error('Erro ao atualizar pagamento:', error);
       return res.status(500).json({ message: 'Erro ao processar pagamento.', error: error.message });
     }
-  }
+  },
 };

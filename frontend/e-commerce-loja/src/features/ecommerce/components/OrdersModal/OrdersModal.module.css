@@ -76,13 +76,62 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.orderTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .orderCode {
   display: block;
   font-size: 1rem;
   color: #0f172a;
+}
+
+.billingBadge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.badgePJ {
+  background-color: #faf6f1;
+  color: #8f7254;
+  border: 1px solid #D7B796;
+}
+
+.badgePF {
+  background-color: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.billingBox {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: #334155;
+}
+
+.billingLine {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.billingLine span {
+  color: #64748b;
 }
 
 .orderDate {
@@ -304,4 +353,3 @@
   font-weight: 600;
   color: #334155;
 }
-

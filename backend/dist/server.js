@@ -23,6 +23,7 @@ const carrinhoRoutes_1 = require("./routes/carrinhoRoutes");
 const cupomRoutes_1 = require("./routes/cupomRoutes");
 const relatorioRoutes_1 = require("./routes/relatorioRoutes");
 const checkoutRoutes_1 = __importDefault(require("./routes/checkoutRoutes"));
+const empresaRoutes_1 = require("./routes/empresaRoutes");
 const path_1 = __importDefault(require("path"));
 const socket_1 = require("./socket");
 // IMPORTUE O SEU WORKER AQUI (ajuste o caminho se necessário)
@@ -62,6 +63,7 @@ app.use('/api', carrinhoRoutes_1.carrinhoRoutes);
 app.use('/api', cupomRoutes_1.cupomRoutes);
 app.use('/api', relatorioRoutes_1.relatorioRoutes);
 app.use('/api/checkout', checkoutRoutes_1.default);
+app.use('/api', empresaRoutes_1.empresaRoutes);
 const PORT = Number(process.env.PORT) || 3333;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor rodando na porta ${PORT}`);

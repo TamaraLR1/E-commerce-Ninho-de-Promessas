@@ -40,9 +40,8 @@ export function iniciarWorkerExpiracaoPedidos() {
 
       if (pedidosExpirados.length === 0) return;
 
-      console.log(`⏱️ Worker: Encontrados ${pedidosExpirados.length} pedido(s) expirado(s). Liberando estoque...`);
-
       const io = getIO();
+      let canceladosCount = 0;
 
       for (const pedido of pedidosExpirados) {
         const isPix = String(pedido.metodoPagamento || '').toLowerCase() === 'pix';
@@ -72,12 +71,12 @@ export function iniciarWorkerExpiracaoPedidos() {
           });
 
           for (const item of pedido.itens) {
-            if (item.produtoId) {
+            if (item.produtoId && item.tamanhoId && item.corId && item.quantidade > 0) {
               await tx.produtoEstoque.updateMany({
                 where: {
                   produtoId: item.produtoId,
-                  tamanhoId: item.tamanhoId || null,
-                  corId: item.corId || null,
+                  tamanhoId: item.tamanhoId,
+                  corId: item.corId,
                 },
                 data: {
                   estoque: { increment: item.quantidade },
@@ -89,10 +88,23 @@ export function iniciarWorkerExpiracaoPedidos() {
           return true;
         });
 
-        if (resultadoTx && io) {
-          io.emit('pedidoAtualizado', { id: pedido.id, status: StatusPedido.CANCELADO });
+        if (resultadoTx) {
+          canceladosCount += 1;
+
+          if (io) {
+            const payloadEvento = { id: pedido.id, status: StatusPedido.CANCELADO };
+            if (pedido.userId) {
+              io.to(`usuario_${pedido.userId}`).emit('pedidoAtualizado', payloadEvento);
+            }
+            io.emit('pedidoAtualizado', payloadEvento);
+          }
+
           console.log(`✅ Pedido ${pedido.id} (${regraLabel}) cancelado por expiração e estoque devolvido.`);
         }
+      }
+
+      if (canceladosCount > 0) {
+        console.log(`⏱️ Worker: ${canceladosCount} pedido(s) expirado(s) processado(s).`);
       }
     } catch (error) {
       console.error('❌ Erro no Worker de expiração de pedidos:', error);

@@ -25,11 +25,30 @@ interface HistoricoStatus {
   observacao?: string;
 }
 
+interface EnderecoResumo {
+  id?: string;
+  cep?: string;
+  rua?: string;
+  numero?: string;
+  complemento?: string | null;
+  bairro?: string;
+  cidade?: string;
+  estado?: string;
+}
+
 interface Pedido {
   id: string;
   userId?: number;
   codigoPedido?: string;
   status: 'PENDENTE' | 'RECUSADO' | 'PAGO' | 'EM_SEPARACAO' | 'ENVIADO' | 'ENTREGUE' | 'CANCELADO';
+  tipoFaturamento?: 'PF' | 'PJ' | null;
+  clienteNome?: string | null;
+  clienteNomeFantasia?: string | null;
+  clienteCpf?: string | null;
+  clienteIndicadorIE?: string | null;
+  clienteInscricaoEstadual?: string | null;
+  endereco?: EnderecoResumo | null;
+  enderecoFiscal?: EnderecoResumo | null;
   valorTotal?: number;
   total?: number;
   codigoRastreio?: string;
@@ -68,6 +87,25 @@ const formatarStatusAmigavel = (status: string) => {
     CANCELADO: 'Pedido Cancelado'
   };
   return mapa[status?.toUpperCase()] || status;
+};
+
+const formatarDocumento = (doc?: string | null, tipo?: 'PF' | 'PJ' | null) => {
+  if (!doc) return '';
+  const digits = String(doc).replace(/\D/g, '');
+  if (tipo === 'PJ' || digits.length === 14) {
+    return digits.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+  }
+  if (digits.length === 11) {
+    return digits.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+  }
+  return doc;
+};
+
+const formatarEnderecoLinha = (end?: EnderecoResumo | null) => {
+  if (!end || !end.rua) return '';
+  const comp = end.complemento ? ` (${end.complemento})` : '';
+  const cidUf = [end.cidade, end.estado].filter(Boolean).join('/');
+  return `${end.rua}, ${end.numero || 'S/N'}${comp} — ${end.bairro ? `${end.bairro}, ` : ''}${cidUf}`;
 };
 
 const isPixValido = (dataCriacao?: string) => {
@@ -274,6 +312,15 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
                 const valorFinal = Number(pedido.total || pedido.valorTotal || 0);
                 const codigoRastreio = pedido.codigoRastreio || pedido.rastreioCodigo;
 
+                const isPJ = pedido.tipoFaturamento === 'PJ';
+                const docFormatado = formatarDocumento(pedido.clienteCpf, pedido.tipoFaturamento);
+                const endEntregaTexto = formatarEnderecoLinha(pedido.endereco);
+                const endFiscalTexto = formatarEnderecoLinha(pedido.enderecoFiscal);
+                const mostrarEndFiscalSeparado =
+                  Boolean(endFiscalTexto) &&
+                  (!pedido.enderecoFiscal?.id || pedido.enderecoFiscal.id !== pedido.endereco?.id) &&
+                  endFiscalTexto !== endEntregaTexto;
+
                 const previsao = calcularPrevisaoEntrega(dataCriacaoBase);
                 const pixAindaValido = isPixValido(dataCriacaoBase);
 
@@ -290,11 +337,50 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
                   <div key={pedido.id} className={styles.orderCard}>
                     <div className={styles.orderCardHeader}>
                       <div>
-                        <strong className={styles.orderCode}>Pedido #{codExibicao}</strong>
+                        <div className={styles.orderTitleRow}>
+                          <strong className={styles.orderCode}>Pedido #{codExibicao}</strong>
+                          {pedido.tipoFaturamento && (
+                            <span className={`${styles.billingBadge} ${isPJ ? styles.badgePJ : styles.badgePF}`}>
+                              {isPJ ? 'PJ · NF-e' : 'PF'}
+                            </span>
+                          )}
+                        </div>
                         <span className={styles.orderDate}>{dataFormatada}</span>
                       </div>
                       <span className={styles.orderTotal}>R$ {valorFinal.toFixed(2)}</span>
                     </div>
+
+                    {(isPJ || endEntregaTexto || mostrarEndFiscalSeparado) && (
+                      <div className={styles.billingBox}>
+                        {isPJ && (
+                          <div className={styles.billingLine}>
+                            <span>Faturamento:</span>
+                            <strong>
+                              {pedido.clienteNome || 'Empresa'}
+                              {docFormatado ? ` · CNPJ ${docFormatado}` : ''}
+                            </strong>
+                          </div>
+                        )}
+                        {isPJ && pedido.clienteInscricaoEstadual && (
+                          <div className={styles.billingLine}>
+                            <span>Inscrição Estadual:</span>
+                            <span>{pedido.clienteInscricaoEstadual}</span>
+                          </div>
+                        )}
+                        {endEntregaTexto && (
+                          <div className={styles.billingLine}>
+                            <span>Entrega:</span>
+                            <span>{endEntregaTexto}</span>
+                          </div>
+                        )}
+                        {mostrarEndFiscalSeparado && (
+                          <div className={styles.billingLine}>
+                            <span>Endereço Fiscal:</span>
+                            <span>{endFiscalTexto}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {renderProgressBar(pedido)}
 

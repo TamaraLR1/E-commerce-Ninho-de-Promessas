@@ -89,6 +89,7 @@ interface ItemPedido {
 }
 
 interface EnderecoEntrega {
+  id?: string;
   logradouro?: string;
   rua?: string;
   numero?: string;
@@ -103,12 +104,16 @@ interface EnderecoEntrega {
 interface Pedido {
   id: string;
   codigoPedido?: string;
+  tipoFaturamento?: 'PF' | 'PJ' | null;
   clienteNome: string;
+  clienteNomeFantasia?: string | null;
   clienteEmail: string;
   clienteTelefone?: string;
   clienteFone?: string;
   cpf?: string;
   clienteCpf?: string;
+  clienteIndicadorIE?: string | null;
+  clienteInscricaoEstadual?: string | null;
   status: 'PENDENTE' | 'PAGO' | 'EM_SEPARACAO' | 'ENVIADO' | 'ENTREGUE' | 'CANCELADO';
   total?: number;
   valorTotal?: number;
@@ -126,6 +131,7 @@ interface Pedido {
   comprimentoCaixa?: number;
   enderecoEntrega?: EnderecoEntrega;
   endereco?: EnderecoEntrega;
+  enderecoFiscal?: EnderecoEntrega | null;
   itens: ItemPedido[];
   isEditingRastreio?: boolean;
   historicoStatus?: Array<{
@@ -1442,10 +1448,17 @@ export const AdminDashboard: React.FC = () => {
 
   const filteredPedidos = pedidosList.filter(pedido => {
     const codPed = pedido.codigoPedido || pedido.id;
+    const docRaw = pedido.cpf || pedido.clienteCpf || '';
+    const termoBusca = pedidoSearchQuery.toLowerCase();
+    const termoDocLimpo = pedidoSearchQuery.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const docLimpo = docRaw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+
     const matchesSearch = 
-      (pedido.clienteNome || '').toLowerCase().includes(pedidoSearchQuery.toLowerCase()) ||
-      (pedido.clienteEmail || '').toLowerCase().includes(pedidoSearchQuery.toLowerCase()) ||
-      codPed.toLowerCase().includes(pedidoSearchQuery.toLowerCase());
+      (pedido.clienteNome || '').toLowerCase().includes(termoBusca) ||
+      (pedido.clienteEmail || '').toLowerCase().includes(termoBusca) ||
+      docRaw.toLowerCase().includes(termoBusca) ||
+      (termoDocLimpo.length > 0 && docLimpo.includes(termoDocLimpo)) ||
+      codPed.toLowerCase().includes(termoBusca);
 
     if (!matchesSearch) return false;
     if (pedidoStatusFilter !== 'todos' && pedido.status !== pedidoStatusFilter) {
@@ -1505,6 +1518,26 @@ export const AdminDashboard: React.FC = () => {
       default:
         return <span className={styles.orderStatusBadge}>{status}</span>;
     }
+  };
+
+  const formatarDocumentoAdmin = (doc?: string, tipo?: 'PF' | 'PJ' | null) => {
+    if (!doc) return '';
+    const clean = String(doc).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (tipo === 'PJ' || clean.length === 14) {
+      return clean.replace(/^(.{2})(.{3})(.{3})(.{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+    }
+    const digits = clean.replace(/\D/g, '');
+    if (digits.length === 11) {
+      return digits.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+    }
+    return doc;
+  };
+
+  const formatarIndicadorIE = (ind?: string | null) => {
+    if (ind === 'CONTRIBUINTE') return 'Contribuinte ICMS';
+    if (ind === 'ISENTO') return 'Isento';
+    if (ind === 'NAO_CONTRIBUINTE') return 'Não contribuinte';
+    return ind || 'Não informado';
   };
 
   const getValorTotalPedido = (p: Pedido): number => {
@@ -1867,7 +1900,7 @@ export const AdminDashboard: React.FC = () => {
                 <input 
                   type="text" 
                   className={styles.orderSearchInput} 
-                  placeholder="🔍 Buscar por nome do cliente, e-mail ou código do pedido..." 
+                  placeholder="🔍 Buscar por nome do cliente, CPF/CNPJ, e-mail ou código do pedido..." 
                   value={pedidoSearchQuery} 
                   onChange={e => setPedidoSearchQuery(e.target.value)} 
                 />
@@ -1896,7 +1929,7 @@ export const AdminDashboard: React.FC = () => {
                       <tr>
                         <th>Cód. Pedido</th>
                         <th>Data</th>
-                        <th>Cliente</th>
+                        <th>Cliente / Faturamento</th>
                         <th>Valor Total</th>
                         <th>Status Atual</th>
                         <th>Alterar Status</th>
@@ -1908,6 +1941,8 @@ export const AdminDashboard: React.FC = () => {
                         const valorTotal = getValorTotalPedido(pedido);
                         const dataFormatada = formatarDataPedido(pedido);
                         const codExibicao = pedido.codigoPedido || (pedido.id ? pedido.id.slice(0, 8) : '—');
+                        const isPJ = pedido.tipoFaturamento === 'PJ';
+                        const docFormatado = formatarDocumentoAdmin(pedido.cpf || pedido.clienteCpf, pedido.tipoFaturamento);
 
                         return (
                           <tr key={pedido.id}>
@@ -1918,8 +1953,28 @@ export const AdminDashboard: React.FC = () => {
                               {dataFormatada}
                             </td>
                             <td>
-                              <strong>{pedido.clienteNome || 'Cliente Não Identificado'}</strong>
-                              <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>{pedido.clienteEmail}</span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <strong>{pedido.clienteNome || 'Cliente Não Identificado'}</strong>
+                                {pedido.tipoFaturamento && (
+                                  <span
+                                    style={{
+                                      fontSize: '0.7rem',
+                                      fontWeight: 700,
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      backgroundColor: isPJ ? '#faf6f1' : '#f1f5f9',
+                                      color: isPJ ? '#8f7254' : '#475569',
+                                      border: isPJ ? '1px solid #D7B796' : '1px solid #cbd5e1',
+                                    }}
+                                  >
+                                    {isPJ ? 'PJ' : 'PF'}
+                                  </span>
+                                )}
+                              </div>
+                              <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>
+                                {pedido.clienteEmail}
+                                {docFormatado ? ` · ${isPJ ? 'CNPJ' : 'CPF'}: ${docFormatado}` : ''}
+                              </span>
                             </td>
                             <td>
                               <strong style={{ color: '#0f172a' }}>R$ {valorTotal.toFixed(2)}</strong>
@@ -1981,43 +2036,109 @@ export const AdminDashboard: React.FC = () => {
                   <div className={styles.orderDetailsGrid}>
                     
                     <div className={styles.orderInfoBlock}>
-                      <h4 className={styles.orderInfoTitle}>👤 Dados do Destinatário / Cliente</h4>
+                      <h4 className={styles.orderInfoTitle}>
+                        👤 Dados do Destinatário / Cliente{' '}
+                        {selectedOrderDetails.tipoFaturamento && (
+                          <span
+                            style={{
+                              marginLeft: '8px',
+                              fontSize: '0.72rem',
+                              padding: '2px 7px',
+                              borderRadius: '4px',
+                              backgroundColor: selectedOrderDetails.tipoFaturamento === 'PJ' ? '#faf6f1' : '#f1f5f9',
+                              color: selectedOrderDetails.tipoFaturamento === 'PJ' ? '#8f7254' : '#475569',
+                              border: selectedOrderDetails.tipoFaturamento === 'PJ' ? '1px solid #D7B796' : '1px solid #cbd5e1',
+                            }}
+                          >
+                            {selectedOrderDetails.tipoFaturamento === 'PJ' ? 'Pessoa Jurídica (PJ)' : 'Pessoa Física (PF)'}
+                          </span>
+                        )}
+                      </h4>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', fontSize: '0.875rem' }}>
                         <p style={{ margin: 0 }}>
-                          <strong>Nome Completo:</strong> {selectedOrderDetails.clienteNome || 'Não informado'}
+                          <strong>{selectedOrderDetails.tipoFaturamento === 'PJ' ? 'Razão Social:' : 'Nome Completo:'}</strong>{' '}
+                          {selectedOrderDetails.clienteNome || 'Não informado'}
                         </p>
+                        {selectedOrderDetails.tipoFaturamento === 'PJ' && selectedOrderDetails.clienteNomeFantasia && (
+                          <p style={{ margin: 0 }}>
+                            <strong>Nome Fantasia:</strong> {selectedOrderDetails.clienteNomeFantasia}
+                          </p>
+                        )}
                         <p style={{ margin: 0 }}>
                           <strong>E-mail:</strong> {selectedOrderDetails.clienteEmail || 'Não informado'}
                         </p>
                         <p style={{ margin: 0 }}>
-                          <strong>CPF:</strong> {selectedOrderDetails.cpf || selectedOrderDetails.clienteCpf || 'Não informado'}
+                          <strong>{selectedOrderDetails.tipoFaturamento === 'PJ' ? 'CNPJ:' : 'CPF:'}</strong>{' '}
+                          {formatarDocumentoAdmin(
+                            selectedOrderDetails.cpf || selectedOrderDetails.clienteCpf,
+                            selectedOrderDetails.tipoFaturamento
+                          ) || 'Não informado'}
                         </p>
                         <p style={{ margin: 0 }}>
                           <strong>Telefone/WhatsApp:</strong> {selectedOrderDetails.clienteTelefone || selectedOrderDetails.clienteFone || 'Não informado'}
                         </p>
+                        {selectedOrderDetails.tipoFaturamento === 'PJ' && (
+                          <>
+                            <p style={{ margin: 0 }}>
+                              <strong>Indicador IE:</strong>{' '}
+                              {formatarIndicadorIE(selectedOrderDetails.clienteIndicadorIE)}
+                            </p>
+                            {selectedOrderDetails.clienteInscricaoEstadual && (
+                              <p style={{ margin: 0 }}>
+                                <strong>Inscrição Estadual:</strong>{' '}
+                                {selectedOrderDetails.clienteInscricaoEstadual}
+                              </p>
+                            )}
+                          </>
+                        )}
                       </div>
 
                       {(() => {
                         const end = selectedOrderDetails.enderecoEntrega || selectedOrderDetails.endereco;
-                        if (!end) return null;
+                        const endFisc = selectedOrderDetails.enderecoFiscal;
 
-                        const logr = end.logradouro || end.rua || '';
-                        const uf = end.uf || end.estado || '';
+                        const logrFisc = endFisc?.logradouro || endFisc?.rua || '';
+                        const ufFisc = endFisc?.uf || endFisc?.estado || '';
+                        const temEndFiscalDiferente =
+                          Boolean(endFisc && logrFisc) &&
+                          (!endFisc?.id || endFisc.id !== end?.id) &&
+                          `${logrFisc}|${endFisc?.numero || ''}|${endFisc?.cep || ''}` !==
+                            `${end?.logradouro || end?.rua || ''}|${end?.numero || ''}|${end?.cep || ''}`;
 
                         return (
-                          <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #e2e8f0', fontSize: '0.875rem' }}>
-                            <strong style={{ display: 'block', marginBottom: '4px', color: '#334155' }}>📍 Endereço de Entrega:</strong>
-                            <p style={{ margin: '2px 0' }}>
-                              {logr}{end.numero ? `, ${end.numero}` : ''}
-                              {end.complemento ? ` - ${end.complemento}` : ''}
-                            </p>
-                            <p style={{ margin: '2px 0' }}>
-                              {end.bairro ? `Bairro ${end.bairro} — ` : ''}{end.cidade}/{uf}
-                            </p>
-                            <p style={{ margin: '2px 0' }}>
-                              <strong>CEP:</strong> {end.cep || 'Não informado'}
-                            </p>
-                          </div>
+                          <>
+                            {end && (
+                              <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #e2e8f0', fontSize: '0.875rem' }}>
+                                <strong style={{ display: 'block', marginBottom: '4px', color: '#334155' }}>📍 Endereço de Entrega:</strong>
+                                <p style={{ margin: '2px 0' }}>
+                                  {end.logradouro || end.rua || ''}{end.numero ? `, ${end.numero}` : ''}
+                                  {end.complemento ? ` - ${end.complemento}` : ''}
+                                </p>
+                                <p style={{ margin: '2px 0' }}>
+                                  {end.bairro ? `Bairro ${end.bairro} — ` : ''}{end.cidade}/{end.uf || end.estado || ''}
+                                </p>
+                                <p style={{ margin: '2px 0' }}>
+                                  <strong>CEP:</strong> {end.cep || 'Não informado'}
+                                </p>
+                              </div>
+                            )}
+
+                            {temEndFiscalDiferente && endFisc && (
+                              <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #cbd5e1', fontSize: '0.875rem' }}>
+                                <strong style={{ display: 'block', marginBottom: '4px', color: '#8f7254' }}>🧾 Endereço Fiscal (NF-e):</strong>
+                                <p style={{ margin: '2px 0' }}>
+                                  {logrFisc}{endFisc.numero ? `, ${endFisc.numero}` : ''}
+                                  {endFisc.complemento ? ` - ${endFisc.complemento}` : ''}
+                                </p>
+                                <p style={{ margin: '2px 0' }}>
+                                  {endFisc.bairro ? `Bairro ${endFisc.bairro} — ` : ''}{endFisc.cidade}/{ufFisc}
+                                </p>
+                                <p style={{ margin: '2px 0' }}>
+                                  <strong>CEP:</strong> {endFisc.cep || 'Não informado'}
+                                </p>
+                              </div>
+                            )}
+                          </>
                         );
                       })()}
                     </div>
