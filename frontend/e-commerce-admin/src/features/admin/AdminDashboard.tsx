@@ -1971,13 +1971,13 @@ export const AdminDashboard: React.FC = () => {
                                   </span>
                                 )}
                               </div>
-                              <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b' }}>
+                              <span style={{ display: 'block', fontSize: '0.78rem', color: '#64748b', overflowWrap: 'anywhere' }}>
                                 {pedido.clienteEmail}
                                 {docFormatado ? ` · ${isPJ ? 'CNPJ' : 'CPF'}: ${docFormatado}` : ''}
                               </span>
                             </td>
                             <td>
-                              <strong style={{ color: '#0f172a' }}>R$ {valorTotal.toFixed(2)}</strong>
+                              <strong style={{ color: '#0f172a', whiteSpace: 'nowrap' }}>R$ {valorTotal.toFixed(2)}</strong>
                             </td>
                             <td>
                               {renderBadgeStatusPedido(pedido.status)}
@@ -2016,19 +2016,19 @@ export const AdminDashboard: React.FC = () => {
 
             {selectedOrderDetails && (
               <div className={styles.modalOverlay} onClick={() => setSelectedOrderDetails(null)}>
-                <div className={styles.modalContentBox} onClick={e => e.stopPropagation()} style={{ maxWidth: '800px' }}>
+                <div className={styles.modalContentBox} onClick={e => e.stopPropagation()} style={{ maxWidth: '820px' }}>
                   <button className={styles.modalCloseButton} onClick={() => setSelectedOrderDetails(null)}>✕</button>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <div>
-                      <h3 style={{ fontSize: '1.3rem', color: '#0f172a', margin: 0 }}>
+                  <div className={styles.orderModalHeader}>
+                    <div style={{ minWidth: 0 }}>
+                      <h3 style={{ fontSize: '1.25rem', color: '#0f172a', margin: 0, overflowWrap: 'anywhere' }}>
                         Detalhes do Pedido #{selectedOrderDetails.codigoPedido || selectedOrderDetails.id}
                       </h3>
                       <p className={styles.infoText} style={{ margin: '2px 0 0 0' }}>
                         Realizado em {formatarDataPedido(selectedOrderDetails)}
                       </p>
                     </div>
-                    <div>
+                    <div style={{ flexShrink: 0 }}>
                       {renderBadgeStatusPedido(selectedOrderDetails.status)}
                     </div>
                   </div>
@@ -2041,7 +2041,7 @@ export const AdminDashboard: React.FC = () => {
                         {selectedOrderDetails.tipoFaturamento && (
                           <span
                             style={{
-                              marginLeft: '8px',
+                              marginLeft: '4px',
                               fontSize: '0.72rem',
                               padding: '2px 7px',
                               borderRadius: '4px',
@@ -2054,40 +2054,68 @@ export const AdminDashboard: React.FC = () => {
                           </span>
                         )}
                       </h4>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', fontSize: '0.875rem' }}>
-                        <p style={{ margin: 0 }}>
-                          <strong>{selectedOrderDetails.tipoFaturamento === 'PJ' ? 'Razão Social:' : 'Nome Completo:'}</strong>{' '}
-                          {selectedOrderDetails.clienteNome || 'Não informado'}
-                        </p>
+
+                      <div className={styles.orderFieldsGrid}>
+                        <div className={styles.orderFieldItem}>
+                          <span className={styles.orderFieldLabel}>
+                            {selectedOrderDetails.tipoFaturamento === 'PJ' ? 'Razão Social:' : 'Nome Completo:'}
+                          </span>
+                          <span className={styles.orderFieldValue}>
+                            {selectedOrderDetails.clienteNome || 'Não informado'}
+                          </span>
+                        </div>
+
                         {selectedOrderDetails.tipoFaturamento === 'PJ' && selectedOrderDetails.clienteNomeFantasia && (
-                          <p style={{ margin: 0 }}>
-                            <strong>Nome Fantasia:</strong> {selectedOrderDetails.clienteNomeFantasia}
-                          </p>
+                          <div className={styles.orderFieldItem}>
+                            <span className={styles.orderFieldLabel}>Nome Fantasia:</span>
+                            <span className={styles.orderFieldValue}>
+                              {selectedOrderDetails.clienteNomeFantasia}
+                            </span>
+                          </div>
                         )}
-                        <p style={{ margin: 0 }}>
-                          <strong>E-mail:</strong> {selectedOrderDetails.clienteEmail || 'Não informado'}
-                        </p>
-                        <p style={{ margin: 0 }}>
-                          <strong>{selectedOrderDetails.tipoFaturamento === 'PJ' ? 'CNPJ:' : 'CPF:'}</strong>{' '}
-                          {formatarDocumentoAdmin(
-                            selectedOrderDetails.cpf || selectedOrderDetails.clienteCpf,
-                            selectedOrderDetails.tipoFaturamento
-                          ) || 'Não informado'}
-                        </p>
-                        <p style={{ margin: 0 }}>
-                          <strong>Telefone/WhatsApp:</strong> {selectedOrderDetails.clienteTelefone || selectedOrderDetails.clienteFone || 'Não informado'}
-                        </p>
+
+                        <div className={styles.orderFieldItem}>
+                          <span className={styles.orderFieldLabel}>E-mail:</span>
+                          <span className={styles.orderFieldValue}>
+                            {selectedOrderDetails.clienteEmail || 'Não informado'}
+                          </span>
+                        </div>
+
+                        <div className={styles.orderFieldItem}>
+                          <span className={styles.orderFieldLabel}>
+                            {selectedOrderDetails.tipoFaturamento === 'PJ' ? 'CNPJ:' : 'CPF:'}
+                          </span>
+                          <span className={styles.orderFieldValue}>
+                            {formatarDocumentoAdmin(
+                              selectedOrderDetails.cpf || selectedOrderDetails.clienteCpf,
+                              selectedOrderDetails.tipoFaturamento
+                            ) || 'Não informado'}
+                          </span>
+                        </div>
+
+                        <div className={styles.orderFieldItem}>
+                          <span className={styles.orderFieldLabel}>Telefone/WhatsApp:</span>
+                          <span className={styles.orderFieldValue}>
+                            {selectedOrderDetails.clienteTelefone || selectedOrderDetails.clienteFone || 'Não informado'}
+                          </span>
+                        </div>
+
                         {selectedOrderDetails.tipoFaturamento === 'PJ' && (
                           <>
-                            <p style={{ margin: 0 }}>
-                              <strong>Indicador IE:</strong>{' '}
-                              {formatarIndicadorIE(selectedOrderDetails.clienteIndicadorIE)}
-                            </p>
+                            <div className={styles.orderFieldItem}>
+                              <span className={styles.orderFieldLabel}>Indicador IE:</span>
+                              <span className={styles.orderFieldValue}>
+                                {formatarIndicadorIE(selectedOrderDetails.clienteIndicadorIE)}
+                              </span>
+                            </div>
+
                             {selectedOrderDetails.clienteInscricaoEstadual && (
-                              <p style={{ margin: 0 }}>
-                                <strong>Inscrição Estadual:</strong>{' '}
-                                {selectedOrderDetails.clienteInscricaoEstadual}
-                              </p>
+                              <div className={styles.orderFieldItem}>
+                                <span className={styles.orderFieldLabel}>Inscrição Estadual:</span>
+                                <span className={styles.orderFieldValue}>
+                                  {selectedOrderDetails.clienteInscricaoEstadual}
+                                </span>
+                              </div>
                             )}
                           </>
                         )}
@@ -2108,32 +2136,32 @@ export const AdminDashboard: React.FC = () => {
                         return (
                           <>
                             {end && (
-                              <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #e2e8f0', fontSize: '0.875rem' }}>
+                              <div className={styles.orderAddressBox}>
                                 <strong style={{ display: 'block', marginBottom: '4px', color: '#334155' }}>📍 Endereço de Entrega:</strong>
-                                <p style={{ margin: '2px 0' }}>
+                                <p className={styles.orderAddressLine}>
                                   {end.logradouro || end.rua || ''}{end.numero ? `, ${end.numero}` : ''}
                                   {end.complemento ? ` - ${end.complemento}` : ''}
                                 </p>
-                                <p style={{ margin: '2px 0' }}>
+                                <p className={styles.orderAddressLine}>
                                   {end.bairro ? `Bairro ${end.bairro} — ` : ''}{end.cidade}/{end.uf || end.estado || ''}
                                 </p>
-                                <p style={{ margin: '2px 0' }}>
+                                <p className={styles.orderAddressLine}>
                                   <strong>CEP:</strong> {end.cep || 'Não informado'}
                                 </p>
                               </div>
                             )}
 
                             {temEndFiscalDiferente && endFisc && (
-                              <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #cbd5e1', fontSize: '0.875rem' }}>
+                              <div className={styles.orderAddressFiscalBox}>
                                 <strong style={{ display: 'block', marginBottom: '4px', color: '#8f7254' }}>🧾 Endereço Fiscal (NF-e):</strong>
-                                <p style={{ margin: '2px 0' }}>
+                                <p className={styles.orderAddressLine}>
                                   {logrFisc}{endFisc.numero ? `, ${endFisc.numero}` : ''}
                                   {endFisc.complemento ? ` - ${endFisc.complemento}` : ''}
                                 </p>
-                                <p style={{ margin: '2px 0' }}>
+                                <p className={styles.orderAddressLine}>
                                   {endFisc.bairro ? `Bairro ${endFisc.bairro} — ` : ''}{endFisc.cidade}/{ufFisc}
                                 </p>
-                                <p style={{ margin: '2px 0' }}>
+                                <p className={styles.orderAddressLine}>
                                   <strong>CEP:</strong> {endFisc.cep || 'Não informado'}
                                 </p>
                               </div>
@@ -2148,24 +2176,24 @@ export const AdminDashboard: React.FC = () => {
                         🚚 Dados de Envio, Embalagem e Rastreio
                       </h4>
                       
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '14px', fontSize: '0.875rem' }}>
-                        <div>
-                          <strong style={{ color: '#0369a1', display: 'block', marginBottom: '2px' }}>Transportadora / Serviço:</strong>
-                          <span style={{ fontWeight: 700, color: '#0284c7', fontSize: '0.95rem' }}>
+                      <div className={styles.orderFieldsGrid} style={{ marginBottom: '14px' }}>
+                        <div className={styles.orderFieldItem}>
+                          <span className={styles.orderFieldLabel} style={{ color: '#0369a1' }}>Transportadora / Serviço:</span>
+                          <span className={styles.orderFieldValue} style={{ fontWeight: 700, color: '#0284c7', fontSize: '0.92rem' }}>
                             {selectedOrderDetails.servicoFrete || 'Retirar na Loja'}
                           </span>
                         </div>
 
-                        <div>
-                          <strong style={{ color: '#0369a1', display: 'block', marginBottom: '2px' }}>Forma de Pagamento:</strong>
-                          <span style={{ fontWeight: 600, color: '#0f172a', background: '#e0f2fe', padding: '2px 8px', borderRadius: '4px' }}>
+                        <div className={styles.orderFieldItem}>
+                          <span className={styles.orderFieldLabel} style={{ color: '#0369a1' }}>Forma de Pagamento:</span>
+                          <span className={styles.orderFieldValue} style={{ fontWeight: 600, color: '#0f172a', background: '#e0f2fe', padding: '2px 8px', borderRadius: '4px', width: 'fit-content' }}>
                             💳 {selectedOrderDetails.metodoPagamento || 'PIX / Cartão'}
                           </span>
                         </div>
 
-                        <div>
-                          <strong style={{ color: '#0369a1', display: 'block', marginBottom: '2px' }}>Dimensões (A x L x C):</strong>
-                          <span>
+                        <div className={styles.orderFieldItem}>
+                          <span className={styles.orderFieldLabel} style={{ color: '#0369a1' }}>Dimensões (A x L x C):</span>
+                          <span className={styles.orderFieldValue}>
                             {selectedOrderDetails.alturaCaixa ?? 8}cm x {selectedOrderDetails.larguraCaixa ?? 16}cm x {selectedOrderDetails.comprimentoCaixa ?? 24}cm ({selectedOrderDetails.pesoTotal ?? 0.3} kg)
                           </span>
                         </div>
@@ -2181,10 +2209,10 @@ export const AdminDashboard: React.FC = () => {
 
                           if (codigoExistente && !selectedOrderDetails.isEditingRastreio) {
                             return (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f0fdf4', border: '1px solid #86efac', padding: '8px 12px', borderRadius: '6px' }}>
-                                <div>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', background: '#f0fdf4', border: '1px solid #86efac', padding: '8px 12px', borderRadius: '6px' }}>
+                                <div style={{ minWidth: 0 }}>
                                   <span style={{ fontSize: '0.75rem', color: '#166534', display: 'block', fontWeight: 600 }}>✅ CÓDIGO SALVO E REGISTRADO:</span>
-                                  <strong style={{ fontSize: '1.05rem', color: '#15803d', letterSpacing: '1px' }}>
+                                  <strong style={{ fontSize: '1.05rem', color: '#15803d', letterSpacing: '1px', overflowWrap: 'anywhere' }}>
                                     {codigoExistente}
                                   </strong>
                                 </div>
@@ -2203,7 +2231,7 @@ export const AdminDashboard: React.FC = () => {
                           }
 
                           return (
-                            <div style={{ display: 'flex', gap: '8px' }}>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                               <input 
                                 type="text" 
                                 placeholder="Ex: NL123456789BR ou LOG12983" 
@@ -2265,21 +2293,21 @@ export const AdminDashboard: React.FC = () => {
                           const tamanhoExibicao = item.tamanho || item.tamanhoNome || 'Único';
 
                           return (
-                            <div key={item.id || idx} className={styles.orderItemRow} style={{ padding: '10px 0', borderBottom: '1px solid #e2e8f0' }}>
+                            <div key={item.id || idx} className={styles.orderItemRow} style={{ padding: '10px 0', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
                               <img 
                                 src={imagemCapa} 
                                 alt={nomeProd} 
                                 className={styles.orderItemThumb}
-                                style={{ width: '60px', height: '60px', borderRadius: '8px', objectFit: 'cover', border: '1px solid #cbd5e1' }}
+                                style={{ width: '60px', height: '60px', borderRadius: '8px', objectFit: 'cover', border: '1px solid #cbd5e1', flexShrink: 0 }}
                               />
                               
-                              <div className={styles.orderItemDetails} style={{ marginLeft: '8px' }}>
+                              <div className={styles.orderItemDetails} style={{ marginLeft: '4px' }}>
                                 <div className={styles.orderItemName} style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a' }}>
                                   {nomeProd}
                                 </div>
                                 
                                 <div style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0 4px 0' }}>
-                                  <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                                  <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', border: '1px solid #e2e8f0', overflowWrap: 'anywhere' }}>
                                     ID Produto: {produtoIdExibicao}
                                   </code>
                                 </div>
@@ -2323,13 +2351,13 @@ export const AdminDashboard: React.FC = () => {
                       {selectedOrderDetails.historicoStatus && selectedOrderDetails.historicoStatus.length > 0 ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
                           {selectedOrderDetails.historicoStatus.map((hist, idx) => (
-                            <div key={hist.id || idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.875rem', borderLeft: '2px solid #cbd5e1', paddingLeft: '12px' }}>
+                            <div key={hist.id || idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', fontSize: '0.875rem', borderLeft: '2px solid #cbd5e1', paddingLeft: '12px' }}>
                               <span style={{ color: '#64748b', minWidth: '130px' }}>
                                 {new Date(hist.data).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                               </span>
                               {renderBadgeStatusPedido(hist.status as Pedido['status'])}
                               {hist.observacao && (
-                                <span style={{ color: '#475569', fontStyle: 'italic' }}>
+                                <span style={{ color: '#475569', fontStyle: 'italic', overflowWrap: 'anywhere' }}>
                                   - {hist.observacao}
                                 </span>
                               )}

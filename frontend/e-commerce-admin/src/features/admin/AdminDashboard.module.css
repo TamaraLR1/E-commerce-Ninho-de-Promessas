@@ -138,7 +138,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  flex-wrap: wrap; /* Permite quebrar com segurança em telas menores */
+  flex-wrap: wrap;
 }
 
 .form {
@@ -249,6 +249,7 @@
   padding: 12px 15px;
   border-radius: 6px;
   border: 1px solid #cbd5e1;
+  margin-bottom: 12px;
 }
 
 .colorStockHeader {
@@ -400,6 +401,18 @@
   border-radius: 6px;
   overflow: hidden;
   border: 1px solid #cbd5e1;
+  cursor: grab;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+  background-color: #fff;
+}
+
+.previewThumbContainer:active {
+  cursor: grabbing;
+}
+
+.previewThumbContainer.isFirstImage {
+  border: 2px solid #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
 }
 
 .imageThumb {
@@ -632,8 +645,10 @@
 
 .catalogCardImage {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: 250px;
+  object-fit: contain;
+  object-position: center;
+  background-color: #f9f9f9;
 }
 
 .catalogCardInfo {
@@ -770,6 +785,7 @@
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 25px;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
   position: relative;
@@ -791,6 +807,7 @@
   justify-content: center;
   font-weight: bold;
   color: #333;
+  z-index: 5;
 }
 
 .modalGridContainer {
@@ -801,10 +818,11 @@
 
 .modalMainImage {
   width: 100%;
-  height: 300px;
-  object-fit: cover;
+  max-height: 400px;
+  object-fit: contain;
   border-radius: 8px;
   border: 1px solid #e2e8f0;
+  background-color: #f9f9f9;
 }
 
 .modalThumbnailsList {
@@ -884,6 +902,12 @@
   color: #475569;
   line-height: 1.5;
   margin-bottom: 20px;
+  word-break: break-word;
+}
+
+.modalDescriptionText li {
+  list-style-type: disc;
+  margin-left: 40px;
 }
 
 .modalSectionGroup {
@@ -1361,21 +1385,6 @@
 .card-produto img {
   width: 100%;
   height: 250px;
-  object-fit: contain;
-  background-color: #f9f9f9;
-}
-
-.catalogCardImage {
-  width: 100%;
-  height: 250px;
-  object-fit: contain;
-  object-position: center;
-  background-color: #f9f9f9;
-}
-
-.modalMainImage {
-  width: 100%;
-  max-height: 400px;
   object-fit: contain;
   background-color: #f9f9f9;
 }
@@ -1955,81 +1964,13 @@
   cursor: pointer;
 }
 
-.modalDescriptionText {
-  line-height: 1.5; /* Altura de linha agradável */
-  word-break: break-word;
-}
-
-.modalDescriptionText li {
-  list-style-type: disc;
-  margin-left: 40px;
-}
-
-.colorStockConfigCard {
-  background: #f8fafc;
-  padding: 15px;
-  border-radius: 8px;
-  border: 1px solid #e9ecef;
-  margin-top: 10px;
-}
-
-.colorStockTitle {
-  font-weight: bold;
-  margin-bottom: 10px;
-  display: block;
-  color: #0f172a;
-}
-
-.colorStockItem {
-  background: #fff;
-  padding: 12px 15px;
-  border-radius: 6px;
-  border: 1px solid #cbd5e1;
-  margin-bottom: 12px;
-}
-
-/* --- ESTILOS PARA DRAG AND DROP DE IMAGENS --- */
-.previewThumbContainer {
-  position: relative;
-  width: 70px;
-  height: 70px;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid #cbd5e1;
-  cursor: grab;
-  transition: transform 0.2s ease, border-color 0.2s ease;
-  background-color: #fff;
-}
-
-.previewThumbContainer:active {
-  cursor: grabbing;
-}
-
-.previewThumbContainer.isFirstImage {
-  border: 2px solid #2563eb;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
-}
-
-.badgeCapaImage {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  background: #2563eb;
-  color: #fff;
-  font-size: 8px;
-  padding: 1px 4px;
-  border-radius: 3px;
-  z-index: 2;
-  font-weight: bold;
-}
-
 /* --- ESTILOS PARA O SELO DE NOVIDADE --- */
 .badgeNovidadeVitrine {
   position: absolute;
   top: 10px;
   left: 10px;
-  background-color: #fef08a; /* Amarelo suave */
-  color: #854d0e;          /* Texto escuro contrastante */
+  background-color: #fef08a;
+  color: #854d0e;
   font-size: 0.85rem;
   font-weight: 600;
   padding: 4px 8px;
@@ -2042,8 +1983,8 @@
   position: absolute;
   top: 10px;
   right: 10px;
-  background-color: #fef08a; /* Amarelo suave */
-  color: #854d0e;          /* Texto vermelho escuro contrastante */
+  background-color: #fef08a;
+  color: #854d0e;
   font-size: 0.85rem;
   font-weight: 600;
   padding: 4px 8px;
@@ -2189,6 +2130,16 @@
   cursor: pointer;
 }
 
+.orderModalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding-right: 44px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
 .orderDetailsGrid {
   display: flex;
   flex-direction: column;
@@ -2200,15 +2151,72 @@
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 16px;
+  min-width: 0;
 }
 
 .orderInfoTitle {
   font-size: 0.9rem;
   font-weight: 700;
   color: #0f172a;
-  margin-bottom: 10px;
+  margin-top: 0;
+  margin-bottom: 12px;
   border-bottom: 1px solid #e2e8f0;
-  padding-bottom: 6px;
+  padding-bottom: 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.orderFieldsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px 16px;
+  font-size: 0.875rem;
+  width: 100%;
+}
+
+.orderFieldItem {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.orderFieldLabel {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.orderFieldValue {
+  color: #0f172a;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
+}
+
+.orderAddressBox {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.875rem;
+  min-width: 0;
+}
+
+.orderAddressFiscalBox {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #cbd5e1;
+  font-size: 0.875rem;
+  min-width: 0;
+}
+
+.orderAddressLine {
+  margin: 2px 0;
+  color: #1e293b;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .orderItemList {
@@ -2239,23 +2247,27 @@
 
 .orderItemDetails {
   flex: 1;
+  min-width: 0;
 }
 
 .orderItemName {
   font-weight: 600;
   color: #0f172a;
   font-size: 0.875rem;
+  overflow-wrap: anywhere;
 }
 
 .orderItemSub {
   font-size: 0.78rem;
   color: #64748b;
+  overflow-wrap: anywhere;
 }
 
 .orderItemPrice {
   font-weight: 700;
   color: #16a34a;
   font-size: 0.9rem;
+  white-space: nowrap;
 }
 
 .chartsGridRow {
@@ -2265,13 +2277,12 @@
   margin-top: 20px;
 }
 
-
 @media (max-width: 768px) {
   .chartsGridRow {
-    grid-template-columns: 1fr !important; /* Força 1 coluna em telas menores */
+    grid-template-columns: 1fr !important;
     gap: 16px !important;
   }
-  /* Garante que o contêiner do Recharts não transborde na tela do telemóvel */
+
   .chartCardBox {
     width: 100% !important;
     overflow-x: hidden;
