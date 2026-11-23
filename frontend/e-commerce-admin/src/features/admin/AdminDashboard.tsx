@@ -21,8 +21,8 @@ interface ProductMaster {
   rawSizes?: { tamanhoId: string; corId?: string; estoque?: number; ativo?: boolean; tamanho?: { nome: string; ativo?: boolean; ordem?: number }; cor?: { nome: string; ativo?: boolean } }[];
   rawColors?: { corId: string; id?: string; cor?: { nome: string }; nome?: string }[];
   ativo?: boolean | number;
-  criadoPor?: { nome: string };     
-  atualizadoPor?: { nome: string }; 
+  criadoPor?: { nome: string };
+  atualizadoPor?: { nome: string };
   isNovidade?: boolean;
 }
 
@@ -129,6 +129,18 @@ interface Pedido {
   alturaCaixa?: number;
   larguraCaixa?: number;
   comprimentoCaixa?: number;
+
+  // Dados fiscais / NF-e (Bling)
+  blingNfeId?: string | number | null;
+  nfeNumero?: string | null;
+  nfeSerie?: string | null;
+  chaveAcessoNfe?: string | null;
+  nfeStatus?: string | null;
+  nfeLinkDanfe?: string | null;
+  nfeLinkXml?: string | null;
+  nfeErroMensagem?: string | null;
+  temNfeAutorizada?: boolean;
+
   enderecoEntrega?: EnderecoEntrega;
   endereco?: EnderecoEntrega;
   enderecoFiscal?: EnderecoEntrega | null;
@@ -220,6 +232,8 @@ export const AdminDashboard: React.FC = () => {
   const [pedidoSearchQuery, setPedidoSearchQuery] = useState('');
   const [pedidoStatusFilter, setPedidoStatusFilter] = useState<string>('todos');
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<Pedido | null>(null);
+  const [emitindoNfeId, setEmitindoNfeId] = useState<string | null>(null);
+  const [sincronizandoNfeId, setSincronizandoNfeId] = useState<string | null>(null);
 
   const [logsList, setLogsList] = useState<LogAtividade[]>([]);
   const [logSearchQuery, setLogSearchQuery] = useState('');
@@ -246,9 +260,9 @@ export const AdminDashboard: React.FC = () => {
   const [newDesc, setNewDesc] = useState('');
   const [newPrice, setNewPrice] = useState('');
   const [newIsNovidade, setNewIsNovidade] = useState<boolean>(false);
-  
+
   const [colorImages, setColorImages] = useState<{ [corId: string]: Array<{ type: 'file' | 'url'; file?: File; url: string }> }>({});
-  
+
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [colorSizeConfigs, setColorSizeConfigs] = useState<ColorSizeConfig[]>([]);
 
@@ -285,7 +299,7 @@ export const AdminDashboard: React.FC = () => {
   const [stockInputValues, setStockInputValues] = useState<{ [key: string]: string }>({});
   const [loadingMovimentacao, setLoadingMovimentacao] = useState<{ [key: string]: boolean }>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  
+
   const API_URL = (() => {
     if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) {
       return import.meta.env.VITE_API_URL;
@@ -369,11 +383,80 @@ export const AdminDashboard: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         setPedidosList(data);
+        if (selectedOrderDetails) {
+          const atualizado = data.find((p: Pedido) => p.id === selectedOrderDetails.id);
+          if (atualizado) setSelectedOrderDetails(atualizado);
+        }
       }
     } catch (err) {
       console.error('Erro ao carregar lista de pedidos', err);
     } finally {
       setPedidosLoading(false);
+    }
+  };
+
+  const aplicarDadosFiscaisNoEstado = (pedidoId: string, fiscal: any) => {
+    if (!fiscal) return;
+    setPedidosList(prev =>
+      prev.map(p => (p.id === pedidoId ? { ...p, ...fiscal } : p))
+    );
+    setSelectedOrderDetails(prev =>
+      prev && prev.id === pedidoId ? { ...prev, ...fiscal } : prev
+    );
+  };
+
+  const handleEmitirNfePedido = async (pedidoId: string) => {
+    try {
+      setEmitindoNfeId(pedidoId);
+      const response = await fetch(`${API_URL}/bling/pedidos/${pedidoId}/emitir`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        if (data?.fiscal) {
+          aplicarDadosFiscaisNoEstado(pedidoId, data.fiscal);
+        }
+        throw new Error(data?.message || data?.error || 'Erro ao emitir NF-e no Bling.');
+      }
+
+      if (data?.fiscal) {
+        aplicarDadosFiscaisNoEstado(pedidoId, data.fiscal);
+      } else {
+        await carregarPedidos();
+      }
+
+      alert(data?.message || 'NF-e processada com sucesso!');
+    } catch (err: any) {
+      alert(err.message || 'Erro ao emitir NF-e.');
+    } finally {
+      setEmitindoNfeId(null);
+    }
+  };
+
+  const handleSincronizarNfePedido = async (pedidoId: string) => {
+    try {
+      setSincronizandoNfeId(pedidoId);
+      const response = await fetch(`${API_URL}/bling/pedidos/${pedidoId}/status`, {
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || 'Erro ao consultar status da NF-e.');
+      }
+
+      if (data?.fiscal) {
+        aplicarDadosFiscaisNoEstado(pedidoId, data.fiscal);
+      } else {
+        await carregarPedidos();
+      }
+    } catch (err: any) {
+      alert(err.message || 'Erro ao sincronizar NF-e.');
+    } finally {
+      setSincronizandoNfeId(null);
     }
   };
 
@@ -391,7 +474,7 @@ export const AdminDashboard: React.FC = () => {
 
       if (data.pedido) {
         setPedidosList(prev => prev.map(p => p.id === pedidoId ? data.pedido : p));
-        
+
         if (selectedOrderDetails && selectedOrderDetails.id === pedidoId) {
           setSelectedOrderDetails(data.pedido);
         }
@@ -417,7 +500,7 @@ export const AdminDashboard: React.FC = () => {
 
       if (response.ok) {
         localStorage.removeItem('@EcommerceAdmin:logged');
-        window.location.href = '/'; 
+        window.location.href = '/';
       } else {
         alert('Erro ao realizar logout.');
       }
@@ -502,7 +585,7 @@ export const AdminDashboard: React.FC = () => {
         const formattedProducts: ProductMaster[] = data.map((p: any) => {
           const estoqueList = p.estoques || p.tamanhos || [];
           const coresUnicasMap = new Map();
-          
+
           estoqueList.forEach((item: any) => {
             if (item.cor) {
               coresUnicasMap.set(item.cor.id, {
@@ -533,7 +616,7 @@ export const AdminDashboard: React.FC = () => {
             rawSizes: estoqueList,
             rawColors: p.cores || [],
             ativo: p.ativo,
-            criadoPor: p.criadoPor,         
+            criadoPor: p.criadoPor,
             atualizadoPor: p.atualizadoPor,
             isNovidade: p.isNovidade !== undefined ? Boolean(p.isNovidade) : false
           };
@@ -559,7 +642,7 @@ export const AdminDashboard: React.FC = () => {
           quantity: m.quantidade,
           reason: m.motivo?.nome || m.motivo || 'Manual',
           date: new Date(m.data).toLocaleDateString('pt-BR'),
-          admin: m.admin 
+          admin: m.admin
         }));
         setMovements(formattedMovements);
       }
@@ -621,18 +704,18 @@ export const AdminDashboard: React.FC = () => {
 
     if (estaAtiva) {
       const temVinculo = products.some(p => p.category === cat.nome);
-      
+
       if (!temVinculo) {
         if (!window.confirm(`Esta categoria não possui vínculos com produtos. Deseja excluí-la permanentemente do banco de dados?`)) return;
 
         try {
-          const response = await fetch(`${API_URL}/categorias/${cat.id}/inativar`, {            
+          const response = await fetch(`${API_URL}/categorias/${cat.id}/inativar`, {
             method: 'PATCH',
             credentials: 'include',
           });
           const data = await response.json();
           if (!response.ok) throw new Error(data.message || 'Erro ao excluir a categoria.');
-          
+
           alert('Categoria excluída permanentemente com sucesso!');
           carregarCategorias();
           return;
@@ -644,7 +727,7 @@ export const AdminDashboard: React.FC = () => {
     }
 
     const acaoTexto = estaAtiva ? 'desativar' : 'ativar';
-    
+
     if (!window.confirm(`Tem certeza que deseja ${acaoTexto} esta categoria?`)) return;
 
     try {
@@ -655,7 +738,7 @@ export const AdminDashboard: React.FC = () => {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || `Erro ao ${acaoTexto} a categoria.`);
-      
+
       alert(data.message || `Categoria ${acaoTexto === 'desativar' ? 'desativada' : 'ativada'} com sucesso!`);
       carregarCategorias();
     } catch (err: any) {
@@ -679,10 +762,10 @@ export const AdminDashboard: React.FC = () => {
         method,
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ 
-          nome: novoTamanhoNome, 
-          slug, 
-          ordem: novoTamanhoOrdem !== '' ? Number(novoTamanhoOrdem) : 0 
+        body: JSON.stringify({
+          nome: novoTamanhoNome,
+          slug,
+          ordem: novoTamanhoOrdem !== '' ? Number(novoTamanhoOrdem) : 0
         }),
       });
 
@@ -710,11 +793,11 @@ export const AdminDashboard: React.FC = () => {
   const handleDesativarTamanho = async (parametro: Tamanho | string) => {
     const id = typeof parametro === 'string' ? parametro : parametro.id;
     const tamanhoObj = typeof parametro === 'object' ? parametro : tamanhosList.find(t => t.id === id);
-    
+
     const estaAtivo = tamanhoObj ? tamanhoObj.ativo !== false : true;
 
     if (estaAtivo && tamanhoObj) {
-      const temVinculo = products.some(p => 
+      const temVinculo = products.some(p =>
         p.rawSizes?.some(s => s.tamanhoId === tamanhoObj.id)
       );
 
@@ -728,7 +811,7 @@ export const AdminDashboard: React.FC = () => {
           });
           const data = await response.json();
           if (!response.ok) throw new Error(data.message || 'Erro ao excluir o tamanho.');
-          
+
           alert('Tamanho excluído permanentemente com sucesso!');
           await Promise.all([
             carregarTamanhos(),
@@ -745,7 +828,7 @@ export const AdminDashboard: React.FC = () => {
     const acaoTexto = estaAtivo ? 'desativar' : 'ativar';
 
     if (!window.confirm(`Tem certeza que deseja ${acaoTexto} este tamanho?`)) return;
-    
+
     try {
       const endpoint = estaAtivo ? 'inativar' : 'ativar';
       const response = await fetch(`${API_URL}/tamanhos/${id}/${endpoint}`, {
@@ -754,9 +837,9 @@ export const AdminDashboard: React.FC = () => {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || `Erro ao ${acaoTexto} o tamanho.`);
-      
+
       alert(data.message || `Status do tamanho alterado com sucesso!`);
-      
+
       await Promise.all([
         carregarTamanhos(),
         carregarProdutos()
@@ -809,11 +892,11 @@ export const AdminDashboard: React.FC = () => {
   const handleDesativarCor = async (parametro: Cor | string) => {
     const id = typeof parametro === 'string' ? parametro : parametro.id;
     const corObj = typeof parametro === 'object' ? parametro : coresList.find(c => c.id === id);
-    
+
     const estaAtivo = corObj ? corObj.ativo !== false : true;
 
     if (estaAtivo && corObj) {
-      const temVinculo = products.some(p => 
+      const temVinculo = products.some(p =>
         p.rawSizes?.some(s => s.corId === corObj.id)
       );
 
@@ -827,7 +910,7 @@ export const AdminDashboard: React.FC = () => {
           });
           const data = await response.json();
           if (!response.ok) throw new Error(data.message || 'Erro ao excluir a cor.');
-          
+
           alert('Cor excluída permanentemente com sucesso!');
           await Promise.all([
             carregarCores(),
@@ -844,7 +927,7 @@ export const AdminDashboard: React.FC = () => {
     const acaoTexto = estaAtivo ? 'desativar' : 'ativar';
 
     if (!window.confirm(`Tem certeza que deseja ${acaoTexto} esta cor?`)) return;
-    
+
     try {
       const endpoint = estaAtivo ? 'inativar' : 'ativar';
       const response = await fetch(`${API_URL}/cores/${id}/${endpoint}`, {
@@ -853,9 +936,9 @@ export const AdminDashboard: React.FC = () => {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || `Erro ao ${acaoTexto} a cor.`);
-      
+
       alert(data.message || `Status da cor alterado com sucesso!`);
-      
+
       await Promise.all([
         carregarCores(),
         carregarProdutos()
@@ -891,18 +974,18 @@ export const AdminDashboard: React.FC = () => {
       setNovoMotivoTipo('ENTRADA');
       setEditingMotivoId(null);
       carregarMotivosEstoque();
-      
+
       alert(isEditing ? 'Motivo atualizado com sucesso!' : 'Motivo cadastrado com sucesso!');
     } catch (err: any) {
       setMotivoError(err.message || 'Erro ao conectar com o servidor.');
     } finally {
       setMotivoLoading(false);
     }
-  };  
+  };
 
   const handleStartEditMotivo = (motivo: any) => {
     const idToEdit = motivo.id || motivo._id;
-  
+
     setEditingMotivoId(idToEdit);
     setNovoMotivoNome(motivo.nome);
     setNovoMotivoTipo(motivo.tipo);
@@ -925,7 +1008,7 @@ export const AdminDashboard: React.FC = () => {
           });
           const data = await response.json();
           if (!response.ok) throw new Error(data.message || 'Erro ao excluir o motivo de estoque.');
-          
+
           alert('Motivo de estoque excluído permanentemente com sucesso!');
           carregarMotivosEstoque();
           return;
@@ -939,7 +1022,7 @@ export const AdminDashboard: React.FC = () => {
     const acaoTexto = estaAtivo ? 'desativar' : 'ativar';
 
     if (!window.confirm(`Tem certeza que deseja ${acaoTexto} este motivo de estoque?`)) return;
-    
+
     try {
       const response = await fetch(`${API_URL}/motivos-estoque/${id}/inativar`, {
         method: 'PATCH',
@@ -947,7 +1030,7 @@ export const AdminDashboard: React.FC = () => {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Erro ao alterar o status do motivo.');
-      
+
       alert(data.message || 'Status do motivo alterado com sucesso!');
       carregarMotivosEstoque();
     } catch (err: any) {
@@ -967,7 +1050,7 @@ export const AdminDashboard: React.FC = () => {
   const handleColorFileChange = (corId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const filesArray = Array.from(e.target.files);
-    
+
     const currentList = colorImages[corId] || [];
 
     if (currentList.length + filesArray.length > 6) {
@@ -1114,7 +1197,7 @@ export const AdminDashboard: React.FC = () => {
     setNewPrice(prod.originalPrice.toString());
     setNewGender(prod.gender || 'Unissex');
     setNewIsNovidade(prod.isNovidade || false);
-    
+
     const catMatch = categoriasList.find(c => c.nome === prod.category);
     if (catMatch) {
       setNewCategoryId(catMatch.id);
@@ -1122,7 +1205,7 @@ export const AdminDashboard: React.FC = () => {
 
     const rawSizesAtivos = prod.rawSizes ? prod.rawSizes.filter((item: any) => item.ativo !== false) : [];
 
-    const coresIds: string[] = rawSizesAtivos.length > 0 
+    const coresIds: string[] = rawSizesAtivos.length > 0
       ? rawSizesAtivos.map(t => t.corId).filter((id): id is string => Boolean(id))
       : (prod.colors || []).map((c: any) => c.id).filter((id): id is string => Boolean(id));
     const uniqueColors = Array.from(new Set(coresIds));
@@ -1137,14 +1220,14 @@ export const AdminDashboard: React.FC = () => {
           type: 'url' as const,
           url: img.url
         })) || [];
-      
+
       initialColorImagesMap[cId] = imgsDaCor;
     });
     setColorImages(initialColorImagesMap);
 
     if (rawSizesAtivos.length > 0) {
       const mapaConfig = new Map<string, string[]>();
-      
+
       rawSizesAtivos.forEach((item: any) => {
         const cId = item.corId || item.cor?.id || '';
         const tId = item.tamanhoId;
@@ -1179,7 +1262,7 @@ export const AdminDashboard: React.FC = () => {
     setColorImages({});
     setNewGender('Unissex');
     setNewIsNovidade(false);
-    setActiveTab('lista'); 
+    setActiveTab('lista');
   };
 
   const handleCreateOrUpdateProduct = async (e: React.FormEvent) => {
@@ -1188,7 +1271,7 @@ export const AdminDashboard: React.FC = () => {
       alert('Preencha o nome, preço e selecione uma categoria.');
       return;
     }
-    
+
     if (selectedColors.length === 0) {
       alert('Selecione pelo menos uma cor/estampa para o produto.');
       return;
@@ -1215,7 +1298,7 @@ export const AdminDashboard: React.FC = () => {
           const val = estoquesMap[tId];
           const tamObj = tamanhosList.find(t => t.id === tId);
           const numVal = Number(val);
-          
+
           if (val === undefined || val === '' || isNaN(numVal) || numVal <= 0) {
             alert(`Obrigatório pelo menos uma unidade na variação especifica! A cor "${corObj?.nome || 'Selecionada'}" no tamanho "${tamObj?.nome || tId}" precisa ter estoque inicial maior que zero.`);
             return;
@@ -1245,7 +1328,7 @@ export const AdminDashboard: React.FC = () => {
     colorSizeConfigs.forEach(config => {
       const tamanhosIds = config.tamanhosIds || [];
       const estoquesMap = config.estoques || {};
-      
+
       if (tamanhosIds.length === 0) {
         const inputVal = estoquesMap[''] || '1';
         let qtdEstoque = parseInt(inputVal, 10);
@@ -1297,7 +1380,7 @@ export const AdminDashboard: React.FC = () => {
       formData.append('categoryId', newCategoryId);
       formData.append('genero', newGender);
       formData.append('isNovidade', String(newIsNovidade));
-      
+
       formData.append('tamanhos', JSON.stringify(arrayPlanoTamanhos));
 
       const mapeamentoImagensMantidas: { [corId: string]: string[] } = {};
@@ -1328,7 +1411,7 @@ export const AdminDashboard: React.FC = () => {
       if (!response.ok) throw new Error(data.message || 'Erro ao salvar produto no servidor.');
 
       alert(editingProductId ? 'Produto atualizado com sucesso!' : 'Produto cadastrado com sucesso!');
-      
+
       handleCancelEdit();
       carregarProdutos();
       setActiveTab('lista');
@@ -1340,7 +1423,7 @@ export const AdminDashboard: React.FC = () => {
   const matchedProductForOffer = products.find(p => p.id === searchOfferId);
 
   const filteredProducts = products.filter(prod => {
-    const matchesSearch = 
+    const matchesSearch =
       prod.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       prod.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
       prod.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1401,7 +1484,7 @@ export const AdminDashboard: React.FC = () => {
   });
 
   const filteredStockProducts = products.filter(prod => {
-    const matchesSearch = stockSearchQuery.trim() === '' || 
+    const matchesSearch = stockSearchQuery.trim() === '' ||
       prod.name.toLowerCase().includes(stockSearchQuery.toLowerCase()) ||
       prod.id.toLowerCase().includes(stockSearchQuery.toLowerCase());
 
@@ -1453,7 +1536,7 @@ export const AdminDashboard: React.FC = () => {
     const termoDocLimpo = pedidoSearchQuery.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
     const docLimpo = docRaw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 
-    const matchesSearch = 
+    const matchesSearch =
       (pedido.clienteNome || '').toLowerCase().includes(termoBusca) ||
       (pedido.clienteEmail || '').toLowerCase().includes(termoBusca) ||
       docRaw.toLowerCase().includes(termoBusca) ||
@@ -1499,7 +1582,7 @@ export const AdminDashboard: React.FC = () => {
     setTimeout(() => {
       setCopiedId(null);
     }, 1500);
-  };    
+  };
 
   const renderBadgeStatusPedido = (status: Pedido['status']) => {
     switch (status) {
@@ -1518,6 +1601,39 @@ export const AdminDashboard: React.FC = () => {
       default:
         return <span className={styles.orderStatusBadge}>{status}</span>;
     }
+  };
+
+  const renderBadgeStatusNfe = (pedido: Pedido) => {
+    const autorizada = Boolean(
+      pedido.temNfeAutorizada ||
+      (pedido.nfeStatus === 'AUTORIZADA' && pedido.chaveAcessoNfe)
+    );
+    if (autorizada) {
+      return (
+        <span style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '3px 8px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700 }}>
+          ✅ AUTORIZADA
+        </span>
+      );
+    }
+    if (pedido.nfeStatus === 'PROCESSANDO') {
+      return (
+        <span style={{ backgroundColor: '#fef9c3', color: '#854d0e', padding: '3px 8px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700 }}>
+          ⏳ PROCESSANDO
+        </span>
+      );
+    }
+    if (pedido.nfeStatus === 'REJEITADA') {
+      return (
+        <span style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '3px 8px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700 }}>
+          ❌ REJEITADA
+        </span>
+      );
+    }
+    return (
+      <span style={{ backgroundColor: '#f1f5f9', color: '#475569', padding: '3px 8px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700 }}>
+        📄 NÃO EMITIDA
+      </span>
+    );
   };
 
   const formatarDocumentoAdmin = (doc?: string, tipo?: 'PF' | 'PJ' | null) => {
@@ -1576,7 +1692,7 @@ export const AdminDashboard: React.FC = () => {
       <aside className={`${styles.sidebar} ${isMenuOpen ? styles.sidebarOpen : ''}`}>
         <div>
           <h2>Painel Admin</h2>
-          
+
           <div className={styles.userInfoSection}>
             <p className={styles.userInfoLabel}>Logado como:</p>
             <p className={styles.userInfoValue}>
@@ -1588,9 +1704,9 @@ export const AdminDashboard: React.FC = () => {
             <div className={`${styles.navItem} ${activeTab === 'dashboard' ? styles.active : ''}`} onClick={() => { setActiveTab('dashboard'); setIsMenuOpen(false); }}>📊 Dashboard</div>
             <div className={`${styles.navItem} ${activeTab === 'relatorio-vendas' ? styles.active : ''}`} onClick={() => { setActiveTab('relatorio-vendas'); setIsMenuOpen(false); }}>📈 Relatório de Vendas</div>
             <div className={`${styles.navItem} ${activeTab === 'pedidos' ? styles.active : ''}`} onClick={() => { setActiveTab('pedidos'); setIsMenuOpen(false); }}>🛍️ Gerenciador de Pedidos ({pedidosList.length})</div>
-            <div 
-              className={`${styles.navItem} ${activeTab === 'cadastro' && !editingProductId ? styles.active : ''}`} 
-              onClick={() => { 
+            <div
+              className={`${styles.navItem} ${activeTab === 'cadastro' && !editingProductId ? styles.active : ''}`}
+              onClick={() => {
                 setEditingProductId(null);
                 setSelectedColors([]);
                 setColorSizeConfigs([]);
@@ -1600,8 +1716,8 @@ export const AdminDashboard: React.FC = () => {
                 setNewPrice('');
                 setNewGender('Unissex');
                 setNewIsNovidade(false);
-                setActiveTab('cadastro'); 
-                setIsMenuOpen(false); 
+                setActiveTab('cadastro');
+                setIsMenuOpen(false);
               }}
             >
               ➕ Cadastrar Produto
@@ -1620,8 +1736,8 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         <div className={styles.logoutSection}>
-          <button 
-            type="button" 
+          <button
+            type="button"
             onClick={handleLogout}
             className={styles.logoutButton}
           >
@@ -1631,7 +1747,7 @@ export const AdminDashboard: React.FC = () => {
       </aside>
 
       <main className={styles.mainContent}>
-        
+
         {activeTab === 'dashboard' && (
           <div className={styles.singleContainer}>
             <section className={styles.card}>
@@ -1670,7 +1786,7 @@ export const AdminDashboard: React.FC = () => {
                   </div>
 
                   <div className={styles.listSectionWrapper} style={{ marginTop: '30px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    
+
                     <div style={{ background: '#fff', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
                       <h4 className={styles.listSubheading}>📈 Evolução Diária de Entradas vs Saídas</h4>
                       <div style={{ width: '100%', height: 280 }}>
@@ -1704,21 +1820,21 @@ export const AdminDashboard: React.FC = () => {
                     </div>
 
                     <div className={styles.chartsGridRow} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', width: '100%' }}>
-                      
+
                       <div style={{ background: '#fff', padding: '16px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', minWidth: 0 }}>
                         <h4 className={styles.listSubheading} style={{ marginBottom: '12px', fontSize: '1rem' }}>🥧 Estoque por Categoria</h4>
                         <div style={{ width: '100%', height: 260 }}>
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
-                              <Pie 
-                                data={dashboardData.distribuicaoCategorias || []} 
-                                dataKey="value" 
-                                nameKey="name" 
-                                cx="50%" 
-                                cy="50%" 
-                                outerRadius={70} 
-                                fill="#6366f1" 
-                                label={({ name, percent }: { name?: string; percent?: number }) => 
+                              <Pie
+                                data={dashboardData.distribuicaoCategorias || []}
+                                dataKey="value"
+                                nameKey="name"
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={70}
+                                fill="#6366f1"
+                                label={({ name, percent }: { name?: string; percent?: number }) =>
                                   `${name || ''}: ${((percent || 0) * 100).toFixed(0)}%`
                                 }
                               >
@@ -1768,8 +1884,8 @@ export const AdminDashboard: React.FC = () => {
                   <div className={styles.dashboardLogsContainer}>
                     <div className={`${styles.headerBetween} ${styles.dashboardLogsHeader}`}>
                       <h4 className={`${styles.listSubheading} ${styles.dashboardLogsHeaderTitle}`}>🛡️ Últimas Ações do Sistema</h4>
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         onClick={() => setActiveTab('logs')}
                         className={styles.dashboardLogsLinkButton}
                       >
@@ -1864,7 +1980,7 @@ export const AdminDashboard: React.FC = () => {
               <div className={styles.headerBetween}>
                 <div>
                   <h3>🛍️ Gerenciador de Pedidos e Vendas</h3>
-                  <p className={styles.infoText} style={{ margin: '4px 0 0 0' }}>Acompanhe as compras realizadas na e-commerce e gerencie a expedição dos pedidos.</p>
+                  <p className={styles.infoText} style={{ margin: '4px 0 0 0' }}>Acompanhe as compras realizadas na e-commerce, emita NF-e e gerencie a expedição dos pedidos.</p>
                 </div>
                 <button type="button" onClick={carregarPedidos} className={styles.btnSecondary} disabled={pedidosLoading}>
                   {pedidosLoading ? 'Atualizando...' : '🔄 Atualizar Pedidos'}
@@ -1897,16 +2013,16 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               <div className={styles.orderFilterBar}>
-                <input 
-                  type="text" 
-                  className={styles.orderSearchInput} 
-                  placeholder="🔍 Buscar por nome do cliente, CPF/CNPJ, e-mail ou código do pedido..." 
-                  value={pedidoSearchQuery} 
-                  onChange={e => setPedidoSearchQuery(e.target.value)} 
+                <input
+                  type="text"
+                  className={styles.orderSearchInput}
+                  placeholder="🔍 Buscar por nome do cliente, CPF/CNPJ, e-mail ou código do pedido..."
+                  value={pedidoSearchQuery}
+                  onChange={e => setPedidoSearchQuery(e.target.value)}
                 />
 
-                <select 
-                  value={pedidoStatusFilter} 
+                <select
+                  value={pedidoStatusFilter}
                   onChange={e => setPedidoStatusFilter(e.target.value)}
                   className={styles.listSelectDropdown}
                 >
@@ -1932,6 +2048,7 @@ export const AdminDashboard: React.FC = () => {
                         <th>Cliente / Faturamento</th>
                         <th>Valor Total</th>
                         <th>Status Atual</th>
+                        <th>NF-e</th>
                         <th>Alterar Status</th>
                         <th>Ações</th>
                       </tr>
@@ -1983,8 +2100,11 @@ export const AdminDashboard: React.FC = () => {
                               {renderBadgeStatusPedido(pedido.status)}
                             </td>
                             <td>
-                              <select 
-                                value={pedido.status} 
+                              {renderBadgeStatusNfe(pedido)}
+                            </td>
+                            <td>
+                              <select
+                                value={pedido.status}
                                 onChange={(e) => handleUpdateStatusPedido(pedido.id, e.target.value as Pedido['status'])}
                                 className={styles.orderSelectStatus}
                               >
@@ -1997,9 +2117,9 @@ export const AdminDashboard: React.FC = () => {
                               </select>
                             </td>
                             <td>
-                              <button 
-                                type="button" 
-                                className={styles.btnEditTable} 
+                              <button
+                                type="button"
+                                className={styles.btnEditTable}
                                 onClick={() => setSelectedOrderDetails(pedido)}
                               >
                                 👁️ Ver Detalhes
@@ -2028,13 +2148,155 @@ export const AdminDashboard: React.FC = () => {
                         Realizado em {formatarDataPedido(selectedOrderDetails)}
                       </p>
                     </div>
-                    <div style={{ flexShrink: 0 }}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}>
                       {renderBadgeStatusPedido(selectedOrderDetails.status)}
+                      {renderBadgeStatusNfe(selectedOrderDetails)}
                     </div>
                   </div>
 
                   <div className={styles.orderDetailsGrid}>
-                    
+
+                    {/* BLOCO NOTA FISCAL ELETRÔNICA (NF-e / BLING) */}
+                    <div className={styles.orderInfoBlock} style={{ backgroundColor: '#f8fafc', borderColor: '#cbd5e1' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                        <h4 className={styles.orderInfoTitle} style={{ margin: 0, borderBottom: 'none', paddingBottom: 0 }}>
+                          🧾 Nota Fiscal Eletrônica (NF-e · Bling)
+                        </h4>
+
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          {selectedOrderDetails.blingNfeId && (
+                            <button
+                              type="button"
+                              className={styles.btnSecondary}
+                              style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                              disabled={sincronizandoNfeId === selectedOrderDetails.id}
+                              onClick={() => handleSincronizarNfePedido(selectedOrderDetails.id)}
+                            >
+                              {sincronizandoNfeId === selectedOrderDetails.id ? 'Sincronizando...' : '↻ Sincronizar'}
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            className={styles.btnPrimary}
+                            style={{ width: 'auto', padding: '6px 14px', fontSize: '0.82rem' }}
+                            disabled={emitindoNfeId === selectedOrderDetails.id}
+                            onClick={() => handleEmitirNfePedido(selectedOrderDetails.id)}
+                          >
+                            {emitindoNfeId === selectedOrderDetails.id
+                              ? 'Emitindo NF-e...'
+                              : selectedOrderDetails.nfeStatus === 'AUTORIZADA' && selectedOrderDetails.chaveAcessoNfe
+                                ? '✅ NF-e Autorizada'
+                                : selectedOrderDetails.blingNfeId
+                                  ? '🔄 Reemitir NF-e'
+                                  : '🧾 Emitir NF-e'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className={styles.orderFieldsGrid}>
+                        <div className={styles.orderFieldItem}>
+                          <span className={styles.orderFieldLabel}>Número / Série:</span>
+                          <span className={styles.orderFieldValue}>
+                            {selectedOrderDetails.nfeNumero
+                              ? `${selectedOrderDetails.nfeNumero}${selectedOrderDetails.nfeSerie ? ` · Série ${selectedOrderDetails.nfeSerie}` : ''}`
+                              : 'Não emitida'}
+                          </span>
+                        </div>
+
+                        <div className={styles.orderFieldItem}>
+                          <span className={styles.orderFieldLabel}>ID na Bling:</span>
+                          <span className={styles.orderFieldValue}>
+                            {selectedOrderDetails.blingNfeId ? String(selectedOrderDetails.blingNfeId) : '—'}
+                          </span>
+                        </div>
+
+                        <div className={styles.orderFieldItem} style={{ gridColumn: '1 / -1' }}>
+                          <span className={styles.orderFieldLabel}>Chave de Acesso:</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <code style={{ background: '#fff', padding: '4px 8px', borderRadius: '4px', border: '1px solid #e2e8f0', fontSize: '0.8rem', overflowWrap: 'anywhere' }}>
+                              {selectedOrderDetails.chaveAcessoNfe || 'Aguardando autorização da SEFAZ'}
+                            </code>
+                            {selectedOrderDetails.chaveAcessoNfe && (
+                              <button
+                                type="button"
+                                className={styles.idCopyButton}
+                                onClick={() => handleCopyId(selectedOrderDetails.chaveAcessoNfe!)}
+                              >
+                                {copiedId === selectedOrderDetails.chaveAcessoNfe ? '✅ Copiada!' : '📋 Copiar Chave'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {(selectedOrderDetails.nfeLinkDanfe || selectedOrderDetails.nfeLinkXml) && (
+                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '12px' }}>
+                          {selectedOrderDetails.nfeLinkDanfe && (
+                            <a
+                              href={selectedOrderDetails.nfeLinkDanfe}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '7px 14px',
+                                borderRadius: '6px',
+                                backgroundColor: '#16a34a',
+                                color: '#fff',
+                                fontWeight: 600,
+                                fontSize: '0.82rem',
+                                textDecoration: 'none',
+                              }}
+                            >
+                              📄 Abrir / Baixar DANFE (PDF)
+                            </a>
+                          )}
+
+                          {selectedOrderDetails.nfeLinkXml && (
+                            <a
+                              href={selectedOrderDetails.nfeLinkXml}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '7px 12px',
+                                borderRadius: '6px',
+                                backgroundColor: '#fff',
+                                border: '1px solid #cbd5e1',
+                                color: '#334155',
+                                fontWeight: 600,
+                                fontSize: '0.82rem',
+                                textDecoration: 'none',
+                              }}
+                            >
+                              📥 Baixar XML
+                            </a>
+                          )}
+                        </div>
+                      )}
+
+                      {selectedOrderDetails.nfeErroMensagem && (
+                        <div
+                          style={{
+                            marginTop: '12px',
+                            padding: '10px 12px',
+                            borderRadius: '6px',
+                            backgroundColor: '#fef2f2',
+                            border: '1px solid #fecaca',
+                            color: '#991b1b',
+                            fontSize: '0.82rem',
+                            overflowWrap: 'anywhere',
+                          }}
+                        >
+                          <strong>⚠️ Detalhe / Erro NF-e:</strong> {selectedOrderDetails.nfeErroMensagem}
+                        </div>
+                      )}
+                    </div>
+
                     <div className={styles.orderInfoBlock}>
                       <h4 className={styles.orderInfoTitle}>
                         👤 Dados do Destinatário / Cliente{' '}
@@ -2175,7 +2437,7 @@ export const AdminDashboard: React.FC = () => {
                       <h4 className={styles.orderInfoTitle} style={{ color: '#0369a1', borderColor: '#bae6fd' }}>
                         🚚 Dados de Envio, Embalagem e Rastreio
                       </h4>
-                      
+
                       <div className={styles.orderFieldsGrid} style={{ marginBottom: '14px' }}>
                         <div className={styles.orderFieldItem}>
                           <span className={styles.orderFieldLabel} style={{ color: '#0369a1' }}>Transportadora / Serviço:</span>
@@ -2217,8 +2479,8 @@ export const AdminDashboard: React.FC = () => {
                                   </strong>
                                 </div>
 
-                                <button 
-                                  type="button" 
+                                <button
+                                  type="button"
                                   style={{ background: '#e2e8f0', color: '#334155', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
                                   onClick={() => {
                                     setSelectedOrderDetails(prev => prev ? { ...prev, isEditingRastreio: true } : null);
@@ -2232,16 +2494,16 @@ export const AdminDashboard: React.FC = () => {
 
                           return (
                             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                              <input 
-                                type="text" 
-                                placeholder="Ex: NL123456789BR ou LOG12983" 
+                              <input
+                                type="text"
+                                placeholder="Ex: NL123456789BR ou LOG12983"
                                 defaultValue={codigoExistente || ''}
                                 id={`input-rastreio-${selectedOrderDetails.id}`}
                                 className={styles.orderSearchInput}
                                 style={{ padding: '8px 12px', fontSize: '0.85rem' }}
                               />
-                              <button 
-                                type="button" 
+                              <button
+                                type="button"
                                 className={styles.btnPrimary}
                                 style={{ width: 'auto', padding: '8px 16px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}
                                 onClick={async () => {
@@ -2260,12 +2522,12 @@ export const AdminDashboard: React.FC = () => {
                                     if (!response.ok) throw new Error(data.message || 'Erro ao salvar código de rastreio.');
 
                                     alert('Código de rastreio salvo com sucesso!');
-                                    
-                                    setSelectedOrderDetails(prev => prev ? { 
-                                      ...prev, 
-                                      codigoRastreio: novoCodigo, 
+
+                                    setSelectedOrderDetails(prev => prev ? {
+                                      ...prev,
+                                      codigoRastreio: novoCodigo,
                                       rastreioCodigo: novoCodigo,
-                                      isEditingRastreio: false 
+                                      isEditingRastreio: false
                                     } : null);
 
                                     carregarPedidos();
@@ -2294,18 +2556,18 @@ export const AdminDashboard: React.FC = () => {
 
                           return (
                             <div key={item.id || idx} className={styles.orderItemRow} style={{ padding: '10px 0', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
-                              <img 
-                                src={imagemCapa} 
-                                alt={nomeProd} 
+                              <img
+                                src={imagemCapa}
+                                alt={nomeProd}
                                 className={styles.orderItemThumb}
                                 style={{ width: '60px', height: '60px', borderRadius: '8px', objectFit: 'cover', border: '1px solid #cbd5e1', flexShrink: 0 }}
                               />
-                              
+
                               <div className={styles.orderItemDetails} style={{ marginLeft: '4px' }}>
                                 <div className={styles.orderItemName} style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0f172a' }}>
                                   {nomeProd}
                                 </div>
-                                
+
                                 <div style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0 4px 0' }}>
                                   <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', border: '1px solid #e2e8f0', overflowWrap: 'anywhere' }}>
                                     ID Produto: {produtoIdExibicao}
@@ -2378,6 +2640,7 @@ export const AdminDashboard: React.FC = () => {
           </div>
         )}
 
+        {/* DEMAIS ABAS (logs, cupons, cadastro, categorias, tamanhos, cores, motivos, oferta, lista, estoque, historico-estoque) MANTIDAS INTACTAS */}
         {activeTab === 'logs' && (
           <div className={styles.singleContainer}>
             <section className={styles.card}>
@@ -2392,12 +2655,12 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               <div className={styles.searchSection} style={{ marginTop: '20px' }}>
-                <input 
-                  type="text" 
-                  className={styles.searchInput} 
-                  placeholder="🔍 Pesquisar por ação ou nome do administrador..." 
-                  value={logSearchQuery} 
-                  onChange={e => setLogSearchQuery(e.target.value)} 
+                <input
+                  type="text"
+                  className={styles.searchInput}
+                  placeholder="🔍 Pesquisar por ação ou nome do administrador..."
+                  value={logSearchQuery}
+                  onChange={e => setLogSearchQuery(e.target.value)}
                 />
               </div>
 
@@ -2449,7 +2712,7 @@ export const AdminDashboard: React.FC = () => {
                 )}
               </div>
               <p className={styles.infoText}>* Preencha os campos abaixo. Cada cor selecionada deve possuir de 1 a 6 fotos específicas. Dica: Arraste as miniaturas para reordenar; a primeira à esquerda será a capa principal.</p>
-              
+
               <form onSubmit={handleCreateOrUpdateProduct} className={styles.form}>
                 <div className={styles.gridContainerPrice}>
                   <div className={styles.group}>
@@ -2482,10 +2745,10 @@ export const AdminDashboard: React.FC = () => {
 
                 <div className={styles.group}>
                   <label className={styles.sizeCheckboxLabel} style={{ width: 'fit-content', marginTop: '4px' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={newIsNovidade} 
-                      onChange={(e) => setNewIsNovidade(e.target.checked)} 
+                    <input
+                      type="checkbox"
+                      checked={newIsNovidade}
+                      onChange={(e) => setNewIsNovidade(e.target.checked)}
                     />
                     ✨ Marcar este produto como Novidade na loja
                   </label>
@@ -2499,13 +2762,13 @@ export const AdminDashboard: React.FC = () => {
                     ) : (
                       coresList.filter(c => c.ativo !== false).map(cor => (
                         <label key={cor.id} className={styles.sizeCheckboxLabel}>
-                          <input 
-                            type="checkbox" 
-                            checked={selectedColors.includes(cor.id)} 
-                            onChange={() => handleColorToggle(cor.id)} 
+                          <input
+                            type="checkbox"
+                            checked={selectedColors.includes(cor.id)}
+                            onChange={() => handleColorToggle(cor.id)}
                           />
                           {cor.hex && (
-                            <span 
+                            <span
                               className={styles.colorDotIndicator}
                               style={{ backgroundColor: cor.hex }}
                             ></span>
@@ -2525,7 +2788,7 @@ export const AdminDashboard: React.FC = () => {
                     <p className={styles.colorStockSubtitle}>
                       Insira de 1 a 6 fotos para cada cor. Arraste e solte as miniaturas para alterar a ordem (a 1ª da esquerda é a Capa).
                     </p>
-                    
+
                     <div className={styles.colorStockList}>
                       {selectedColors.map(cId => {
                         const corObj = coresList.find(c => c.id === cId);
@@ -2533,13 +2796,13 @@ export const AdminDashboard: React.FC = () => {
                         const itensCor = colorImages[cId] || [];
                         const qtdFotosCor = itensCor.length;
                         const nenhumTamanhoSelecionado = configCurrent.tamanhosIds.length === 0;
-                        
+
                         return (
                           <div key={cId} className={styles.colorStockItem}>
                             <div className={styles.colorStockHeader}>
                               <div className={styles.colorStockHeaderLeft}>
                                 {corObj?.hex && (
-                                  <span 
+                                  <span
                                     className={styles.colorDotIndicatorLarge}
                                     style={{ backgroundColor: corObj.hex }}
                                   ></span>
@@ -2549,24 +2812,24 @@ export const AdminDashboard: React.FC = () => {
                                 </strong>
                               </div>
                               <div className={styles.colorActionButtonsGroup}>
-                                <button 
-                                  type="button" 
+                                <button
+                                  type="button"
                                   onClick={() => handleSelectAllSizesForColor(cId)}
                                   className={styles.btnSmallAction}
                                 >
                                   Marcar Todos
                                 </button>
-                                <button 
-                                  type="button" 
+                                <button
+                                  type="button"
                                   onClick={() => handleClearAllSizesForColor(cId)}
                                   className={styles.btnSmallActionDanger}
                                 >
                                   Desmarcar Todos
                                 </button>
-                                
+
                                 {nenhumTamanhoSelecionado && (
-                                  <button 
-                                    type="button" 
+                                  <button
+                                    type="button"
                                     onClick={() => handleExcluirCorConfig(cId)}
                                     className={styles.btnSmallActionDanger}
                                     style={{ backgroundColor: '#dc2626', color: '#fff' }}
@@ -2581,20 +2844,20 @@ export const AdminDashboard: React.FC = () => {
                             <div className={styles.group} style={{ margin: '12px 0' }}>
                               <label className={styles.fileLabel}>
                                 📷 Fotos da Cor {corObj?.nome} ({qtdFotosCor}/6) — Arraste para reordenar
-                                <input 
-                                  type="file" 
-                                  multiple 
-                                  accept="image/*" 
-                                  onChange={(e) => handleColorFileChange(cId, e)} 
-                                  className={styles.fileInput} 
+                                <input
+                                  type="file"
+                                  multiple
+                                  accept="image/*"
+                                  onChange={(e) => handleColorFileChange(cId, e)}
+                                  className={styles.fileInput}
                                 />
                               </label>
 
                               {itensCor.length > 0 && (
                                 <div className={styles.imagesPreviewList}>
                                   {itensCor.map((item, idx) => (
-                                    <div 
-                                      key={idx} 
+                                    <div
+                                      key={idx}
                                       draggable
                                       onDragStart={(e) => handleImageDragStart(e, idx)}
                                       onDragOver={handleImageDragOver}
@@ -2608,12 +2871,12 @@ export const AdminDashboard: React.FC = () => {
                                         </span>
                                       )}
                                       <img src={item.url} alt="" className={styles.imageThumb} />
-                                      <button 
-                                        type="button" 
+                                      <button
+                                        type="button"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           removeColorImage(cId, idx);
-                                        }} 
+                                        }}
                                         className={styles.btnRemoveThumb}
                                       >
                                         ×
@@ -2641,14 +2904,14 @@ export const AdminDashboard: React.FC = () => {
                                     );
 
                                     return (
-                                      <div 
-                                        key={tam.id} 
+                                      <div
+                                        key={tam.id}
                                         className={`${styles.sizeConfigBox} ${isChecked ? styles.sizeBoxChecked : styles.sizeBoxUnchecked}`}
                                       >
                                         <div className={styles.sizeCheckboxRow}>
                                           <label className={styles.sizeInnerLabel}>
-                                            <input 
-                                              type="checkbox" 
+                                            <input
+                                              type="checkbox"
                                               checked={isChecked}
                                               onChange={() => handleToggleSizeForColor(cId, tam.id)}
                                             />
@@ -2661,8 +2924,8 @@ export const AdminDashboard: React.FC = () => {
                                             <label className={styles.initialStockLabel} style={{ color: '#dc2626', fontWeight: 'bold' }}>
                                               * Estoque Inicial (Mínimo 1):
                                             </label>
-                                            <input 
-                                              type="number" 
+                                            <input
+                                              type="number"
                                               min="1"
                                               placeholder="Ex: 1"
                                               value={estoqueValor}
@@ -2715,18 +2978,18 @@ export const AdminDashboard: React.FC = () => {
                 )}
               </div>
               <p className={styles.infoText}>Cadastre novas categorias para organizar os produtos no backend ou altere o status de ativação das existentes.</p>
-              
+
               {categoriaError && <div className={styles.errorTextNotice}>{categoriaError}</div>}
 
               <form onSubmit={handleSaveCategoria} className={styles.form}>
                 <div className={styles.group}>
                   <label>Nome da Categoria</label>
-                  <input 
-                    type="text" 
-                    value={novaCategoriaNome} 
-                    onChange={e => setNovaCategoriaNome(e.target.value)} 
-                    placeholder="Ex: Vestidos ou Calçados" 
-                    required 
+                  <input
+                    type="text"
+                    value={novaCategoriaNome}
+                    onChange={e => setNovaCategoriaNome(e.target.value)}
+                    placeholder="Ex: Vestidos ou Calçados"
+                    required
                   />
                   <small className={styles.slugPreviewText}>
                     Slug gerado: <b>{novaCategoriaNome ? gerarSlug(novaCategoriaNome) : '...'}</b>
@@ -2747,10 +3010,10 @@ export const AdminDashboard: React.FC = () => {
                     {categoriasList.map(cat => {
                       const estaAtivo = cat.ativo !== false;
                       return (
-                        <li 
-                          key={cat.id} 
-                          className={`${styles.simpleDataListItem} ${styles.categoryItemLi}`} 
-                          style={{ 
+                        <li
+                          key={cat.id}
+                          className={`${styles.simpleDataListItem} ${styles.categoryItemLi}`}
+                          style={{
                             opacity: estaAtivo ? 1 : 0.6,
                             backgroundColor: estaAtivo ? 'transparent' : '#f1f5f9'
                           }}
@@ -2766,9 +3029,9 @@ export const AdminDashboard: React.FC = () => {
                             <button type="button" onClick={() => handleStartEditCategoria(cat)} className={styles.btnEditTable}>
                               ✏️ Editar
                             </button>
-                            <button 
-                              type="button" 
-                              onClick={() => handleDesativarCategoria(cat)} 
+                            <button
+                              type="button"
+                              onClick={() => handleDesativarCategoria(cat)}
                               className={styles.btnDeleteTable}
                               style={{ backgroundColor: estaAtivo ? '#ef4444' : '#10b981', color: '#fff' }}
                             >
@@ -2797,18 +3060,18 @@ export const AdminDashboard: React.FC = () => {
                 )}
               </div>
               <p className={styles.infoText}>Cadastre variações de tamanhos (ex: P, M, G, 1 ano, 2 anos) ou altere o status de ativação.</p>
-              
+
               {tamanhoError && <div className={styles.errorTextNotice}>{tamanhoError}</div>}
 
               <form onSubmit={handleSaveTamanho} className={styles.form}>
                 <div className={styles.group}>
                   <label>Nome do Tamanho</label>
-                  <input 
-                    type="text" 
-                    value={novoTamanhoNome} 
-                    onChange={e => setNovoTamanhoNome(e.target.value)} 
-                    placeholder="Ex: 1 ano ou P" 
-                    required 
+                  <input
+                    type="text"
+                    value={novoTamanhoNome}
+                    onChange={e => setNovoTamanhoNome(e.target.value)}
+                    placeholder="Ex: 1 ano ou P"
+                    required
                   />
                   <small className={styles.slugPreviewText}>
                     Slug gerado: <b>{novoTamanhoNome ? gerarSlug(novoTamanhoNome) : '...'}</b>
@@ -2817,11 +3080,11 @@ export const AdminDashboard: React.FC = () => {
 
                 <div className={styles.group}>
                   <label>Ordem de Exibição (Sequência)</label>
-                  <input 
-                    type="number" 
-                    value={novoTamanhoOrdem} 
-                    onChange={e => setNovoTamanhoOrdem(e.target.value)} 
-                    placeholder="Ex: 1, 2, 3..." 
+                  <input
+                    type="number"
+                    value={novoTamanhoOrdem}
+                    onChange={e => setNovoTamanhoOrdem(e.target.value)}
+                    placeholder="Ex: 1, 2, 3..."
                   />
                 </div>
 
@@ -2839,10 +3102,10 @@ export const AdminDashboard: React.FC = () => {
                     {tamanhosList.map(tam => {
                       const estaAtivo = tam.ativo !== false;
                       return (
-                        <li 
-                          key={tam.id} 
-                          className={`${styles.simpleDataListItem} ${styles.categoryItemLi}`} 
-                          style={{ 
+                        <li
+                          key={tam.id}
+                          className={`${styles.simpleDataListItem} ${styles.categoryItemLi}`}
+                          style={{
                             opacity: estaAtivo ? 1 : 0.6,
                             backgroundColor: estaAtivo ? 'transparent' : '#f1f5f9'
                           }}
@@ -2859,9 +3122,9 @@ export const AdminDashboard: React.FC = () => {
                             <button type="button" onClick={() => handleStartEditTamanho(tam)} className={styles.btnEditTable}>
                               ✏️ Editar
                             </button>
-                            <button 
-                              type="button" 
-                              onClick={() => handleDesativarTamanho(tam.id)} 
+                            <button
+                              type="button"
+                              onClick={() => handleDesativarTamanho(tam.id)}
                               className={styles.btnDeleteTable}
                               style={{ backgroundColor: estaAtivo ? '#ef4444' : '#10b981', color: '#fff' }}
                             >
@@ -2890,35 +3153,35 @@ export const AdminDashboard: React.FC = () => {
                 )}
               </div>
               <p className={styles.infoText}>Cadastre as opções de cores disponíveis para os produtos ou altere o status de ativação.</p>
-              
+
               {corError && <div className={styles.errorTextNotice}>{corError}</div>}
 
               <form onSubmit={handleSaveCor} className={styles.form}>
                 <div className={styles.group}>
                   <label>Nome da Cor</label>
-                  <input 
-                    type="text" 
-                    value={novaCorNome} 
-                    onChange={e => setNovaCorNome(e.target.value)} 
-                    placeholder="Ex: Rosa Bebê ou Azul Marinho" 
-                    required 
+                  <input
+                    type="text"
+                    value={novaCorNome}
+                    onChange={e => setNovaCorNome(e.target.value)}
+                    placeholder="Ex: Rosa Bebê ou Azul Marinho"
+                    required
                   />
                 </div>
 
                 <div className={styles.group}>
                   <label>Cor de Referência (HEX)</label>
                   <div className={styles.colorPickerRow}>
-                    <input 
-                      type="color" 
-                      value={novaCorHex} 
-                      onChange={e => setNovaCorHex(e.target.value)} 
+                    <input
+                      type="color"
+                      value={novaCorHex}
+                      onChange={e => setNovaCorHex(e.target.value)}
                       className={styles.colorPickerNative}
                     />
-                    <input 
-                      type="text" 
-                      value={novaCorHex} 
-                      onChange={e => setNovaCorHex(e.target.value)} 
-                      placeholder="#000000" 
+                    <input
+                      type="text"
+                      value={novaCorHex}
+                      onChange={e => setNovaCorHex(e.target.value)}
+                      placeholder="#000000"
                     />
                   </div>
                   <small className={styles.slugPreviewText}>
@@ -2940,17 +3203,17 @@ export const AdminDashboard: React.FC = () => {
                     {coresList.map(cor => {
                       const estaAtivo = cor.ativo !== false;
                       return (
-                        <li 
-                          key={cor.id} 
-                          className={`${styles.simpleDataListItem} ${styles.categoryItemLi}`} 
-                          style={{ 
+                        <li
+                          key={cor.id}
+                          className={`${styles.simpleDataListItem} ${styles.categoryItemLi}`}
+                          style={{
                             opacity: estaAtivo ? 1 : 0.6,
                             backgroundColor: estaAtivo ? 'transparent' : '#f1f5f9'
                           }}
                         >
                           <div className={styles.colorItemLeft}>
                             {cor.hex && (
-                              <span 
+                              <span
                                 className={styles.colorDotIndicator}
                                 style={{ backgroundColor: cor.hex }}
                               ></span>
@@ -2965,9 +3228,9 @@ export const AdminDashboard: React.FC = () => {
                             <button type="button" onClick={() => handleStartEditCor(cor)} className={styles.btnEditTable}>
                               ✏️ Editar
                             </button>
-                            <button 
-                              type="button" 
-                              onClick={() => handleDesativarCor(cor.id)} 
+                            <button
+                              type="button"
+                              onClick={() => handleDesativarCor(cor.id)}
                               className={styles.btnDeleteTable}
                               style={{ backgroundColor: estaAtivo ? '#ef4444' : '#10b981', color: '#fff' }}
                             >
@@ -2996,26 +3259,26 @@ export const AdminDashboard: React.FC = () => {
                 )}
               </div>
               <p className={styles.infoText}>Cadastre os motivos exibidos no controle de estoque e consulte abaixo o guia de referência rápida.</p>
-              
+
               {motivoError && <div className={styles.errorTextNotice}>{motivoError}</div>}
 
               <form onSubmit={handleSaveMotivo} className={styles.form}>
                 <div className={styles.group}>
                   <label>Nome do Motivo</label>
-                  <input 
-                    type="text" 
-                    value={novoMotivoNome} 
-                    onChange={e => setNovoMotivoNome(e.target.value)} 
-                    placeholder="Ex: Compra de Fornecedor ou Venda" 
-                    required 
+                  <input
+                    type="text"
+                    value={novoMotivoNome}
+                    onChange={e => setNovoMotivoNome(e.target.value)}
+                    placeholder="Ex: Compra de Fornecedor ou Venda"
+                    required
                   />
                 </div>
 
                 <div className={styles.group}>
                   <label>Tipo de Movimentação</label>
-                  <select 
-                    value={novoMotivoTipo} 
-                    onChange={e => setNovoMotivoTipo(e.target.value as 'ENTRADA' | 'SAIDA')} 
+                  <select
+                    value={novoMotivoTipo}
+                    onChange={e => setNovoMotivoTipo(e.target.value as 'ENTRADA' | 'SAIDA')}
                     required
                   >
                     <option value="ENTRADA">Entrada</option>
@@ -3030,9 +3293,9 @@ export const AdminDashboard: React.FC = () => {
 
               <div className={styles.motivosGuiaWrapper}>
                 <h4 className={styles.motivosGuiaTitle}>📖 Guia de Referência dos Motivos de Estoque</h4>
-                
+
                 <div className={styles.motivosGuiaGrid}>
-                  
+
                   <div className={styles.motivosGuiaCard}>
                     <h5 className={styles.motivosGuiaHeaderEntrada}>
                       📥 Motivos para Entrada de Estoque
@@ -3073,10 +3336,10 @@ export const AdminDashboard: React.FC = () => {
                     {motivosEstoqueList.map(motivo => {
                       const estaAtivo = motivo.ativo !== false;
                       return (
-                        <li 
-                          key={motivo.id} 
-                          className={styles.simpleDataListItem} 
-                          style={{ 
+                        <li
+                          key={motivo.id}
+                          className={styles.simpleDataListItem}
+                          style={{
                             opacity: estaAtivo ? 1 : 0.6,
                             backgroundColor: estaAtivo ? 'transparent' : '#f1f5f9'
                           }}
@@ -3091,16 +3354,16 @@ export const AdminDashboard: React.FC = () => {
                             </span>
                           </div>
                           <div className={styles.categoryActionsGroup}>
-                            <button 
-                              type="button" 
-                              onClick={() => handleStartEditMotivo(motivo)} 
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditMotivo(motivo)}
                               className={styles.btnEditTable}
                             >
                               ✏️ Editar
                             </button>
-                            <button 
-                              type="button" 
-                              onClick={() => handleDesativarMotivo(motivo.id)} 
+                            <button
+                              type="button"
+                              onClick={() => handleDesativarMotivo(motivo.id)}
                               className={styles.btnDeleteTable}
                               style={{ backgroundColor: estaAtivo ? '#ef4444' : '#10b981', color: '#fff' }}
                             >
@@ -3122,7 +3385,7 @@ export const AdminDashboard: React.FC = () => {
             <section className={styles.card}>
               <h3>Configurar Oferta Comercial</h3>
               <p className={styles.infoText}>Informe o ID do produto e escolha se deseja aplicar um desconto percentual (% OFF) ou definir um valor promocional fixo.</p>
-              
+
               <form onSubmit={async (e) => {
                 e.preventDefault();
                 if (!matchedProductForOffer || !promoValue) return;
@@ -3142,17 +3405,17 @@ export const AdminDashboard: React.FC = () => {
                   if (!response.ok) throw new Error(data.message || 'Erro ao configurar oferta.');
 
                   alert('Oferta salva com sucesso!');
-                  setSearchOfferId(''); 
-                  setPromoValue(''); 
+                  setSearchOfferId('');
+                  setPromoValue('');
                   setDiscountType('percentual');
-                  
+
                   carregarProdutos();
                   setActiveTab('lista');
                 } catch (err: any) {
                   alert(err.message || 'Erro ao conectar com o servidor.');
                 }
               }} className={styles.form}>
-                
+
                 <div className={styles.group}>
                   <label>Digite o ID do Produto (UUID)</label>
                   <input type="text" value={searchOfferId} onChange={e => setSearchOfferId(e.target.value)} placeholder="Cole o ID do produto aqui..." required />
@@ -3178,22 +3441,22 @@ export const AdminDashboard: React.FC = () => {
                   <label>Tipo de Desconto</label>
                   <div className={styles.radioGroupFlex}>
                     <label className={styles.radioLabelFlex}>
-                      <input 
-                        type="radio" 
-                        name="discountType" 
-                        value="percentual" 
-                        checked={discountType === 'percentual'} 
-                        onChange={() => { setDiscountType('percentual'); setPromoValue(''); }} 
+                      <input
+                        type="radio"
+                        name="discountType"
+                        value="percentual"
+                        checked={discountType === 'percentual'}
+                        onChange={() => { setDiscountType('percentual'); setPromoValue(''); }}
                       />
                       Porcentagem (% OFF)
                     </label>
                     <label className={styles.radioLabelFlex}>
-                      <input 
-                        type="radio" 
-                        name="discountType" 
-                        value="fixo" 
-                        checked={discountType === 'fixo'} 
-                        onChange={() => { setDiscountType('fixo'); setPromoValue(''); }} 
+                      <input
+                        type="radio"
+                        name="discountType"
+                        value="fixo"
+                        checked={discountType === 'fixo'}
+                        onChange={() => { setDiscountType('fixo'); setPromoValue(''); }}
                       />
                       Valor Fixo em R$
                     </label>
@@ -3202,16 +3465,16 @@ export const AdminDashboard: React.FC = () => {
 
                 <div className={styles.group}>
                   <label>{discountType === 'percentual' ? 'Desconto (% OFF)' : 'Preço Promocional (R$)'}</label>
-                  <input 
-                    type="number" 
-                    value={promoValue} 
-                    onChange={e => setPromoValue(e.target.value)} 
-                    placeholder={discountType === 'percentual' ? 'Ex: 15 (para 15% off)' : '0.00'} 
-                    step={discountType === 'percentual' ? '1' : '0.01'} 
+                  <input
+                    type="number"
+                    value={promoValue}
+                    onChange={e => setPromoValue(e.target.value)}
+                    placeholder={discountType === 'percentual' ? 'Ex: 15 (para 15% off)' : '0.00'}
+                    step={discountType === 'percentual' ? '1' : '0.01'}
                     min="0"
                     max={discountType === 'percentual' ? '100' : undefined}
-                    disabled={!matchedProductForOffer} 
-                    required 
+                    disabled={!matchedProductForOffer}
+                    required
                   />
                   {matchedProductForOffer && discountType === 'percentual' && promoValue && !isNaN(Number(promoValue)) && (
                     <small className={styles.offerDiscountPreviewText}>
@@ -3230,9 +3493,9 @@ export const AdminDashboard: React.FC = () => {
           <div className={styles.singleContainer}>
             <div className={`${styles.searchSection} ${styles.listSearchFilterRow}`}>
               <input type="text" className={`${styles.searchInput} ${styles.listSearchInputFlex}`} placeholder="🔍 Buscar por nome, categoria, descrição ou ID..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-              
-              <select 
-                value={novidadeFilter} 
+
+              <select
+                value={novidadeFilter}
                 onChange={(e) => setNovidadeFilter(e.target.value)}
                 className={styles.listSelectDropdown}
               >
@@ -3241,8 +3504,8 @@ export const AdminDashboard: React.FC = () => {
                 <option value="normais">📦 Produtos Regulares</option>
               </select>
 
-              <select 
-                value={genderFilter} 
+              <select
+                value={genderFilter}
                 onChange={(e) => setGenderFilter(e.target.value)}
                 className={styles.listSelectDropdown}
               >
@@ -3252,8 +3515,8 @@ export const AdminDashboard: React.FC = () => {
                 <option value="Feminino">Feminino</option>
               </select>
 
-              <select 
-                value={statusFilter} 
+              <select
+                value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as any)}
                 className={styles.listSelectDropdown}
               >
@@ -3262,8 +3525,8 @@ export const AdminDashboard: React.FC = () => {
                 <option value="desativados">🔴 Apenas Desativados</option>
               </select>
 
-              <select 
-                value={sortBy} 
+              <select
+                value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as any)}
                 className={styles.listSelectDropdown}
               >
@@ -3297,8 +3560,8 @@ export const AdminDashboard: React.FC = () => {
                     : Number((prod as any).discountPercent || 10);
 
                   return (
-                    <div 
-                      key={prod.id} 
+                    <div
+                      key={prod.id}
                       className={`${styles.catalogCard} ${!prod.isVisible ? styles.cardHidden : ''} ${isDesativado ? styles['card-produto'] + ' ' + styles.inativo : ''}`}
                       onClick={() => {
                         setSelectedProductDetails(prod);
@@ -3356,12 +3619,12 @@ export const AdminDashboard: React.FC = () => {
                             {prod.atualizadoPor && <span style={{ display: 'block' }}>🔄 Última alt: <strong>{prod.atualizadoPor.nome}</strong></span>}
                           </div>
                         )}
-                        
+
                         <div className={styles.controlsRow} onClick={(e) => e.stopPropagation()}>
                           <label className={styles.toggleLabel}>
-                            <input 
-                              type="checkbox" 
-                              checked={prod.isVisible} 
+                            <input
+                              type="checkbox"
+                              checked={prod.isVisible}
                               onChange={async (e) => {
                                 const novoStatus = e.target.checked;
                                 setProducts(products.map(p => p.id === prod.id ? { ...p, isVisible: novoStatus } : p));
@@ -3382,12 +3645,12 @@ export const AdminDashboard: React.FC = () => {
                                   alert(err.message || 'Erro ao conectar com o servidor.');
                                   carregarProdutos();
                                 }
-                              }} 
+                              }}
                             />
                             {prod.isVisible ? '🟢 Visível' : '🔴 Oculto'}
                           </label>
 
-                          <button 
+                          <button
                             type="button"
                             onClick={() => handleCopyId(prod.id)}
                             className={styles.idCopyButton}
@@ -3395,18 +3658,18 @@ export const AdminDashboard: React.FC = () => {
                           >
                             {copiedId === prod.id ? '✅ ID Copiado!' : `📋 ID: ${prod.id.slice(0, 6)}...`}
                           </button>
-                        
+
                           <div className={styles.cardActions}>
-                            <button 
-                              type="button" 
+                            <button
+                              type="button"
                               onClick={() => handleStartEdit(prod)}
                               className={styles.btnEditTable}
                             >
                               ✏️ Editar
                             </button>
 
-                            <button 
-                              type="button" 
+                            <button
+                              type="button"
                               onClick={async () => {
                                 const estaInativo = prod.ativo === false || prod.ativo === 0;
 
@@ -3418,7 +3681,7 @@ export const AdminDashboard: React.FC = () => {
                                     });
                                     const data = await response.json();
                                     if (!response.ok) throw new Error(data.message || 'Erro ao reativar o produto.');
-                                    
+
                                     alert('Produto reativado com sucesso!');
                                     carregarProdutos();
                                   } catch (err: any) {
@@ -3445,8 +3708,8 @@ export const AdminDashboard: React.FC = () => {
             {selectedProductDetails && (
               <div className={styles.modalOverlay} onClick={() => setSelectedProductDetails(null)}>
                 <div className={styles.modalContentBox} onClick={(e) => e.stopPropagation()}>
-                  
-                  <button 
+
+                  <button
                     onClick={() => setSelectedProductDetails(null)}
                     className={styles.modalCloseButton}
                   >
@@ -3467,22 +3730,22 @@ export const AdminDashboard: React.FC = () => {
 
                         return (
                           <div>
-                            <img 
-                              src={imagemAtualUrl} 
-                              alt={selectedProductDetails.name} 
-                              className={styles.modalMainImage} 
+                            <img
+                              src={imagemAtualUrl}
+                              alt={selectedProductDetails.name}
+                              className={styles.modalMainImage}
                             />
                             {listaImagensParaExibir.length > 1 && (
                               <div className={styles.modalThumbnailsList}>
                                 {listaImagensParaExibir.map((imgUrl: string, idx: number) => {
                                   const isSelectedThumb = activeImageIndex === idx;
                                   return (
-                                    <img 
-                                      key={idx} 
-                                      src={imgUrl} 
-                                      alt="" 
+                                    <img
+                                      key={idx}
+                                      src={imgUrl}
+                                      alt=""
                                       onClick={() => setActiveImageIndex(idx)}
-                                      className={`${styles.modalThumbItem} ${isSelectedThumb ? styles.modalThumbActive : styles.modalThumbInactive}`} 
+                                      className={`${styles.modalThumbItem} ${isSelectedThumb ? styles.modalThumbActive : styles.modalThumbInactive}`}
                                     />
                                   );
                                 })}
@@ -3510,7 +3773,7 @@ export const AdminDashboard: React.FC = () => {
                         )}
                       </div>
                       <h2 className={styles.modalProductTitle}>{selectedProductDetails.name}</h2>
-                      
+
                       <div className={styles.modalPriceBlock}>
                         {(() => {
                           const pOri = Number(selectedProductDetails.originalPrice || 0);
@@ -3528,9 +3791,9 @@ export const AdminDashboard: React.FC = () => {
                         })()}
                       </div>
 
-                      <div 
+                      <div
                         className={styles.modalDescriptionText}
-                        dangerouslySetInnerHTML={{ 
+                        dangerouslySetInnerHTML={{
                           __html: (selectedProductDetails?.description || 'Nenhuma descrição informada.')
                             .split('\n')
                             .map(line => {
@@ -3556,7 +3819,7 @@ export const AdminDashboard: React.FC = () => {
                             selectedProductDetails.colors.map((c: any) => {
                               const cId = c.id || c.corId;
                               const isSelected = selectedColorForDetails === cId;
-                              
+
                               const corGlobal = coresList.find(corItem => corItem.id === cId);
                               const isCorInativa = corGlobal?.ativo === false || c.ativo === false;
 
@@ -3572,7 +3835,7 @@ export const AdminDashboard: React.FC = () => {
                                   title={isCorInativa ? 'Cor Desativada' : c.nome}
                                 >
                                   {c.hex && (
-                                    <span 
+                                    <span
                                       className={styles.modalColorDot}
                                       style={{ backgroundColor: c.hex }}
                                     ></span>
@@ -3611,19 +3874,19 @@ export const AdminDashboard: React.FC = () => {
 
                             return tamanhosDaCor.map((item: any, idx: number) => {
                               const nomeTamanho = item.tamanho?.nome || item.tamanhoId || `Tam ${idx+1}`;
-                              
+
                               const tamanhoGlobal = tamanhosList.find(t => t.id === item.tamanhoId);
                               const isTamanhoInativo = tamanhoGlobal?.ativo === false || item.ativo === false;
 
                               const estoqueDisp = getAvailableStockByColorAndSize(
-                                selectedProductDetails.id, 
-                                item.cor?.nome || 'Padrão', 
-                                nomeTamanho, 
+                                selectedProductDetails.id,
+                                item.cor?.nome || 'Padrão',
+                                nomeTamanho,
                                 item.estoque ?? 0
                               );
 
                               return (
-                                <div 
+                                <div
                                   key={idx}
                                   className={`${styles.modalSizeItemBox} ${isTamanhoInativo ? styles.corInativada + ' ' + styles.sizeBoxSoldOut : (estoqueDisp > 0 ? styles.sizeBoxAvailable : styles.sizeBoxSoldOut)}`}
                                 >
@@ -3655,34 +3918,34 @@ export const AdminDashboard: React.FC = () => {
             <section className={styles.card}>
               <h3>Controle de Estoque</h3>
               <p className={styles.infoText}>Utilize os filtros rápidos abaixo para focar imediatamente nos itens que exigem atenção ou pesquise por nome/ID.</p>
-              
+
               <div className={styles.searchSection}>
-                <input 
-                  type="text" 
-                  className={styles.searchInput} 
-                  placeholder="🔍 Digite o nome ou ID do produto..." 
-                  value={stockSearchQuery} 
-                  onChange={e => setStockSearchQuery(e.target.value)} 
+                <input
+                  type="text"
+                  className={styles.searchInput}
+                  placeholder="🔍 Digite o nome ou ID do produto..."
+                  value={stockSearchQuery}
+                  onChange={e => setStockSearchQuery(e.target.value)}
                 />
               </div>
 
               <div className={styles.stockFilterButtonsRow}>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className={`${styles.stockFilterBtn} ${stockFilter === 'todos' ? styles.stockFilterBtnActive : ''}`}
                   onClick={() => setStockFilter('todos')}
                 >
                   📋 Todos os Produtos
                 </button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className={`${styles.stockFilterBtn} ${stockFilter === 'baixo' ? styles.stockFilterBtnActive : ''}`}
                   onClick={() => setStockFilter('baixo')}
                 >
                   ⚠️ Estoque Baixo (≤ 3)
                 </button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className={`${styles.stockFilterBtn} ${stockFilter === 'esgotado' ? styles.stockFilterBtnActive : ''}`}
                   onClick={() => setStockFilter('esgotado')}
                 >
@@ -3696,7 +3959,7 @@ export const AdminDashboard: React.FC = () => {
                 <div className={styles.stockVariationMatrix}>
                   {filteredStockProducts.map(prod => {
                     const rawList = prod.rawSizes || [];
-                    
+
                     const temAlgumEstoqueAtivo = rawList.length > 0 ? rawList.some((item: any) => item.ativo !== false) : true;
                     const categoriaEncontrada = categoriasList.find(c => c.nome === prod.category);
                     const isCardInativo = prod.ativo === 0 || prod.ativo === false || (prod as any).ativoGeral === false || !temAlgumEstoqueAtivo || categoriaEncontrada?.ativo === false;
@@ -3711,7 +3974,7 @@ export const AdminDashboard: React.FC = () => {
                         const sName = item.tamanho?.nome || item.tamanhoId || 'Único';
                         const sAtivo = item.tamanho?.ativo !== false && item.ativo !== false;
                         const baseEstoque = item.estoque ?? 0;
-                        
+
                         if (!colorMap.has(cName)) {
                           colorMap.set(cName, { colorName: cName, colorHex: cHex, isColorActive: cAtivo, sizes: [] });
                         }
@@ -3751,8 +4014,8 @@ export const AdminDashboard: React.FC = () => {
                     if (colorStockData.length === 0) return null;
 
                     return (
-                      <div 
-                        key={prod.id} 
+                      <div
+                        key={prod.id}
                         className={isCardInativo ? styles.stockProductBlockCardInativo : styles.stockProductBlockCard}
                       >
                         {isCardInativo && (
@@ -3774,11 +4037,11 @@ export const AdminDashboard: React.FC = () => {
                             const isCorInativaGlobal = colorItem.isColorActive === false;
 
                             return (
-                              <div 
-                                key={colorItem.colorName} 
+                              <div
+                                key={colorItem.colorName}
                                 className={`${styles.stockColorGroupCard} ${isCorInativaGlobal ? styles.corInativada : ''}`}
                               >
-                                
+
                                 <div className={styles.stockColorHeaderRow}>
                                   <span
                                     className={styles.stockColorDotBox}
@@ -3795,10 +4058,10 @@ export const AdminDashboard: React.FC = () => {
                                     const currentInputValue = stockInputValues[mapKey] || '';
                                     const currentTypeKey = `${mapKey}-type`;
                                     const currentMotivoIdKey = `${mapKey}-motivoId`;
-                                    
+
                                     const stockType = stockInputValues[currentTypeKey] || 'ENTRADA';
                                     const stockMotivoId = stockInputValues[currentMotivoIdKey] || '';
-                                    
+
                                     const isTamInativoGlobal = sizeItem.isSizeActive === false;
                                     const stockStatusClass = sizeItem.stock === 0 ? styles.redStock : sizeItem.stock <= 3 ? styles.yellowStock : styles.greenStock;
 
@@ -3806,11 +4069,11 @@ export const AdminDashboard: React.FC = () => {
                                     const isLoadingThis = loadingMovimentacao[mapKey] || false;
 
                                     return (
-                                        <div 
-                                          key={sizeItem.size} 
-                                          className={`${styles.sizeConfigBox} ${isTamInativoGlobal ? styles.corInativada : ''} ${styles.stockSizeCardBoxWhite}`}
-                                        >
-                                        
+                                      <div
+                                        key={sizeItem.size}
+                                        className={`${styles.sizeConfigBox} ${isTamInativoGlobal ? styles.corInativada : ''} ${styles.stockSizeCardBoxWhite}`}
+                                      >
+
                                         <div className={styles.stockSizeCardHeader}>
                                           <span className={styles.stockSizeBadgeLabel}>
                                             Tam: {sizeItem.size} {isTamInativoGlobal && '🚫'}
@@ -3963,7 +4226,7 @@ export const AdminDashboard: React.FC = () => {
                                                 carregarDashboard(),
                                                 carregarLogsAtividade()
                                               ]);
-                                              
+
                                               setStockInputValues(prev => ({
                                                 ...prev,
                                                 [mapKey]: '',
@@ -4011,12 +4274,12 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               <div className={styles.searchSection} style={{ marginTop: '20px' }}>
-                <input 
-                  type="text" 
-                  className={styles.searchInput} 
-                  placeholder="🔍 Pesquisar pelo nome ou ID do produto..." 
-                  value={historySearchQuery} 
-                  onChange={e => setHistorySearchQuery(e.target.value)} 
+                <input
+                  type="text"
+                  className={styles.searchInput}
+                  placeholder="🔍 Pesquisar pelo nome ou ID do produto..."
+                  value={historySearchQuery}
+                  onChange={e => setHistorySearchQuery(e.target.value)}
                 />
               </div>
 

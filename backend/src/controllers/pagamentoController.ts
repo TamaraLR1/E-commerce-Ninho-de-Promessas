@@ -3,6 +3,7 @@ import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { prisma } from '../lib/prisma';
 import { getIO } from '../socket';
 import { limparDocumento, validarCnpjAlfanumerico } from '../utils/documento';
+import { emitirNfeDoPedido } from '../services/blingService';
 
 const mpAccessToken =
   process.env.MERCADOPAGO_ACCESS_TOKEN ||
@@ -12,6 +13,15 @@ const paymentClient = new Payment(client);
 
 // URL base do Backend em produção para o Webhook
 const BACKEND_URL = process.env.BACKEND_URL || 'https://ninhoback.tamaralr.com.br';
+
+function dispararEmissaoNfeAssincrona(pedidoId: string, origem: string) {
+  emitirNfeDoPedido(pedidoId).catch((err: any) => {
+    console.error(
+      `[NF-e ${origem}] Falha assíncrona ao emitir NF-e do pedido ${pedidoId}:`,
+      err?.response?.data || err?.message || err
+    );
+  });
+}
 
 function validarCPF(cpf: string): boolean {
   const cpfLimpo = cpf.replace(/\D/g, '');
@@ -521,6 +531,10 @@ export const pagamentoController = {
         return pedidoFinal;
       });
 
+      if (resultado.status === 'PAGO') {
+        dispararEmissaoNfeAssincrona(resultado.id, 'pagamento-imediato');
+      }
+
       const io = getIO();
       if (io) {
         io.emit(pedidoParaRefazerId ? 'pedidoAtualizado' : 'novoPedido', resultado);
@@ -607,8 +621,16 @@ export const pagamentoController = {
           });
 
           if (foiAprovado) {
+            dispararEmissaoNfeAssincrona(pedidoExistente.id, 'webhook-mp');
+
             const io = getIO();
             if (io) {
+              if (pedidoExistente.userId) {
+                io.to(`usuario_${pedidoExistente.userId}`).emit('pedidoAtualizado', {
+                  id: pedidoExistente.id,
+                  status: 'PAGO',
+                });
+              }
               io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: 'PAGO' });
             }
           }
@@ -659,6 +681,12 @@ export const pagamentoController = {
           if (foiRecusado) {
             const io = getIO();
             if (io) {
+              if (pedidoExistente.userId) {
+                io.to(`usuario_${pedidoExistente.userId}`).emit('pedidoAtualizado', {
+                  id: pedidoExistente.id,
+                  status: novoStatus,
+                });
+              }
               io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: novoStatus });
             }
           }

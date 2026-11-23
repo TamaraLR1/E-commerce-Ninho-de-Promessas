@@ -55,6 +55,18 @@ interface Pedido {
   rastreioCodigo?: string;
   createdAt?: string;
   dataCriacao?: string;
+
+  // Dados da NF-e / Bling
+  blingNfeId?: string | number | null;
+  nfeNumero?: string | null;
+  nfeSerie?: string | null;
+  chaveAcessoNfe?: string | null;
+  nfeStatus?: string | null;
+  nfeLinkDanfe?: string | null;
+  nfeLinkXml?: string | null;
+  nfeErroMensagem?: string | null;
+  temNfeAutorizada?: boolean;
+
   qrCodePix?: string;
   pixCopiaECola?: string;
   qrCodeBase64Pix?: string;
@@ -184,12 +196,37 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
       );
     };
 
+    const handleNotaFiscalAtualizada = (dadosNfe: any) => {
+      const targetId = dadosNfe?.pedidoId || dadosNfe?.id;
+      if (!targetId) return;
+
+      setPedidos((pedidosAnteriores) =>
+        pedidosAnteriores.map((p) => {
+          if (p.id !== targetId) return p;
+          return {
+            ...p,
+            blingNfeId: dadosNfe.blingNfeId ?? p.blingNfeId,
+            nfeNumero: dadosNfe.nfeNumero ?? p.nfeNumero,
+            nfeSerie: dadosNfe.nfeSerie ?? p.nfeSerie,
+            chaveAcessoNfe: dadosNfe.chaveAcessoNfe ?? p.chaveAcessoNfe,
+            nfeStatus: dadosNfe.nfeStatus ?? p.nfeStatus,
+            nfeLinkDanfe: dadosNfe.nfeLinkDanfe ?? p.nfeLinkDanfe,
+            nfeLinkXml: dadosNfe.nfeLinkXml ?? p.nfeLinkXml,
+            nfeErroMensagem: dadosNfe.nfeErroMensagem ?? p.nfeErroMensagem,
+            temNfeAutorizada: dadosNfe.temNfeAutorizada ?? p.temNfeAutorizada,
+          };
+        })
+      );
+    };
+
     socket.on('pedidoAtualizado', handlePedidoAtualizado);
     socket.on('pedidoRastreioAtualizado', handlePedidoAtualizado);
+    socket.on('notaFiscalAtualizada', handleNotaFiscalAtualizada);
 
     return () => {
       socket.off('pedidoAtualizado', handlePedidoAtualizado);
       socket.off('pedidoRastreioAtualizado', handlePedidoAtualizado);
+      socket.off('notaFiscalAtualizada', handleNotaFiscalAtualizada);
     };
   }, [isOpen, userId, socket]);
 
@@ -327,6 +364,14 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
                 const statusAprovados = ['PAGO', 'EM_SEPARACAO', 'ENVIADO', 'ENTREGUE'];
                 const exibirPrevisaoEntrega = statusAprovados.includes(statusUpper) && Boolean(previsao);
 
+                const nfeAutorizada = Boolean(
+                  pedido.temNfeAutorizada ||
+                  (pedido.nfeStatus === 'AUTORIZADA' && pedido.chaveAcessoNfe)
+                );
+                const exibirBlocoNfe =
+                  statusAprovados.includes(statusUpper) ||
+                  Boolean(pedido.nfeStatus || pedido.nfeLinkDanfe || pedido.chaveAcessoNfe);
+
                 const codigoPix = pedido.qrCodePix || pedido.pixCopiaECola || pedido.pix?.qrCode || '';
                 const base64Pix = pedido.qrCodeBase64Pix || pedido.qrCodeBase64 || pedido.pix?.qrCodeBase64 || '';
 
@@ -397,6 +442,92 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({ isOpen, onClose, apiUr
                       <div className={styles.trackingBox}>
                         <span style={{ color: '#15803d' }}>🗓️ Previsão de Entrega:</span>
                         <strong>Entre {previsao}</strong>
+                      </div>
+                    )}
+
+                    {/* NOTA FISCAL ELETRÔNICA (NF-e / DANFE) */}
+                    {exibirBlocoNfe && (
+                      <div
+                        style={{
+                          marginTop: '8px',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          border: nfeAutorizada ? '1px solid #bbf7d0' : '1px solid #e2e8f0',
+                          backgroundColor: nfeAutorizada ? '#f0fdf4' : '#f8fafc',
+                          fontSize: '0.85rem',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '8px',
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          <div>
+                            <strong style={{ color: nfeAutorizada ? '#166534' : '#334155' }}>
+                              🧾 Nota Fiscal (NF-e)
+                              {pedido.nfeNumero ? ` Nº ${pedido.nfeNumero}` : ''}
+                              {pedido.nfeSerie ? ` · Série ${pedido.nfeSerie}` : ''}
+                            </strong>
+                            <div style={{ color: '#64748b', fontSize: '0.78rem', marginTop: '2px' }}>
+                              {nfeAutorizada
+                                ? 'Autorizada pela SEFAZ e disponível para download.'
+                                : pedido.nfeStatus === 'REJEITADA'
+                                  ? 'Emissão pendente de verificação fiscal.'
+                                  : 'A nota fiscal é emitida automaticamente após a confirmação do pagamento.'}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {pedido.nfeLinkDanfe && (
+                              <a
+                                href={pedido.nfeLinkDanfe}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '6px 12px',
+                                  borderRadius: '6px',
+                                  backgroundColor: '#16a34a',
+                                  color: '#ffffff',
+                                  fontWeight: 600,
+                                  fontSize: '0.8rem',
+                                  textDecoration: 'none',
+                                }}
+                              >
+                                📄 Baixar DANFE (PDF)
+                              </a>
+                            )}
+
+                            {pedido.nfeLinkXml && nfeAutorizada && (
+                              <a
+                                href={pedido.nfeLinkXml}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '6px 10px',
+                                  borderRadius: '6px',
+                                  backgroundColor: '#ffffff',
+                                  border: '1px solid #cbd5e1',
+                                  color: '#334155',
+                                  fontWeight: 500,
+                                  fontSize: '0.8rem',
+                                  textDecoration: 'none',
+                                }}
+                              >
+                                XML
+                              </a>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     )}
 

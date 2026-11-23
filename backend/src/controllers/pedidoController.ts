@@ -3,7 +3,9 @@ import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { prisma } from '../lib/prisma';
 import { getIO } from '../socket';
 import { formatarProduto } from './produtoController';
+import { formatarPedidoFiscal } from './notaFiscalController';
 import { limparDocumento, validarCnpjAlfanumerico } from '../utils/documento';
+import { emitirNfeDoPedido } from '../services/blingService';
 
 const mpAccessToken =
   process.env.MERCADOPAGO_ACCESS_TOKEN ||
@@ -11,6 +13,15 @@ const mpAccessToken =
 const client = new MercadoPagoConfig({ accessToken: mpAccessToken });
 const paymentClient = new Payment(client);
 const BACKEND_URL = process.env.BACKEND_URL || 'https://ninhoback.tamaralr.com.br';
+
+function dispararEmissaoNfeAssincrona(pedidoId: string, origem: string) {
+  emitirNfeDoPedido(pedidoId).catch((err: any) => {
+    console.error(
+      `[NF-e ${origem}] Falha assíncrona ao emitir NF-e do pedido ${pedidoId}:`,
+      err?.response?.data || err?.message || err
+    );
+  });
+}
 
 export const pedidoController = {
   // 🛒 0. Método para Criar Pedido (ou Atualizar se vier de "Refazer Pagamento" via Checkout)
@@ -119,6 +130,10 @@ export const pedidoController = {
           },
         });
 
+        if (statusMapeado === 'PAGO' && pedidoExistente.status !== 'PAGO') {
+          dispararEmissaoNfeAssincrona(pedidoAtualizado.id, 'refazer-pagamento-cartao');
+        }
+
         const io = getIO();
         if (io && userId) {
           io.to(`usuario_${userId}`).emit('pedidoAtualizado', pedidoAtualizado);
@@ -130,6 +145,7 @@ export const pedidoController = {
           sucesso: true,
           pedido: {
             ...pedidoAtualizado,
+            ...formatarPedidoFiscal(pedidoAtualizado),
             qrCodePix: mpResponse.point_of_interaction?.transaction_data?.qr_code,
             qrCodeBase64Pix: mpResponse.point_of_interaction?.transaction_data?.qr_code_base64,
           },
@@ -228,8 +244,6 @@ export const pedidoController = {
 
       const snapshotClienteFone = clienteFoneBody || usuarioLogado?.telefone || null;
 
-      // Resolve o endereço fiscal (se informado no checkout via "Usar outro endereço para a nota fiscal",
-      // ou o endereço fiscal da empresa PJ; se não houver, fica null e a NF-e usa o endereço de entrega)
       let enderecoFiscalFinalId: string | null = null;
 
       if (enderecoFiscalIdBody) {
@@ -341,7 +355,10 @@ export const pedidoController = {
 
       return res.status(201).json({
         message: 'Pedido gerado com sucesso!',
-        pedido: novoPedido,
+        pedido: {
+          ...novoPedido,
+          ...formatarPedidoFiscal(novoPedido),
+        },
       });
     } catch (error) {
       console.error('Erro ao criar pedido:', error);
@@ -402,6 +419,8 @@ export const pedidoController = {
         alturaCaixa: Number(p.alturaCaixa ?? 8.0),
         larguraCaixa: Number(p.larguraCaixa ?? 16.0),
         comprimentoCaixa: Number(p.comprimentoCaixa ?? 24.0),
+
+        ...formatarPedidoFiscal(p),
 
         enderecoEntrega: p.endereco
           ? {
@@ -506,6 +525,8 @@ export const pedidoController = {
         codigoRastreio: (p as any).codigoRastreio || (p as any).rastreioCodigo || '',
         createdAt: p.createdAt,
 
+        ...formatarPedidoFiscal(p),
+
         historicoStatus: (p as any).historicoStatus || [],
 
         itens: p.itens.map((item: any) => {
@@ -562,7 +583,10 @@ export const pedidoController = {
         return res.status(404).json({ message: 'Pedido não encontrado.' });
       }
 
-      return res.status(200).json(pedido);
+      return res.status(200).json({
+        ...pedido,
+        ...formatarPedidoFiscal(pedido),
+      });
     } catch (error) {
       console.error('Erro ao buscar pedido por ID:', error);
       return res.status(500).json({ message: 'Erro interno ao buscar o pedido.' });
@@ -620,6 +644,10 @@ export const pedidoController = {
         },
       });
 
+      if (status === 'PAGO' && pedidoExistente.status !== 'PAGO') {
+        dispararEmissaoNfeAssincrona(pedidoAtualizado.id, 'atualizar-status-admin');
+      }
+
       const pedidoFormatado = {
         id: pedidoAtualizado.id,
         codigoPedido: (pedidoAtualizado as any).codigoPedido || ((pedidoAtualizado as any).numeroPedido ? String((pedidoAtualizado as any).numeroPedido) : pedidoAtualizado.id.slice(0, 8)),
@@ -630,6 +658,8 @@ export const pedidoController = {
         codigoRastreio: (pedidoAtualizado as any).codigoRastreio || (pedidoAtualizado as any).rastreioCodigo || '',
         createdAt: pedidoAtualizado.createdAt,
         userId: pedidoAtualizado.userId,
+
+        ...formatarPedidoFiscal(pedidoAtualizado),
 
         historicoStatus: (pedidoAtualizado as any).historicoStatus || [],
 
@@ -758,6 +788,7 @@ export const pedidoController = {
         sucesso: true,
         pedido: {
           ...pedidoAtualizado,
+          ...formatarPedidoFiscal(pedidoAtualizado),
           qrCodePix: mpResponse.point_of_interaction?.transaction_data?.qr_code,
           qrCodeBase64Pix: mpResponse.point_of_interaction?.transaction_data?.qr_code_base64,
         },

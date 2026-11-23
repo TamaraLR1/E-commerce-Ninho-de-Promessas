@@ -5,12 +5,18 @@ const mercadopago_1 = require("mercadopago");
 const prisma_1 = require("../lib/prisma");
 const socket_1 = require("../socket");
 const documento_1 = require("../utils/documento");
+const blingService_1 = require("../services/blingService");
 const mpAccessToken = process.env.MERCADOPAGO_ACCESS_TOKEN ||
     'APP_USR-6241648762325115-101109-22bbdb4d167baad86cf6c9f6f2776dc8-3529610690';
 const client = new mercadopago_1.MercadoPagoConfig({ accessToken: mpAccessToken });
 const paymentClient = new mercadopago_1.Payment(client);
 // URL base do Backend em produção para o Webhook
 const BACKEND_URL = process.env.BACKEND_URL || 'https://ninhoback.tamaralr.com.br';
+function dispararEmissaoNfeAssincrona(pedidoId, origem) {
+    (0, blingService_1.emitirNfeDoPedido)(pedidoId).catch((err) => {
+        console.error(`[NF-e ${origem}] Falha assíncrona ao emitir NF-e do pedido ${pedidoId}:`, err?.response?.data || err?.message || err);
+    });
+}
 function validarCPF(cpf) {
     const cpfLimpo = cpf.replace(/\D/g, '');
     if (cpfLimpo.length !== 11 || /^(\d)\1{10}$/.test(cpfLimpo))
@@ -436,6 +442,9 @@ exports.pagamentoController = {
                 }
                 return pedidoFinal;
             });
+            if (resultado.status === 'PAGO') {
+                dispararEmissaoNfeAssincrona(resultado.id, 'pagamento-imediato');
+            }
             const io = (0, socket_1.getIO)();
             if (io) {
                 io.emit(pedidoParaRefazerId ? 'pedidoAtualizado' : 'novoPedido', resultado);
@@ -510,8 +519,15 @@ exports.pagamentoController = {
                         }
                     });
                     if (foiAprovado) {
+                        dispararEmissaoNfeAssincrona(pedidoExistente.id, 'webhook-mp');
                         const io = (0, socket_1.getIO)();
                         if (io) {
+                            if (pedidoExistente.userId) {
+                                io.to(`usuario_${pedidoExistente.userId}`).emit('pedidoAtualizado', {
+                                    id: pedidoExistente.id,
+                                    status: 'PAGO',
+                                });
+                            }
                             io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: 'PAGO' });
                         }
                     }
@@ -557,6 +573,12 @@ exports.pagamentoController = {
                     if (foiRecusado) {
                         const io = (0, socket_1.getIO)();
                         if (io) {
+                            if (pedidoExistente.userId) {
+                                io.to(`usuario_${pedidoExistente.userId}`).emit('pedidoAtualizado', {
+                                    id: pedidoExistente.id,
+                                    status: novoStatus,
+                                });
+                            }
                             io.emit('pedidoAtualizado', { id: pedidoExistente.id, status: novoStatus });
                         }
                     }

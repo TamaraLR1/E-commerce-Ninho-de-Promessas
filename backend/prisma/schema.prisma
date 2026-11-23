@@ -146,6 +146,10 @@ model Produto {
   categoryId       String
   categoria        Categoria @relation(fields: [categoryId], references: [id])
 
+  // Dados Fiscais para NF-e / Bling
+  ncm              String    @default("61112000") @db.VarChar(10) // Ex: 61112000 (Vestuário de malha de algodão para bebês)
+  origem           Int       @default(0) // 0 = Nacional
+
   temOferta        Boolean   @default(false)
   precoPromocional Decimal   @default(0) @db.Decimal(10, 2)
 
@@ -317,7 +321,13 @@ model Pedido {
 
   // Integração com Bling / NF-e
   blingNfeId      BigInt?
+  nfeNumero       String?
+  nfeSerie        String?
   chaveAcessoNfe  String?
+  nfeStatus       String?   // Ex: PENDENTE, AUTORIZADA, REJEITADA
+  nfeLinkDanfe    String?   @db.Text
+  nfeLinkXml      String?   @db.Text
+  nfeErroMensagem String?   @db.Text
 
   // Controle de expiração do estoque (15 min para PIX ou 48h úteis para Cartão)
   expiraEm         DateTime?
@@ -442,4 +452,18 @@ model Cupom {
   atualizadoEm     DateTime  @updatedAt @map("atualizado_em")
 
   @@map("cupons")
+}
+
+// ========================================================
+// INTEGRAÇÃO OAUTH 2.0 - BLING ERP
+// ========================================================
+
+model BlingToken {
+  id           Int      @id @default(1)
+  accessToken  String   @db.Text
+  refreshToken String   @db.Text
+  expiresAt    DateTime
+  updatedAt    DateTime @updatedAt
+
+  @@map("bling_tokens")
 }

@@ -4,12 +4,19 @@ exports.pedidoController = void 0;
 const mercadopago_1 = require("mercadopago");
 const prisma_1 = require("../lib/prisma");
 const socket_1 = require("../socket");
+const notaFiscalController_1 = require("./notaFiscalController");
 const documento_1 = require("../utils/documento");
+const blingService_1 = require("../services/blingService");
 const mpAccessToken = process.env.MERCADOPAGO_ACCESS_TOKEN ||
     'APP_USR-6241648762325115-101109-22bbdb4d167baad86cf6c9f6f2776dc8-3529610690';
 const client = new mercadopago_1.MercadoPagoConfig({ accessToken: mpAccessToken });
 const paymentClient = new mercadopago_1.Payment(client);
 const BACKEND_URL = process.env.BACKEND_URL || 'https://ninhoback.tamaralr.com.br';
+function dispararEmissaoNfeAssincrona(pedidoId, origem) {
+    (0, blingService_1.emitirNfeDoPedido)(pedidoId).catch((err) => {
+        console.error(`[NF-e ${origem}] Falha assíncrona ao emitir NF-e do pedido ${pedidoId}:`, err?.response?.data || err?.message || err);
+    });
+}
 exports.pedidoController = {
     // 🛒 0. Método para Criar Pedido (ou Atualizar se vier de "Refazer Pagamento" via Checkout)
     async criarPedido(req, res) {
@@ -86,6 +93,9 @@ exports.pedidoController = {
                         enderecoFiscal: true,
                     },
                 });
+                if (statusMapeado === 'PAGO' && pedidoExistente.status !== 'PAGO') {
+                    dispararEmissaoNfeAssincrona(pedidoAtualizado.id, 'refazer-pagamento-cartao');
+                }
                 const io = (0, socket_1.getIO)();
                 if (io && userId) {
                     io.to(`usuario_${userId}`).emit('pedidoAtualizado', pedidoAtualizado);
@@ -96,6 +106,7 @@ exports.pedidoController = {
                     sucesso: true,
                     pedido: {
                         ...pedidoAtualizado,
+                        ...(0, notaFiscalController_1.formatarPedidoFiscal)(pedidoAtualizado),
                         qrCodePix: mpResponse.point_of_interaction?.transaction_data?.qr_code,
                         qrCodeBase64Pix: mpResponse.point_of_interaction?.transaction_data?.qr_code_base64,
                     },
@@ -173,8 +184,6 @@ exports.pedidoController = {
                 : null;
             const snapshotClienteEmail = String(clienteEmailBody || usuarioLogado?.email || '').trim();
             const snapshotClienteFone = clienteFoneBody || usuarioLogado?.telefone || null;
-            // Resolve o endereço fiscal (se informado no checkout via "Usar outro endereço para a nota fiscal",
-            // ou o endereço fiscal da empresa PJ; se não houver, fica null e a NF-e usa o endereço de entrega)
             let enderecoFiscalFinalId = null;
             if (enderecoFiscalIdBody) {
                 enderecoFiscalFinalId = String(enderecoFiscalIdBody);
@@ -274,7 +283,10 @@ exports.pedidoController = {
             }
             return res.status(201).json({
                 message: 'Pedido gerado com sucesso!',
-                pedido: novoPedido,
+                pedido: {
+                    ...novoPedido,
+                    ...(0, notaFiscalController_1.formatarPedidoFiscal)(novoPedido),
+                },
             });
         }
         catch (error) {
@@ -329,6 +341,7 @@ exports.pedidoController = {
                 alturaCaixa: Number(p.alturaCaixa ?? 8.0),
                 larguraCaixa: Number(p.larguraCaixa ?? 16.0),
                 comprimentoCaixa: Number(p.comprimentoCaixa ?? 24.0),
+                ...(0, notaFiscalController_1.formatarPedidoFiscal)(p),
                 enderecoEntrega: p.endereco
                     ? {
                         logradouro: p.endereco.rua || p.endereco.logradouro || '',
@@ -421,6 +434,7 @@ exports.pedidoController = {
                 servicoFrete: p.servicoFrete || p.metodoFrete || 'Entrega Padrão',
                 codigoRastreio: p.codigoRastreio || p.rastreioCodigo || '',
                 createdAt: p.createdAt,
+                ...(0, notaFiscalController_1.formatarPedidoFiscal)(p),
                 historicoStatus: p.historicoStatus || [],
                 itens: p.itens.map((item) => {
                     const primeiraImagem = item.produto?.imagens?.[0]?.url || '';
@@ -472,7 +486,10 @@ exports.pedidoController = {
             if (!pedido) {
                 return res.status(404).json({ message: 'Pedido não encontrado.' });
             }
-            return res.status(200).json(pedido);
+            return res.status(200).json({
+                ...pedido,
+                ...(0, notaFiscalController_1.formatarPedidoFiscal)(pedido),
+            });
         }
         catch (error) {
             console.error('Erro ao buscar pedido por ID:', error);
@@ -523,6 +540,9 @@ exports.pedidoController = {
                     },
                 },
             });
+            if (status === 'PAGO' && pedidoExistente.status !== 'PAGO') {
+                dispararEmissaoNfeAssincrona(pedidoAtualizado.id, 'atualizar-status-admin');
+            }
             const pedidoFormatado = {
                 id: pedidoAtualizado.id,
                 codigoPedido: pedidoAtualizado.codigoPedido || (pedidoAtualizado.numeroPedido ? String(pedidoAtualizado.numeroPedido) : pedidoAtualizado.id.slice(0, 8)),
@@ -533,6 +553,7 @@ exports.pedidoController = {
                 codigoRastreio: pedidoAtualizado.codigoRastreio || pedidoAtualizado.rastreioCodigo || '',
                 createdAt: pedidoAtualizado.createdAt,
                 userId: pedidoAtualizado.userId,
+                ...(0, notaFiscalController_1.formatarPedidoFiscal)(pedidoAtualizado),
                 historicoStatus: pedidoAtualizado.historicoStatus || [],
                 itens: pedidoAtualizado.itens.map((item) => ({
                     id: item.id,
@@ -646,6 +667,7 @@ exports.pedidoController = {
                 sucesso: true,
                 pedido: {
                     ...pedidoAtualizado,
+                    ...(0, notaFiscalController_1.formatarPedidoFiscal)(pedidoAtualizado),
                     qrCodePix: mpResponse.point_of_interaction?.transaction_data?.qr_code,
                     qrCodeBase64Pix: mpResponse.point_of_interaction?.transaction_data?.qr_code_base64,
                 },

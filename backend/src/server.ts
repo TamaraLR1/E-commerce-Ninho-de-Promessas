@@ -19,6 +19,7 @@ import { cupomRoutes } from './routes/cupomRoutes';
 import { relatorioRoutes } from './routes/relatorioRoutes';
 import checkoutRoutes from './routes/checkoutRoutes';
 import { empresaRoutes } from './routes/empresaRoutes';
+import notaFiscalRoutes from './routes/notaFiscalRoutes';
 
 import path from 'path';
 import { initSocket, socketMiddleware } from './socket';
@@ -70,6 +71,7 @@ app.use('/api', cupomRoutes);
 app.use('/api', relatorioRoutes);
 app.use('/api/checkout', checkoutRoutes);
 app.use('/api', empresaRoutes);
+app.use('/api/bling', notaFiscalRoutes);
 
 const PORT = Number(process.env.PORT) || 3333;
 

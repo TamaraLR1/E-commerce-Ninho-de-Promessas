@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const notaFiscalController_1 = require("../controllers/notaFiscalController");
+const router = (0, express_1.Router)();
+router.get('/callback', notaFiscalController_1.notaFiscalController.oauthCallback);
+router.post('/pedidos/:pedidoId/emitir', notaFiscalController_1.notaFiscalController.emitirPorPedido);
+router.get('/pedidos/:pedidoId/status', notaFiscalController_1.notaFiscalController.consultarPorPedido);
+router.get('/pedidos/:pedidoId/danfe', notaFiscalController_1.notaFiscalController.baixarDanfe);
+router.get('/pedidos/:pedidoId/xml', notaFiscalController_1.notaFiscalController.baixarXml);
+exports.default = router;
