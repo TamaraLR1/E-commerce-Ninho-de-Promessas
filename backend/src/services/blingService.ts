@@ -7,13 +7,72 @@ const BLING_API_URL = 'https://api.bling.com.br/Api/v3';
 const BLING_CLIENT_ID = process.env.BLING_CLIENT_ID!;
 const BLING_CLIENT_SECRET = process.env.BLING_CLIENT_SECRET!;
 
-const BLING_NATUREZA_ID = process.env.BLING_NATUREZA_OPERACAO_ID
-  ? Number(process.env.BLING_NATUREZA_OPERACAO_ID)
-  : undefined;
+const BLING_NATUREZA_NAO_CONTRIBUINTE_ID = process.env
+  .BLING_NATUREZA_NAO_CONTRIBUINTE_ID
+  ? Number(process.env.BLING_NATUREZA_NAO_CONTRIBUINTE_ID)
+  : process.env.BLING_NATUREZA_OPERACAO_ID
+    ? Number(process.env.BLING_NATUREZA_OPERACAO_ID)
+    : undefined;
 
-const BLING_NATUREZA_PJ_CONTRIBUINTE_ID = process.env.BLING_NATUREZA_PJ_CONTRIBUINTE_ID
+const BLING_NATUREZA_PJ_CONTRIBUINTE_ID = process.env
+  .BLING_NATUREZA_PJ_CONTRIBUINTE_ID
   ? Number(process.env.BLING_NATUREZA_PJ_CONTRIBUINTE_ID)
-  : BLING_NATUREZA_ID;
+  : BLING_NATUREZA_NAO_CONTRIBUINTE_ID;
+
+const BLING_NATUREZA_PJ_ISENTO_ID = process.env.BLING_NATUREZA_PJ_ISENTO_ID
+  ? Number(process.env.BLING_NATUREZA_PJ_ISENTO_ID)
+  : BLING_NATUREZA_NAO_CONTRIBUINTE_ID;
+
+let refreshPromise: Promise<string> | null = null;
+let filaEmExecucao = false;
+let workerIniciado = false;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isErroTransitorioBling(error: any): boolean {
+  const status = error?.response?.status;
+  const code = error?.code;
+  return (
+    status === 429 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    code === 'ECONNRESET' ||
+    code === 'ETIMEDOUT' ||
+    code === 'ECONNABORTED'
+  );
+}
+
+async function executarComRetryBling<T>(
+  fn: () => Promise<T>,
+  tentativas = 4
+): Promise<T> {
+  let atrasoMs = 2000;
+
+  for (let tentativa = 1; tentativa <= tentativas; tentativa++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      if (!isErroTransitorioBling(error) || tentativa === tentativas) {
+        throw error;
+      }
+
+      const retryAfterHeader = Number(error?.response?.headers?.['retry-after']);
+      const espera =
+        !Number.isNaN(retryAfterHeader) && retryAfterHeader > 0
+          ? retryAfterHeader * 1000
+          : atrasoMs;
+
+      console.warn(
+        `[Bling NF-e] Limite/instabilidade temporária (tentativa ${tentativa}/${tentativas}). Aguardando ${espera}ms...`
+      );
+      await sleep(espera);
+      atrasoMs *= 2;
+    }
+  }
+
+  throw new Error('Falha após tentativas no Bling.');
+}
 
 function getBasicAuthHeader(): string {
   const credentials = Buffer.from(
@@ -79,33 +138,45 @@ export async function getValidBlingToken(): Promise<string> {
     return tokenRecord.accessToken;
   }
 
-  const params = new URLSearchParams();
-  params.append('grant_type', 'refresh_token');
-  params.append('refresh_token', tokenRecord.refreshToken);
+  if (refreshPromise) {
+    return refreshPromise;
+  }
 
-  const response = await axios.post(`${BLING_API_URL}/oauth/token`, params, {
-    headers: {
-      Authorization: getBasicAuthHeader(),
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
-    },
-  });
+  refreshPromise = (async () => {
+    try {
+      const params = new URLSearchParams();
+      params.append('grant_type', 'refresh_token');
+      params.append('refresh_token', tokenRecord.refreshToken);
 
-  const { access_token, refresh_token, expires_in } = response.data;
-  const expiresAt = new Date(
-    Date.now() + (Number(expires_in || 21600) - 300) * 1000
-  );
+      const response = await axios.post(`${BLING_API_URL}/oauth/token`, params, {
+        headers: {
+          Authorization: getBasicAuthHeader(),
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+      });
 
-  await prisma.blingToken.update({
-    where: { id: 1 },
-    data: {
-      accessToken: access_token,
-      refreshToken: refresh_token,
-      expiresAt,
-    },
-  });
+      const { access_token, refresh_token, expires_in } = response.data;
+      const expiresAt = new Date(
+        Date.now() + (Number(expires_in || 21600) - 300) * 1000
+      );
 
-  return access_token;
+      await prisma.blingToken.update({
+        where: { id: 1 },
+        data: {
+          accessToken: access_token,
+          refreshToken: refresh_token,
+          expiresAt,
+        },
+      });
+
+      return access_token;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }
 
 export async function sincronizarNfeNoPedido(
@@ -118,9 +189,9 @@ export async function sincronizarNfeNoPedido(
     Accept: 'application/json',
   };
 
-  const detailRes = await axios.get(`${BLING_API_URL}/nfe/${blingNfeId}`, {
-    headers,
-  });
+  const detailRes = await executarComRetryBling(() =>
+    axios.get(`${BLING_API_URL}/nfe/${blingNfeId}`, { headers })
+  );
 
   const nfeData = detailRes.data?.data;
   const xmlUrl = nfeData?.linkXml || nfeData?.xml || null;
@@ -132,7 +203,7 @@ export async function sincronizarNfeNoPedido(
     nfeStatus = 'REJEITADA';
   }
 
-  const pedidoAtualizado = await prisma.pedido.update({
+  return prisma.pedido.update({
     where: { id: pedidoId },
     data: {
       blingNfeId: BigInt(blingNfeId),
@@ -148,8 +219,63 @@ export async function sincronizarNfeNoPedido(
           : nfeData?.motivoRejeicao || nfeData?.mensagem || null,
     },
   });
+}
 
-  return pedidoAtualizado;
+export async function enfileirarNfeDoPedido(pedidoId: string) {
+  const pedido = await prisma.pedido.findUnique({
+    where: { id: pedidoId },
+    select: {
+      id: true,
+      numeroPedido: true,
+      nfeStatus: true,
+      chaveAcessoNfe: true,
+    },
+  });
+
+  if (!pedido) {
+    throw new Error(`Pedido ${pedidoId} não encontrado.`);
+  }
+
+  if (pedido.nfeStatus === 'AUTORIZADA' && pedido.chaveAcessoNfe) {
+    return { jaEmitida: true, enfileirada: false, pedido };
+  }
+
+  const atualizado = await prisma.pedido.update({
+    where: { id: pedidoId },
+    data: {
+      nfeStatus: 'FILA',
+      nfeErroMensagem: null,
+    },
+  });
+
+  void processarFilaNfe();
+
+  return { jaEmitida: false, enfileirada: true, pedido: atualizado };
+}
+
+export async function enfileirarNfeEmLote(pedidoIds: string[]) {
+  const unicos = Array.from(new Set(pedidoIds.filter(Boolean)));
+  if (unicos.length === 0) return { totalEnfileirados: 0 };
+
+  const result = await prisma.pedido.updateMany({
+    where: {
+      id: { in: unicos },
+      NOT: {
+        AND: [
+          { nfeStatus: 'AUTORIZADA' },
+          { chaveAcessoNfe: { not: null } },
+        ],
+      },
+    },
+    data: {
+      nfeStatus: 'FILA',
+      nfeErroMensagem: null,
+    },
+  });
+
+  void processarFilaNfe();
+
+  return { totalEnfileirados: result.count };
 }
 
 export async function emitirNfeDoPedido(pedidoId: string) {
@@ -189,23 +315,25 @@ export async function emitirNfeDoPedido(pedidoId: string) {
 
     const end = pedido.enderecoFiscal || pedido.endereco;
     const documento = limparDocumento(pedido.clienteCpf);
+    const ieLimpa = limparDocumento(pedido.clienteInscricaoEstadual);
     const isPJ = pedido.tipoFaturamento === 'PJ' || documento.length === 14;
-    const isPjContribuinte =
-      isPJ &&
-      Boolean(pedido.clienteInscricaoEstadual) &&
-      pedido.clienteIndicadorIE === 'CONTRIBUINTE';
+    const indicadorIE = isPJ ? mapIndicadorIE(pedido.clienteIndicadorIE) : 9;
 
-    const naturezaOperacaoId = isPjContribuinte
-      ? BLING_NATUREZA_PJ_CONTRIBUINTE_ID
-      : BLING_NATUREZA_ID;
+    const isPjContribuinte =
+      isPJ && indicadorIE === 1 && Boolean(ieLimpa);
+
+    let naturezaOperacaoId = BLING_NATUREZA_NAO_CONTRIBUINTE_ID;
+    if (isPjContribuinte) {
+      naturezaOperacaoId = BLING_NATUREZA_PJ_CONTRIBUINTE_ID;
+    } else if (isPJ && indicadorIE === 2) {
+      naturezaOperacaoId = BLING_NATUREZA_PJ_ISENTO_ID;
+    }
 
     const contatoPayload: Record<string, any> = {
       nome: pedido.clienteNome,
       tipoPessoa: isPJ ? 'J' : 'F',
       numeroDocumento: documento,
-      indicadorInscricaoEstadual: isPJ
-        ? mapIndicadorIE(pedido.clienteIndicadorIE)
-        : 9,
+      indicadorInscricaoEstadual: isPjContribuinte ? 1 : indicadorIE === 2 ? 2 : 9,
       email: pedido.clienteEmail,
       telefone: limparDocumento(pedido.clienteFone),
       endereco: {
@@ -219,8 +347,8 @@ export async function emitirNfeDoPedido(pedidoId: string) {
       },
     };
 
-    if (isPJ && pedido.clienteInscricaoEstadual) {
-      contatoPayload.ie = limparDocumento(pedido.clienteInscricaoEstadual);
+    if (isPjContribuinte) {
+      contatoPayload.ie = ieLimpa;
     }
 
     const itensPayload = pedido.itens.map((item) => {
@@ -256,17 +384,17 @@ export async function emitirNfeDoPedido(pedidoId: string) {
     );
 
     const nfePayload = {
-      tipo: 1, // 1 = Saída
+      tipo: 1,
       numeroPedidoLoja: String(pedido.numeroPedido),
       dataOperacao: new Date().toISOString().replace('T', ' ').slice(0, 19),
-      finalidade: 1, // 1 = NF-e normal
+      finalidade: 1,
       ...(naturezaOperacaoId
         ? { naturezaOperacao: { id: naturezaOperacaoId } }
         : {}),
       contato: contatoPayload,
       itens: itensPayload,
       transporte: {
-        fretePorConta: 0, // 0 = Remetente (CIF)
+        fretePorConta: 0,
         frete: freteNum,
         volumes: [
           {
@@ -280,9 +408,9 @@ export async function emitirNfeDoPedido(pedidoId: string) {
       ...(descontoCalculado > 0 ? { desconto: descontoCalculado } : {}),
     };
 
-    const createRes = await axios.post(`${BLING_API_URL}/nfe`, nfePayload, {
-      headers,
-    });
+    const createRes = await executarComRetryBling(() =>
+      axios.post(`${BLING_API_URL}/nfe`, nfePayload, { headers })
+    );
 
     const blingNfeId = createRes.data?.data?.id;
     if (!blingNfeId) {
@@ -298,11 +426,13 @@ export async function emitirNfeDoPedido(pedidoId: string) {
       },
     });
 
-    await axios.post(
-      `${BLING_API_URL}/nfe/${blingNfeId}/enviar`,
-      {},
-      { headers }
+    await sleep(400);
+
+    await executarComRetryBling(() =>
+      axios.post(`${BLING_API_URL}/nfe/${blingNfeId}/enviar`, {}, { headers })
     );
+
+    await sleep(600);
 
     const pedidoAtualizado = await sincronizarNfeNoPedido(pedido.id, blingNfeId);
 
@@ -311,6 +441,21 @@ export async function emitirNfeDoPedido(pedidoId: string) {
       pedido: pedidoAtualizado,
     };
   } catch (error: any) {
+    if (isErroTransitorioBling(error)) {
+      console.warn(
+        `[Bling NF-e] Erro transitório no pedido #${pedido.numeroPedido}. Mantendo em FILA para nova tentativa.`
+      );
+      await prisma.pedido.update({
+        where: { id: pedido.id },
+        data: {
+          nfeStatus: 'FILA',
+          nfeErroMensagem:
+            'Aguardando nova tentativa automática (limite de requisições ou instabilidade no Bling).',
+        },
+      });
+      throw error;
+    }
+
     const detalhesBling =
       error?.response?.data?.error?.fields ||
       error?.response?.data?.error?.description ||
@@ -337,4 +482,74 @@ export async function emitirNfeDoPedido(pedidoId: string) {
 
     throw error;
   }
+}
+
+export async function processarFilaNfe(): Promise<void> {
+  if (filaEmExecucao) return;
+  filaEmExecucao = true;
+
+  try {
+    while (true) {
+      const proximo = await prisma.pedido.findFirst({
+        where: { nfeStatus: 'FILA' },
+        orderBy: { updatedAt: 'asc' },
+        select: { id: true, numeroPedido: true },
+      });
+
+      if (!proximo) break;
+
+      await prisma.pedido.update({
+        where: { id: proximo.id },
+        data: { nfeStatus: 'PROCESSANDO' },
+      });
+
+      try {
+        await emitirNfeDoPedido(proximo.id);
+      } catch (err: any) {
+        if (isErroTransitorioBling(err)) {
+          // Dá uma pausa maior se o Bling pediu respiro antes de pegar o próximo
+          await sleep(5000);
+        }
+      }
+
+      // Cadência segura de ~1.2s entre emissões para respeitar o rate limit do Bling
+      await sleep(1200);
+    }
+  } finally {
+    filaEmExecucao = false;
+  }
+}
+
+export function iniciarWorkerFilaNfe() {
+  if (workerIniciado) return;
+  workerIniciado = true;
+
+  // Retoma imediatamente eventuais notas que ficaram em FILA antes de um restart
+  void processarFilaNfe();
+
+  // Varredura de segurança a cada 15s (também tenta sincronizar notas que ficaram em PROCESSANDO)
+  setInterval(async () => {
+    try {
+      await processarFilaNfe();
+
+      const pendentesSync = await prisma.pedido.findMany({
+        where: {
+          nfeStatus: 'PROCESSANDO',
+          blingNfeId: { not: null },
+        },
+        take: 5,
+        orderBy: { updatedAt: 'asc' },
+        select: { id: true, blingNfeId: true },
+      });
+
+      for (const item of pendentesSync) {
+        if (item.blingNfeId) {
+          await sincronizarNfeNoPedido(item.id, item.blingNfeId);
+          await sleep(800);
+        }
+      }
+    } catch (error) {
+      console.error('[Worker Fila NF-e] Erro no ciclo periódico:', error);
+    }
+  }, 15000);
 }

@@ -2,8 +2,10 @@ import { Request, Response } from 'express';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { prisma } from '../lib/prisma';
 import { getIO } from '../socket';
+import { formatarPedidoFiscal } from './notaFiscalController';
 import { limparDocumento, validarCnpjAlfanumerico } from '../utils/documento';
-import { emitirNfeDoPedido } from '../services/blingService';
+import { enfileirarNfeDoPedido } from '../services/blingService';
+import { processarFilaNfe } from '../jobs/nfeFilaWorker';
 
 const mpAccessToken =
   process.env.MERCADOPAGO_ACCESS_TOKEN ||
@@ -14,13 +16,31 @@ const paymentClient = new Payment(client);
 // URL base do Backend em produção para o Webhook
 const BACKEND_URL = process.env.BACKEND_URL || 'https://ninhoback.tamaralr.com.br';
 
-function dispararEmissaoNfeAssincrona(pedidoId: string, origem: string) {
-  emitirNfeDoPedido(pedidoId).catch((err: any) => {
+function emitirEventoNotaFiscalPedido(pedido: any) {
+  if (!pedido) return;
+  const fiscal = formatarPedidoFiscal(pedido);
+  const payload = { pedidoId: pedido.id, ...fiscal };
+
+  const io = getIO();
+  if (io) {
+    if (pedido.userId) {
+      io.to(`usuario_${pedido.userId}`).emit('notaFiscalAtualizada', payload);
+    }
+    io.emit('notaFiscalAtualizada', payload);
+  }
+}
+
+async function enfileirarNfeAssincrona(pedidoId: string, origem: string) {
+  try {
+    const { pedido } = await enfileirarNfeDoPedido(pedidoId);
+    emitirEventoNotaFiscalPedido(pedido);
+    void processarFilaNfe();
+  } catch (err: any) {
     console.error(
-      `[NF-e ${origem}] Falha assíncrona ao emitir NF-e do pedido ${pedidoId}:`,
+      `[NF-e Fila ${origem}] Falha ao enfileirar pedido ${pedidoId}:`,
       err?.response?.data || err?.message || err
     );
-  });
+  }
 }
 
 function validarCPF(cpf: string): boolean {
@@ -358,7 +378,7 @@ export const pagamentoController = {
       }
 
       // -------------------------------------------------------------------------
-      // 4. TRANSAÇÃO PRISMA: ESTOQUE, RESERVA E EXPIRAÇÃO (15 min PIX / 48h Cartão)
+      // 4. TRANSAÇÃO PRISMA: ESTOQUE ATÔMICO, RESERVA E EXPIRAÇÃO
       // -------------------------------------------------------------------------
       const resultado = await prisma.$transaction(async (tx) => {
         if (pedidoParaRefazerId) {
@@ -384,34 +404,23 @@ export const pagamentoController = {
           await tx.itemPedido.deleteMany({ where: { pedidoId: String(pedidoParaRefazerId) } });
         }
 
-        // Revalidação final dentro da transação antes de decrementar
-        for (const item of items) {
-          if (item.produtoId) {
-            const estoqueDisponivel = await tx.produtoEstoque.findFirst({
-              where: {
-                produtoId: String(item.produtoId),
-                ...(item.tamanhoId ? { tamanhoId: String(item.tamanhoId) } : {}),
-                ...(item.corId ? { corId: String(item.corId) } : {}),
-              },
-            });
-
-            if (!estoqueDisponivel || estoqueDisponivel.estoque < Number(item.quantidade)) {
-              throw new Error(`Estoque insuficiente para o produto: ${item.nome || 'Item'}`);
-            }
-          }
-        }
-
         if (statusPedido !== 'RECUSADO') {
           for (const item of items) {
             if (item.produtoId) {
-              await tx.produtoEstoque.updateMany({
+              const qtdSol = Number(item.quantidade || 0);
+              const atualizadoEstoque = await tx.produtoEstoque.updateMany({
                 where: {
                   produtoId: String(item.produtoId),
                   ...(item.tamanhoId ? { tamanhoId: String(item.tamanhoId) } : {}),
                   ...(item.corId ? { corId: String(item.corId) } : {}),
+                  estoque: { gte: qtdSol },
                 },
-                data: { estoque: { decrement: Number(item.quantidade) } },
+                data: { estoque: { decrement: qtdSol } },
               });
+
+              if (atualizadoEstoque.count === 0) {
+                throw new Error(`Estoque insuficiente para o produto: ${item.nome || 'Item'}`);
+              }
             }
           }
         }
@@ -532,7 +541,7 @@ export const pagamentoController = {
       });
 
       if (resultado.status === 'PAGO') {
-        dispararEmissaoNfeAssincrona(resultado.id, 'pagamento-imediato');
+        await enfileirarNfeAssincrona(resultado.id, 'pagamento-imediato');
       }
 
       const io = getIO();
@@ -621,7 +630,7 @@ export const pagamentoController = {
           });
 
           if (foiAprovado) {
-            dispararEmissaoNfeAssincrona(pedidoExistente.id, 'webhook-mp');
+            await enfileirarNfeAssincrona(pedidoExistente.id, 'webhook-mp');
 
             const io = getIO();
             if (io) {

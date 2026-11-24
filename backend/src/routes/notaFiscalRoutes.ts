@@ -4,6 +4,7 @@ import { notaFiscalController } from '../controllers/notaFiscalController';
 const router = Router();
 
 router.get('/callback', notaFiscalController.oauthCallback);
+router.post('/pedidos/emitir-lote', notaFiscalController.emitirEmLote);
 router.post('/pedidos/:pedidoId/emitir', notaFiscalController.emitirPorPedido);
 router.get('/pedidos/:pedidoId/status', notaFiscalController.consultarPorPedido);
 router.get('/pedidos/:pedidoId/danfe', notaFiscalController.baixarDanfe);

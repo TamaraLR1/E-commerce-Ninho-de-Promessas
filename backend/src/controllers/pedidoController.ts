@@ -2,10 +2,10 @@ import { Request, Response } from 'express';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { prisma } from '../lib/prisma';
 import { getIO } from '../socket';
-import { formatarProduto } from './produtoController';
 import { formatarPedidoFiscal } from './notaFiscalController';
 import { limparDocumento, validarCnpjAlfanumerico } from '../utils/documento';
-import { emitirNfeDoPedido } from '../services/blingService';
+import { enfileirarNfeDoPedido } from '../services/blingService';
+import { processarFilaNfe } from '../jobs/nfeFilaWorker';
 
 const mpAccessToken =
   process.env.MERCADOPAGO_ACCESS_TOKEN ||
@@ -14,13 +14,31 @@ const client = new MercadoPagoConfig({ accessToken: mpAccessToken });
 const paymentClient = new Payment(client);
 const BACKEND_URL = process.env.BACKEND_URL || 'https://ninhoback.tamaralr.com.br';
 
-function dispararEmissaoNfeAssincrona(pedidoId: string, origem: string) {
-  emitirNfeDoPedido(pedidoId).catch((err: any) => {
+function emitirEventoNotaFiscalPedido(pedido: any) {
+  if (!pedido) return;
+  const fiscal = formatarPedidoFiscal(pedido);
+  const payload = { pedidoId: pedido.id, ...fiscal };
+
+  const io = getIO();
+  if (io) {
+    if (pedido.userId) {
+      io.to(`usuario_${pedido.userId}`).emit('notaFiscalAtualizada', payload);
+    }
+    io.emit('notaFiscalAtualizada', payload);
+  }
+}
+
+async function enfileirarNfeAssincrona(pedidoId: string, origem: string) {
+  try {
+    const { pedido } = await enfileirarNfeDoPedido(pedidoId);
+    emitirEventoNotaFiscalPedido(pedido);
+    void processarFilaNfe();
+  } catch (err: any) {
     console.error(
-      `[NF-e ${origem}] Falha assíncrona ao emitir NF-e do pedido ${pedidoId}:`,
+      `[NF-e Fila ${origem}] Falha ao enfileirar pedido ${pedidoId}:`,
       err?.response?.data || err?.message || err
     );
-  });
+  }
 }
 
 export const pedidoController = {
@@ -131,7 +149,7 @@ export const pedidoController = {
         });
 
         if (statusMapeado === 'PAGO' && pedidoExistente.status !== 'PAGO') {
-          dispararEmissaoNfeAssincrona(pedidoAtualizado.id, 'refazer-pagamento-cartao');
+          await enfileirarNfeAssincrona(pedidoAtualizado.id, 'refazer-pagamento-cartao');
         }
 
         const io = getIO();
@@ -150,45 +168,6 @@ export const pedidoController = {
             qrCodeBase64Pix: mpResponse.point_of_interaction?.transaction_data?.qr_code_base64,
           },
         });
-      }
-
-      // Fluxo normal de criação de novo pedido
-      const produtosParaAtualizarIds = new Set<string>();
-
-      for (const item of itens) {
-        const produtoId = String(item.produtoId || item.id);
-        const corNome = item.corNome || 'Padrão';
-        const tamanhoNome = item.tamanho || item.tamanhoNome || 'Único';
-        const qtdSolicitada = Number(item.quantidade || 1);
-
-        const produtoEstoque = await prisma.produtoEstoque.findFirst({
-          where: {
-            produtoId,
-            cor: corNome !== 'Padrão' ? { nome: corNome } : undefined,
-            tamanho: { nome: tamanhoNome },
-            ativo: true,
-          },
-          include: {
-            produto: { select: { nome: true } },
-          },
-        });
-
-        if (!produtoEstoque) {
-          return res.status(400).json({
-            message: `A variação (Cor: ${corNome}, Tam: ${tamanhoNome}) não foi encontrada ou está indisponível.`,
-          });
-        }
-
-        if (produtoEstoque.estoque < qtdSolicitada) {
-          const nomeProd = produtoEstoque.produto?.nome || 'Produto';
-          return res.status(400).json({
-            message: `Ops! O item "${nomeProd}" (${corNome}/${tamanhoNome}) esgotou no stock e não é mais possível concluir a compra.`,
-            produtoId,
-            estoqueDisponivel: produtoEstoque.estoque,
-          });
-        }
-
-        produtosParaAtualizarIds.add(produtoId);
       }
 
       // Busca dados do usuário e da empresa (se houver) para montar o snapshot fiscal corretamente
@@ -253,6 +232,48 @@ export const pedidoController = {
       }
 
       const novoPedido = await prisma.$transaction(async (tx) => {
+        for (const item of itens) {
+          const produtoId = String(item.produtoId || item.id);
+          const corNome = item.corNome || 'Padrão';
+          const tamanhoNome = item.tamanho || item.tamanhoNome || 'Único';
+          const qtdSolicitada = Number(item.quantidade || 1);
+
+          const produtoEstoque = await tx.produtoEstoque.findFirst({
+            where: {
+              produtoId,
+              cor: corNome !== 'Padrão' ? { nome: corNome } : undefined,
+              tamanho: { nome: tamanhoNome },
+              ativo: true,
+            },
+            include: {
+              produto: { select: { nome: true } },
+            },
+          });
+
+          if (!produtoEstoque) {
+            throw new Error(
+              `A variação (Cor: ${corNome}, Tam: ${tamanhoNome}) não foi encontrada ou está indisponível.`
+            );
+          }
+
+          const baixou = await tx.produtoEstoque.updateMany({
+            where: {
+              id: produtoEstoque.id,
+              estoque: { gte: qtdSolicitada },
+            },
+            data: {
+              estoque: { decrement: qtdSolicitada },
+            },
+          });
+
+          if (baixou.count === 0) {
+            const nomeProd = produtoEstoque.produto?.nome || 'Produto';
+            throw new Error(
+              `Ops! O item "${nomeProd}" (${corNome}/${tamanhoNome}) esgotou no estoque e não é mais possível concluir a compra.`
+            );
+          }
+        }
+
         const pedidoCriado = await tx.pedido.create({
           data: {
             valorTotal: Number(valorFinalPedido),
@@ -316,32 +337,6 @@ export const pedidoController = {
           },
         });
 
-        for (const item of itens) {
-          const produtoId = String(item.produtoId || item.id);
-          const corNome = item.corNome || 'Padrão';
-          const tamanhoNome = item.tamanho || item.tamanhoNome || 'Único';
-          const qtdSolicitada = Number(item.quantidade || 1);
-
-          const estVar = await tx.produtoEstoque.findFirst({
-            where: {
-              produtoId,
-              cor: corNome !== 'Padrão' ? { nome: corNome } : undefined,
-              tamanho: { nome: tamanhoNome },
-            },
-          });
-
-          if (estVar) {
-            await tx.produtoEstoque.update({
-              where: { id: estVar.id },
-              data: {
-                estoque: {
-                  decrement: qtdSolicitada,
-                },
-              },
-            });
-          }
-        }
-
         return pedidoCriado;
       });
 
@@ -360,7 +355,10 @@ export const pedidoController = {
           ...formatarPedidoFiscal(novoPedido),
         },
       });
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.message?.includes('estoque') || error?.message?.includes('variação')) {
+        return res.status(400).json({ message: error.message });
+      }
       console.error('Erro ao criar pedido:', error);
       return res.status(500).json({ message: 'Erro interno ao processar a criação do pedido.' });
     }
@@ -645,7 +643,7 @@ export const pedidoController = {
       });
 
       if (status === 'PAGO' && pedidoExistente.status !== 'PAGO') {
-        dispararEmissaoNfeAssincrona(pedidoAtualizado.id, 'atualizar-status-admin');
+        await enfileirarNfeAssincrona(pedidoAtualizado.id, 'atualizar-status-admin');
       }
 
       const pedidoFormatado = {
@@ -732,7 +730,6 @@ export const pedidoController = {
   async atualizarPagamentoExistente(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const { metodoPagamento } = req.body;
       const userIdLogado = (req as any).userId || (req as any).user?.id || (req as any).user?.userId;
 
       const pedido = await prisma.pedido.findFirst({

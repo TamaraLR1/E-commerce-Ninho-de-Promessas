@@ -26,6 +26,7 @@ import { initSocket, socketMiddleware } from './socket';
 
 // IMPORTUE O SEU WORKER AQUI (ajuste o caminho se necessário)
 import { iniciarWorkerExpiracaoPedidos } from './jobs/expiracaoPedidosJob';
+import { iniciarWorkerFilaNfe } from './jobs/nfeFilaWorker';
 
 const app = express();
 const server = http.createServer(app);
@@ -80,4 +81,5 @@ server.listen(PORT, '0.0.0.0', () => {
   
   // INICIA O WORKER LOGO APÓS O SERVIDOR SUBIR
   iniciarWorkerExpiracaoPedidos();
+  iniciarWorkerFilaNfe();
 });

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ioClient from 'socket.io-client';
 import styles from './AdminDashboard.module.css';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { CupomManager } from './cupons/CupomManager';
@@ -103,6 +104,7 @@ interface EnderecoEntrega {
 
 interface Pedido {
   id: string;
+  userId?: string | null;
   codigoPedido?: string;
   tipoFaturamento?: 'PF' | 'PJ' | null;
   clienteNome: string;
@@ -234,7 +236,9 @@ export const AdminDashboard: React.FC = () => {
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<Pedido | null>(null);
   const [emitindoNfeId, setEmitindoNfeId] = useState<string | null>(null);
   const [sincronizandoNfeId, setSincronizandoNfeId] = useState<string | null>(null);
-
+  const [pedidosSelecionados, setPedidosSelecionados] = useState<string[]>([]);
+  const [emitindoLote, setEmitindoLote] = useState(false);
+  const [socketInstance, setSocketInstance] = useState<ReturnType<typeof ioClient> | null>(null);
   const [logsList, setLogsList] = useState<LogAtividade[]>([]);
   const [logSearchQuery, setLogSearchQuery] = useState('');
 
@@ -312,6 +316,57 @@ export const AdminDashboard: React.FC = () => {
     }
     return 'https://ninhoback.tamaralr.com.br/api';
   })();
+
+  const SOCKET_URL = (() => {
+    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SOCKET_URL) {
+      return import.meta.env.VITE_SOCKET_URL;
+    }
+    return API_URL.replace(/\/api\/?$/, '');
+  })();
+
+  useEffect(() => {
+    const newSocket = ioClient(SOCKET_URL, {
+      withCredentials: true,
+      transports: ['polling', 'websocket'],
+    } as any);
+    setSocketInstance(newSocket);
+
+    return () => {
+      newSocket.disconnect();
+      setSocketInstance(null);
+    };
+  }, [SOCKET_URL]);
+
+  useEffect(() => {
+    if (!socketInstance) return;
+
+    const handleNotaFiscalAtualizada = (dados: {
+      pedidoId: string;
+      blingNfeId?: string | null;
+      nfeNumero?: string | null;
+      nfeSerie?: string | null;
+      chaveAcessoNfe?: string | null;
+      nfeStatus?: string | null;
+      nfeLinkDanfe?: string | null;
+      nfeLinkXml?: string | null;
+      nfeErroMensagem?: string | null;
+      temNfeAutorizada?: boolean;
+    }) => {
+      if (!dados?.pedidoId) return;
+
+      setPedidosList(prev =>
+        prev.map(p => (p.id === dados.pedidoId ? { ...p, ...dados } : p))
+      );
+      setSelectedOrderDetails(prev =>
+        prev && prev.id === dados.pedidoId ? { ...prev, ...dados } : prev
+      );
+    };
+
+    socketInstance.on('notaFiscalAtualizada', handleNotaFiscalAtualizada);
+    return () => {
+      socketInstance.off('notaFiscalAtualizada', handleNotaFiscalAtualizada);
+    };
+  }, [socketInstance]);
 
   useEffect(() => {
     carregarCategorias();
@@ -405,6 +460,84 @@ export const AdminDashboard: React.FC = () => {
     );
   };
 
+  const alternarSelecaoPedido = (pedidoId: string) => {
+    setPedidosSelecionados(prev =>
+      prev.includes(pedidoId) ? prev.filter(id => id !== pedidoId) : [...prev, pedidoId]
+    );
+  };
+
+  const alternarSelecionarTodosFiltrados = (listaVisivel: Pedido[]) => {
+    const idsVisiveis = listaVisivel.map(p => p.id);
+    const todosMarcados =
+      idsVisiveis.length > 0 && idsVisiveis.every(id => pedidosSelecionados.includes(id));
+
+    if (todosMarcados) {
+      setPedidosSelecionados(prev => prev.filter(id => !idsVisiveis.includes(id)));
+    } else {
+      setPedidosSelecionados(prev => Array.from(new Set([...prev, ...idsVisiveis])));
+    }
+  };
+
+  const handleEmitirNfeEmLote = async () => {
+    if (pedidosSelecionados.length === 0) return;
+
+    try {
+      setEmitindoLote(true);
+      const response = await fetch(`${API_URL}/bling/pedidos/emitir-lote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ pedidoIds: pedidosSelecionados }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || data?.error || 'Erro ao enfileirar NF-e em lote.');
+      }
+
+      if (Array.isArray(data?.pedidosFiscais)) {
+        const mapa = new Map<string, any>(
+          data.pedidosFiscais.map((item: any) => [item.pedidoId, item])
+        );
+        setPedidosList(prev =>
+          prev.map(p => (mapa.has(p.id) ? { ...p, ...mapa.get(p.id) } : p))
+        );
+      } else {
+        await carregarPedidos();
+      }
+
+      alert(
+        data?.message ||
+          `${data?.totalEnfileirados ?? pedidosSelecionados.length} pedido(s) adicionado(s) à fila de NF-e!`
+      );
+      setPedidosSelecionados([]);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao enfileirar emissão em lote.');
+    } finally {
+      setEmitindoLote(false);
+    }
+  };
+
+  const handleAbrirDanfesSelecionadas = () => {
+    const selecionadosComDanfe = pedidosList.filter(
+      p =>
+        pedidosSelecionados.includes(p.id) &&
+        p.nfeStatus === 'AUTORIZADA' &&
+        p.nfeLinkDanfe
+    );
+
+    if (selecionadosComDanfe.length === 0) {
+      alert('Nenhum dos pedidos selecionados possui DANFE autorizada disponível ainda.');
+      return;
+    }
+
+    selecionadosComDanfe.forEach(p => {
+      if (p.nfeLinkDanfe) {
+        window.open(p.nfeLinkDanfe, '_blank', 'noopener,noreferrer');
+      }
+    });
+  };
+
   const handleEmitirNfePedido = async (pedidoId: string) => {
     try {
       setEmitindoNfeId(pedidoId);
@@ -428,7 +561,7 @@ export const AdminDashboard: React.FC = () => {
         await carregarPedidos();
       }
 
-      alert(data?.message || 'NF-e processada com sucesso!');
+      alert(data?.message || 'Pedido adicionado à fila de emissão de NF-e.');
     } catch (err: any) {
       alert(err.message || 'Erro ao emitir NF-e.');
     } finally {
@@ -450,6 +583,8 @@ export const AdminDashboard: React.FC = () => {
 
       if (data?.fiscal) {
         aplicarDadosFiscaisNoEstado(pedidoId, data.fiscal);
+      } else if (data?.nfeStatus !== undefined) {
+        aplicarDadosFiscaisNoEstado(pedidoId, data);
       } else {
         await carregarPedidos();
       }
@@ -1615,6 +1750,13 @@ export const AdminDashboard: React.FC = () => {
         </span>
       );
     }
+    if (pedido.nfeStatus === 'FILA') {
+      return (
+        <span style={{ backgroundColor: '#fef3c7', color: '#92400e', padding: '3px 8px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700 }}>
+          🕒 NA FILA
+        </span>
+      );
+    }
     if (pedido.nfeStatus === 'PROCESSANDO') {
       return (
         <span style={{ backgroundColor: '#fef9c3', color: '#854d0e', padding: '3px 8px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 700 }}>
@@ -1679,6 +1821,10 @@ export const AdminDashboard: React.FC = () => {
   const totalVendasRealizadas = pedidosList
     .filter(p => p.status !== 'CANCELADO' && p.status !== 'PENDENTE')
     .reduce((acc, p) => acc + getValorTotalPedido(p), 0);
+
+  const todosFiltradosSelecionados =
+    filteredPedidos.length > 0 &&
+    filteredPedidos.every(p => pedidosSelecionados.includes(p.id));
 
   return (
     <div className={styles.adminContainer}>
@@ -1980,7 +2126,7 @@ export const AdminDashboard: React.FC = () => {
               <div className={styles.headerBetween}>
                 <div>
                   <h3>🛍️ Gerenciador de Pedidos e Vendas</h3>
-                  <p className={styles.infoText} style={{ margin: '4px 0 0 0' }}>Acompanhe as compras realizadas na e-commerce, emita NF-e e gerencie a expedição dos pedidos.</p>
+                  <p className={styles.infoText} style={{ margin: '4px 0 0 0' }}>Acompanhe as compras realizadas na e-commerce, emita NF-e em fila/lote e gerencie a expedição dos pedidos.</p>
                 </div>
                 <button type="button" onClick={carregarPedidos} className={styles.btnSecondary} disabled={pedidosLoading}>
                   {pedidosLoading ? 'Atualizando...' : '🔄 Atualizar Pedidos'}
@@ -2036,6 +2182,41 @@ export const AdminDashboard: React.FC = () => {
                 </select>
               </div>
 
+              {pedidosSelecionados.length > 0 && (
+                <div className={styles.orderBulkBar}>
+                  <span className={styles.orderBulkInfo}>
+                    {pedidosSelecionados.length} pedido(s) selecionado(s)
+                  </span>
+                  <div className={styles.orderBulkActions}>
+                    <button
+                      type="button"
+                      className={styles.btnPrimary}
+                      style={{ padding: '7px 14px', fontSize: '0.82rem' }}
+                      disabled={emitindoLote}
+                      onClick={handleEmitirNfeEmLote}
+                    >
+                      {emitindoLote ? '⏳ Enfileirando...' : '🧾 Emitir NF-e dos selecionados'}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.btnSecondary}
+                      style={{ padding: '7px 12px', fontSize: '0.82rem' }}
+                      onClick={handleAbrirDanfesSelecionadas}
+                    >
+                      📄 Abrir DANFEs autorizadas
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.btnSecondary}
+                      style={{ padding: '7px 12px', fontSize: '0.82rem' }}
+                      onClick={() => setPedidosSelecionados([])}
+                    >
+                      ✕ Limpar seleção
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {filteredPedidos.length === 0 ? (
                 <p className={styles.emptyNotice}>Nenhum pedido encontrado com os filtros selecionados.</p>
               ) : (
@@ -2043,6 +2224,14 @@ export const AdminDashboard: React.FC = () => {
                   <table className={styles.orderTable}>
                     <thead>
                       <tr>
+                        <th style={{ width: '36px' }}>
+                          <input
+                            type="checkbox"
+                            checked={todosFiltradosSelecionados}
+                            onChange={() => alternarSelecionarTodosFiltrados(filteredPedidos)}
+                            title="Selecionar todos os pedidos filtrados"
+                          />
+                        </th>
                         <th>Cód. Pedido</th>
                         <th>Data</th>
                         <th>Cliente / Faturamento</th>
@@ -2060,9 +2249,18 @@ export const AdminDashboard: React.FC = () => {
                         const codExibicao = pedido.codigoPedido || (pedido.id ? pedido.id.slice(0, 8) : '—');
                         const isPJ = pedido.tipoFaturamento === 'PJ';
                         const docFormatado = formatarDocumentoAdmin(pedido.cpf || pedido.clienteCpf, pedido.tipoFaturamento);
+                        const estaSelecionado = pedidosSelecionados.includes(pedido.id);
 
                         return (
                           <tr key={pedido.id}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={estaSelecionado}
+                                onChange={() => alternarSelecaoPedido(pedido.id)}
+                                aria-label={`Selecionar pedido ${codExibicao}`}
+                              />
+                            </td>
                             <td>
                               <strong>#{codExibicao}</strong>
                             </td>
@@ -2180,16 +2378,24 @@ export const AdminDashboard: React.FC = () => {
                             type="button"
                             className={styles.btnPrimary}
                             style={{ width: 'auto', padding: '6px 14px', fontSize: '0.82rem' }}
-                            disabled={emitindoNfeId === selectedOrderDetails.id}
+                            disabled={
+                              emitindoNfeId === selectedOrderDetails.id ||
+                              selectedOrderDetails.nfeStatus === 'FILA' ||
+                              selectedOrderDetails.nfeStatus === 'PROCESSANDO'
+                            }
                             onClick={() => handleEmitirNfePedido(selectedOrderDetails.id)}
                           >
                             {emitindoNfeId === selectedOrderDetails.id
-                              ? 'Emitindo NF-e...'
-                              : selectedOrderDetails.nfeStatus === 'AUTORIZADA' && selectedOrderDetails.chaveAcessoNfe
-                                ? '✅ NF-e Autorizada'
-                                : selectedOrderDetails.blingNfeId
-                                  ? '🔄 Reemitir NF-e'
-                                  : '🧾 Emitir NF-e'}
+                              ? 'Enfileirando...'
+                              : selectedOrderDetails.nfeStatus === 'FILA'
+                                ? '🕒 Na fila'
+                                : selectedOrderDetails.nfeStatus === 'PROCESSANDO'
+                                  ? '⏳ Processando...'
+                                  : selectedOrderDetails.nfeStatus === 'AUTORIZADA' && selectedOrderDetails.chaveAcessoNfe
+                                    ? '✅ NF-e Autorizada'
+                                    : selectedOrderDetails.blingNfeId
+                                      ? '🔄 Reemitir NF-e'
+                                      : '🧾 Emitir NF-e'}
                           </button>
                         </div>
                       </div>
@@ -2640,7 +2846,6 @@ export const AdminDashboard: React.FC = () => {
           </div>
         )}
 
-        {/* DEMAIS ABAS (logs, cupons, cadastro, categorias, tamanhos, cores, motivos, oferta, lista, estoque, historico-estoque) MANTIDAS INTACTAS */}
         {activeTab === 'logs' && (
           <div className={styles.singleContainer}>
             <section className={styles.card}>
@@ -4304,12 +4509,14 @@ export const AdminDashboard: React.FC = () => {
                         const produtoEncontrado = products.find(p => p.id === mov.productId);
                         return (
                           <tr key={mov.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                            <td className={styles.dashboardTableDateCell}>{mov.date}</td>
+                            <td className={styles.dashboardTableDateCell}>
+                              {mov.date}
+                            </td>
                             <td className={styles.dashboardTableProductCell}>
-                              {produtoEncontrado ? produtoEncontrado.name : `ID: ${mov.productId.slice(0, 6)}...`}
+                              {produtoEncontrado ? produtoEncontrado.name : `ID: ${mov.productId.slice(0, 8)}...`}
                             </td>
                             <td className={styles.dashboardTableVariationCell}>
-                              {mov.colorName} / {mov.size || 'Único'}
+                              {mov.colorName} / {mov.size}
                             </td>
                             <td className={styles.dashboardTableCell}>
                               <span className={mov.type === 'ENTRADA' ? styles.motivoTipoBadgeEntrada : styles.motivoTipoBadgeSaida}>
@@ -4333,6 +4540,7 @@ export const AdminDashboard: React.FC = () => {
             </section>
           </div>
         )}
+
       </main>
     </div>
   );

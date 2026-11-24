@@ -7,15 +7,34 @@ const socket_1 = require("../socket");
 const notaFiscalController_1 = require("./notaFiscalController");
 const documento_1 = require("../utils/documento");
 const blingService_1 = require("../services/blingService");
+const nfeFilaWorker_1 = require("../jobs/nfeFilaWorker");
 const mpAccessToken = process.env.MERCADOPAGO_ACCESS_TOKEN ||
     'APP_USR-6241648762325115-101109-22bbdb4d167baad86cf6c9f6f2776dc8-3529610690';
 const client = new mercadopago_1.MercadoPagoConfig({ accessToken: mpAccessToken });
 const paymentClient = new mercadopago_1.Payment(client);
 const BACKEND_URL = process.env.BACKEND_URL || 'https://ninhoback.tamaralr.com.br';
-function dispararEmissaoNfeAssincrona(pedidoId, origem) {
-    (0, blingService_1.emitirNfeDoPedido)(pedidoId).catch((err) => {
-        console.error(`[NF-e ${origem}] Falha assíncrona ao emitir NF-e do pedido ${pedidoId}:`, err?.response?.data || err?.message || err);
-    });
+function emitirEventoNotaFiscalPedido(pedido) {
+    if (!pedido)
+        return;
+    const fiscal = (0, notaFiscalController_1.formatarPedidoFiscal)(pedido);
+    const payload = { pedidoId: pedido.id, ...fiscal };
+    const io = (0, socket_1.getIO)();
+    if (io) {
+        if (pedido.userId) {
+            io.to(`usuario_${pedido.userId}`).emit('notaFiscalAtualizada', payload);
+        }
+        io.emit('notaFiscalAtualizada', payload);
+    }
+}
+async function enfileirarNfeAssincrona(pedidoId, origem) {
+    try {
+        const { pedido } = await (0, blingService_1.enfileirarNfeDoPedido)(pedidoId);
+        emitirEventoNotaFiscalPedido(pedido);
+        void (0, nfeFilaWorker_1.processarFilaNfe)();
+    }
+    catch (err) {
+        console.error(`[NF-e Fila ${origem}] Falha ao enfileirar pedido ${pedidoId}:`, err?.response?.data || err?.message || err);
+    }
 }
 exports.pedidoController = {
     // 🛒 0. Método para Criar Pedido (ou Atualizar se vier de "Refazer Pagamento" via Checkout)
@@ -94,7 +113,7 @@ exports.pedidoController = {
                     },
                 });
                 if (statusMapeado === 'PAGO' && pedidoExistente.status !== 'PAGO') {
-                    dispararEmissaoNfeAssincrona(pedidoAtualizado.id, 'refazer-pagamento-cartao');
+                    await enfileirarNfeAssincrona(pedidoAtualizado.id, 'refazer-pagamento-cartao');
                 }
                 const io = (0, socket_1.getIO)();
                 if (io && userId) {
@@ -111,39 +130,6 @@ exports.pedidoController = {
                         qrCodeBase64Pix: mpResponse.point_of_interaction?.transaction_data?.qr_code_base64,
                     },
                 });
-            }
-            // Fluxo normal de criação de novo pedido
-            const produtosParaAtualizarIds = new Set();
-            for (const item of itens) {
-                const produtoId = String(item.produtoId || item.id);
-                const corNome = item.corNome || 'Padrão';
-                const tamanhoNome = item.tamanho || item.tamanhoNome || 'Único';
-                const qtdSolicitada = Number(item.quantidade || 1);
-                const produtoEstoque = await prisma_1.prisma.produtoEstoque.findFirst({
-                    where: {
-                        produtoId,
-                        cor: corNome !== 'Padrão' ? { nome: corNome } : undefined,
-                        tamanho: { nome: tamanhoNome },
-                        ativo: true,
-                    },
-                    include: {
-                        produto: { select: { nome: true } },
-                    },
-                });
-                if (!produtoEstoque) {
-                    return res.status(400).json({
-                        message: `A variação (Cor: ${corNome}, Tam: ${tamanhoNome}) não foi encontrada ou está indisponível.`,
-                    });
-                }
-                if (produtoEstoque.estoque < qtdSolicitada) {
-                    const nomeProd = produtoEstoque.produto?.nome || 'Produto';
-                    return res.status(400).json({
-                        message: `Ops! O item "${nomeProd}" (${corNome}/${tamanhoNome}) esgotou no stock e não é mais possível concluir a compra.`,
-                        produtoId,
-                        estoqueDisponivel: produtoEstoque.estoque,
-                    });
-                }
-                produtosParaAtualizarIds.add(produtoId);
             }
             // Busca dados do usuário e da empresa (se houver) para montar o snapshot fiscal corretamente
             const usuarioLogado = userId
@@ -192,6 +178,39 @@ exports.pedidoController = {
                 enderecoFiscalFinalId = usuarioLogado.empresa.enderecoFiscalId;
             }
             const novoPedido = await prisma_1.prisma.$transaction(async (tx) => {
+                for (const item of itens) {
+                    const produtoId = String(item.produtoId || item.id);
+                    const corNome = item.corNome || 'Padrão';
+                    const tamanhoNome = item.tamanho || item.tamanhoNome || 'Único';
+                    const qtdSolicitada = Number(item.quantidade || 1);
+                    const produtoEstoque = await tx.produtoEstoque.findFirst({
+                        where: {
+                            produtoId,
+                            cor: corNome !== 'Padrão' ? { nome: corNome } : undefined,
+                            tamanho: { nome: tamanhoNome },
+                            ativo: true,
+                        },
+                        include: {
+                            produto: { select: { nome: true } },
+                        },
+                    });
+                    if (!produtoEstoque) {
+                        throw new Error(`A variação (Cor: ${corNome}, Tam: ${tamanhoNome}) não foi encontrada ou está indisponível.`);
+                    }
+                    const baixou = await tx.produtoEstoque.updateMany({
+                        where: {
+                            id: produtoEstoque.id,
+                            estoque: { gte: qtdSolicitada },
+                        },
+                        data: {
+                            estoque: { decrement: qtdSolicitada },
+                        },
+                    });
+                    if (baixou.count === 0) {
+                        const nomeProd = produtoEstoque.produto?.nome || 'Produto';
+                        throw new Error(`Ops! O item "${nomeProd}" (${corNome}/${tamanhoNome}) esgotou no estoque e não é mais possível concluir a compra.`);
+                    }
+                }
                 const pedidoCriado = await tx.pedido.create({
                     data: {
                         valorTotal: Number(valorFinalPedido),
@@ -249,29 +268,6 @@ exports.pedidoController = {
                         },
                     },
                 });
-                for (const item of itens) {
-                    const produtoId = String(item.produtoId || item.id);
-                    const corNome = item.corNome || 'Padrão';
-                    const tamanhoNome = item.tamanho || item.tamanhoNome || 'Único';
-                    const qtdSolicitada = Number(item.quantidade || 1);
-                    const estVar = await tx.produtoEstoque.findFirst({
-                        where: {
-                            produtoId,
-                            cor: corNome !== 'Padrão' ? { nome: corNome } : undefined,
-                            tamanho: { nome: tamanhoNome },
-                        },
-                    });
-                    if (estVar) {
-                        await tx.produtoEstoque.update({
-                            where: { id: estVar.id },
-                            data: {
-                                estoque: {
-                                    decrement: qtdSolicitada,
-                                },
-                            },
-                        });
-                    }
-                }
                 return pedidoCriado;
             });
             const io = (0, socket_1.getIO)();
@@ -290,6 +286,9 @@ exports.pedidoController = {
             });
         }
         catch (error) {
+            if (error?.message?.includes('estoque') || error?.message?.includes('variação')) {
+                return res.status(400).json({ message: error.message });
+            }
             console.error('Erro ao criar pedido:', error);
             return res.status(500).json({ message: 'Erro interno ao processar a criação do pedido.' });
         }
@@ -541,7 +540,7 @@ exports.pedidoController = {
                 },
             });
             if (status === 'PAGO' && pedidoExistente.status !== 'PAGO') {
-                dispararEmissaoNfeAssincrona(pedidoAtualizado.id, 'atualizar-status-admin');
+                await enfileirarNfeAssincrona(pedidoAtualizado.id, 'atualizar-status-admin');
             }
             const pedidoFormatado = {
                 id: pedidoAtualizado.id,
@@ -618,7 +617,6 @@ exports.pedidoController = {
     async atualizarPagamentoExistente(req, res) {
         try {
             const { id } = req.params;
-            const { metodoPagamento } = req.body;
             const userIdLogado = req.userId || req.user?.id || req.user?.userId;
             const pedido = await prisma_1.prisma.pedido.findFirst({
                 where: { id: String(id), userId: Number(userIdLogado) },
