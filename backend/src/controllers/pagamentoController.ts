@@ -2,10 +2,8 @@ import { Request, Response } from 'express';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { prisma } from '../lib/prisma';
 import { getIO } from '../socket';
-import { formatarPedidoFiscal } from './notaFiscalController';
 import { limparDocumento, validarCnpjAlfanumerico } from '../utils/documento';
 import { enfileirarNfeDoPedido } from '../services/blingService';
-import { processarFilaNfe } from '../jobs/nfeFilaWorker';
 
 const mpAccessToken =
   process.env.MERCADOPAGO_ACCESS_TOKEN ||
@@ -16,25 +14,9 @@ const paymentClient = new Payment(client);
 // URL base do Backend em produção para o Webhook
 const BACKEND_URL = process.env.BACKEND_URL || 'https://ninhoback.tamaralr.com.br';
 
-function emitirEventoNotaFiscalPedido(pedido: any) {
-  if (!pedido) return;
-  const fiscal = formatarPedidoFiscal(pedido);
-  const payload = { pedidoId: pedido.id, ...fiscal };
-
-  const io = getIO();
-  if (io) {
-    if (pedido.userId) {
-      io.to(`usuario_${pedido.userId}`).emit('notaFiscalAtualizada', payload);
-    }
-    io.emit('notaFiscalAtualizada', payload);
-  }
-}
-
 async function enfileirarNfeAssincrona(pedidoId: string, origem: string) {
   try {
-    const { pedido } = await enfileirarNfeDoPedido(pedidoId);
-    emitirEventoNotaFiscalPedido(pedido);
-    void processarFilaNfe();
+    await enfileirarNfeDoPedido(pedidoId);
   } catch (err: any) {
     console.error(
       `[NF-e Fila ${origem}] Falha ao enfileirar pedido ${pedidoId}:`,
@@ -448,6 +430,9 @@ export const pagamentoController = {
         }
 
         let enderecoId: string;
+        const ibgeRecebido = endereco.codigoIbge || endereco.codigo_ibge;
+        const ibgeLimpo = ibgeRecebido ? String(ibgeRecebido).replace(/\D/g, '') : '';
+
         const dadosTratados = {
           tipo: 'ENTREGA' as const,
           cep: String(endereco.cep).replace(/\D/g, ''),
@@ -457,6 +442,7 @@ export const pagamentoController = {
           bairro: endereco.bairro,
           cidade: endereco.cidade,
           estado: String(endereco.estado || '').trim().toUpperCase(),
+          ...(ibgeLimpo.length === 7 ? { codigoIbge: ibgeLimpo } : {}),
           destinatario: endereco.destinatario || snapshotClienteNome,
           userId: user.id,
         };

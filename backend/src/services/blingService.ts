@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { prisma } from '../lib/prisma';
+import { getIO } from '../socket';
 import { IndicadorIE } from '@prisma/client';
-import { limparDocumento } from '../utils/documento';
+import { limparDocumento, validarCnpjAlfanumerico } from '../utils/documento';
 
 const BLING_API_URL = 'https://api.bling.com.br/Api/v3';
 const BLING_CLIENT_ID = process.env.BLING_CLIENT_ID!;
@@ -23,11 +24,113 @@ const BLING_NATUREZA_PJ_ISENTO_ID = process.env.BLING_NATUREZA_PJ_ISENTO_ID
   ? Number(process.env.BLING_NATUREZA_PJ_ISENTO_ID)
   : BLING_NATUREZA_NAO_CONTRIBUINTE_ID;
 
+const MAX_TENTATIVAS_TRANSITORIAS = 3;
+
 let refreshPromise: Promise<string> | null = null;
 let filaEmExecucao = false;
 let workerIniciado = false;
+const tentativasPorPedido = new Map<string, number>();
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function validarCpf(cpf: string): boolean {
+  const limpo = cpf.replace(/\D/g, '');
+  if (limpo.length !== 11 || /^(\d)\1{10}$/.test(limpo)) return false;
+
+  let soma = 0;
+  for (let i = 1; i <= 9; i++) {
+    soma += parseInt(limpo.substring(i - 1, i), 10) * (11 - i);
+  }
+  let resto = (soma * 10) % 11;
+  if (resto === 10 || resto === 11) resto = 0;
+  if (resto !== parseInt(limpo.substring(9, 10), 10)) return false;
+
+  soma = 0;
+  for (let i = 1; i <= 10; i++) {
+    soma += parseInt(limpo.substring(i - 1, i), 10) * (12 - i);
+  }
+  resto = (soma * 10) % 11;
+  if (resto === 10 || resto === 11) resto = 0;
+  return resto === parseInt(limpo.substring(10, 11), 10);
+}
+
+function validarPreRequisitosFiscais(pedido: any): string | null {
+  if (!pedido) return 'Pedido não encontrado para emissão de NF-e.';
+
+  if (pedido.status !== 'PAGO') {
+    return `Pedido com status "${pedido.status}" não está apto para emissão de NF-e (exige PAGO).`;
+  }
+
+  const documento = limparDocumento(pedido.clienteCpf || '');
+  const isPJ = pedido.tipoFaturamento === 'PJ' || documento.length === 14;
+  const docValido = isPJ
+    ? validarCnpjAlfanumerico(documento)
+    : validarCpf(documento);
+
+  if (!docValido) {
+    return `Documento fiscal (${isPJ ? 'CNPJ' : 'CPF'}) inválido ou ausente no pedido.`;
+  }
+
+  const end = pedido.enderecoFiscal || pedido.endereco;
+  const cepLimpo = end?.cep ? limparDocumento(end.cep) : '';
+  const rua = end?.rua ? String(end.rua).trim() : '';
+  const bairro = end?.bairro ? String(end.bairro).trim() : '';
+  const cidade = end?.cidade ? String(end.cidade).trim() : '';
+  const uf = end?.estado ? String(end.estado).trim().toUpperCase() : '';
+
+  if (
+    !end ||
+    cepLimpo.length !== 8 ||
+    !rua ||
+    !bairro ||
+    !cidade ||
+    uf.length !== 2
+  ) {
+    return 'Endereço completo (CEP, rua, bairro, cidade e UF) é obrigatório para emitir NF-e.';
+  }
+
+  const itens = Array.isArray(pedido.itens) ? pedido.itens : [];
+  if (itens.length === 0) {
+    return 'Pedido sem itens para emissão de NF-e.';
+  }
+
+  const temItemInvalido = itens.some(
+    (item: any) =>
+      Number(item.quantidade || 0) <= 0 ||
+      Number(item.precoUnitario ?? item.preco ?? 0) <= 0
+  );
+  if (temItemInvalido) {
+    return 'Um ou mais itens do pedido possuem quantidade ou valor unitário inválido.';
+  }
+
+  return null;
+}
+
+function emitirEventoSocketNotaFiscal(pedido: any) {
+  if (!pedido) return;
+  const io = getIO();
+  if (!io) return;
+
+  const payload = {
+    pedidoId: pedido.id,
+    blingNfeId: pedido.blingNfeId ? String(pedido.blingNfeId) : null,
+    nfeNumero: pedido.nfeNumero || null,
+    nfeSerie: pedido.nfeSerie || null,
+    chaveAcessoNfe: pedido.chaveAcessoNfe || null,
+    nfeStatus: pedido.nfeStatus || null,
+    nfeLinkDanfe: pedido.nfeLinkDanfe || null,
+    nfeLinkXml: pedido.nfeLinkXml || null,
+    nfeErroMensagem: pedido.nfeErroMensagem || null,
+    temNfeAutorizada: Boolean(
+      pedido.nfeStatus === 'AUTORIZADA' && pedido.chaveAcessoNfe
+    ),
+  };
+
+  if (pedido.userId) {
+    io.to(`usuario_${pedido.userId}`).emit('notaFiscalAtualizada', payload);
+  }
+  io.emit('notaFiscalAtualizada', payload);
+}
 
 function isErroTransitorioBling(error: any): boolean {
   const status = error?.response?.status;
@@ -199,11 +302,13 @@ export async function sincronizarNfeNoPedido(
   let nfeStatus = 'PROCESSANDO';
   if (nfeData?.chaveAcesso) {
     nfeStatus = 'AUTORIZADA';
+    tentativasPorPedido.delete(pedidoId);
   } else if (nfeData?.situacao === 7 || nfeData?.situacao === 'REJEITADA') {
     nfeStatus = 'REJEITADA';
+    tentativasPorPedido.delete(pedidoId);
   }
 
-  return prisma.pedido.update({
+  const atualizado = await prisma.pedido.update({
     where: { id: pedidoId },
     data: {
       blingNfeId: BigInt(blingNfeId),
@@ -219,6 +324,9 @@ export async function sincronizarNfeNoPedido(
           : nfeData?.motivoRejeicao || nfeData?.mensagem || null,
     },
   });
+
+  emitirEventoSocketNotaFiscal(atualizado);
+  return atualizado;
 }
 
 export async function enfileirarNfeDoPedido(pedidoId: string) {
@@ -226,9 +334,16 @@ export async function enfileirarNfeDoPedido(pedidoId: string) {
     where: { id: pedidoId },
     select: {
       id: true,
+      userId: true,
       numeroPedido: true,
       nfeStatus: true,
       chaveAcessoNfe: true,
+      blingNfeId: true,
+      nfeNumero: true,
+      nfeSerie: true,
+      nfeLinkDanfe: true,
+      nfeLinkXml: true,
+      nfeErroMensagem: true,
     },
   });
 
@@ -240,6 +355,12 @@ export async function enfileirarNfeDoPedido(pedidoId: string) {
     return { jaEmitida: true, enfileirada: false, pedido };
   }
 
+  if (pedido.nfeStatus === 'FILA' || pedido.nfeStatus === 'PROCESSANDO') {
+    return { jaEmitida: false, enfileirada: false, pedido };
+  }
+
+  tentativasPorPedido.delete(pedidoId);
+
   const atualizado = await prisma.pedido.update({
     where: { id: pedidoId },
     data: {
@@ -248,6 +369,7 @@ export async function enfileirarNfeDoPedido(pedidoId: string) {
     },
   });
 
+  emitirEventoSocketNotaFiscal(atualizado);
   void processarFilaNfe();
 
   return { jaEmitida: false, enfileirada: true, pedido: atualizado };
@@ -257,15 +379,28 @@ export async function enfileirarNfeEmLote(pedidoIds: string[]) {
   const unicos = Array.from(new Set(pedidoIds.filter(Boolean)));
   if (unicos.length === 0) return { totalEnfileirados: 0 };
 
+  for (const id of unicos) {
+    tentativasPorPedido.delete(id);
+  }
+
   const result = await prisma.pedido.updateMany({
     where: {
       id: { in: unicos },
-      NOT: {
-        AND: [
-          { nfeStatus: 'AUTORIZADA' },
-          { chaveAcessoNfe: { not: null } },
-        ],
-      },
+      AND: [
+        {
+          NOT: {
+            AND: [
+              { nfeStatus: 'AUTORIZADA' },
+              { chaveAcessoNfe: { not: null } },
+            ],
+          },
+        },
+        {
+          nfeStatus: {
+            notIn: ['FILA', 'PROCESSANDO'],
+          },
+        },
+      ],
     },
     data: {
       nfeStatus: 'FILA',
@@ -273,7 +408,20 @@ export async function enfileirarNfeEmLote(pedidoIds: string[]) {
     },
   });
 
-  void processarFilaNfe();
+  const pedidosNaFila = await prisma.pedido.findMany({
+    where: {
+      id: { in: unicos },
+      nfeStatus: 'FILA',
+    },
+  });
+
+  for (const p of pedidosNaFila) {
+    emitirEventoSocketNotaFiscal(p);
+  }
+
+  if (result.count > 0) {
+    void processarFilaNfe();
+  }
 
   return { totalEnfileirados: result.count };
 }
@@ -299,10 +447,25 @@ export async function emitirNfeDoPedido(pedidoId: string) {
   }
 
   if (pedido.nfeStatus === 'AUTORIZADA' && pedido.chaveAcessoNfe) {
+    tentativasPorPedido.delete(pedido.id);
     return {
       jaEmitida: true,
       pedido,
     };
+  }
+
+  const erroPreRequisito = validarPreRequisitosFiscais(pedido);
+  if (erroPreRequisito) {
+    tentativasPorPedido.delete(pedido.id);
+    const bloqueado = await prisma.pedido.update({
+      where: { id: pedido.id },
+      data: {
+        nfeStatus: 'REJEITADA',
+        nfeErroMensagem: erroPreRequisito,
+      },
+    });
+    emitirEventoSocketNotaFiscal(bloqueado);
+    throw new Error(erroPreRequisito);
   }
 
   try {
@@ -313,7 +476,7 @@ export async function emitirNfeDoPedido(pedidoId: string) {
       Accept: 'application/json',
     };
 
-    const end = pedido.enderecoFiscal || pedido.endereco;
+    const end = (pedido.enderecoFiscal || pedido.endereco)!;
     const documento = limparDocumento(pedido.clienteCpf);
     const ieLimpa = limparDocumento(pedido.clienteInscricaoEstadual);
     const isPJ = pedido.tipoFaturamento === 'PJ' || documento.length === 14;
@@ -400,8 +563,8 @@ export async function emitirNfeDoPedido(pedidoId: string) {
           {
             quantidade: 1,
             especie: 'CAIXA',
-            pesoBruto: Number(pedido.pesoTotal ?? 0.3),
-            pesoLiquido: Number(pedido.pesoTotal ?? 0.3),
+            pesoBruto: Number((pedido as any).pesoTotal ?? 0.3),
+            pesoLiquido: Number((pedido as any).pesoTotal ?? 0.3),
           },
         ],
       },
@@ -417,7 +580,7 @@ export async function emitirNfeDoPedido(pedidoId: string) {
       throw new Error('Bling não retornou o ID da NF-e criada.');
     }
 
-    await prisma.pedido.update({
+    const emProcessamento = await prisma.pedido.update({
       where: { id: pedido.id },
       data: {
         blingNfeId: BigInt(blingNfeId),
@@ -425,6 +588,7 @@ export async function emitirNfeDoPedido(pedidoId: string) {
         nfeErroMensagem: null,
       },
     });
+    emitirEventoSocketNotaFiscal(emProcessamento);
 
     await sleep(400);
 
@@ -435,27 +599,13 @@ export async function emitirNfeDoPedido(pedidoId: string) {
     await sleep(600);
 
     const pedidoAtualizado = await sincronizarNfeNoPedido(pedido.id, blingNfeId);
+    tentativasPorPedido.delete(pedido.id);
 
     return {
       jaEmitida: false,
       pedido: pedidoAtualizado,
     };
   } catch (error: any) {
-    if (isErroTransitorioBling(error)) {
-      console.warn(
-        `[Bling NF-e] Erro transitório no pedido #${pedido.numeroPedido}. Mantendo em FILA para nova tentativa.`
-      );
-      await prisma.pedido.update({
-        where: { id: pedido.id },
-        data: {
-          nfeStatus: 'FILA',
-          nfeErroMensagem:
-            'Aguardando nova tentativa automática (limite de requisições ou instabilidade no Bling).',
-        },
-      });
-      throw error;
-    }
-
     const detalhesBling =
       error?.response?.data?.error?.fields ||
       error?.response?.data?.error?.description ||
@@ -467,18 +617,55 @@ export async function emitirNfeDoPedido(pedidoId: string) {
         ? detalhesBling
         : JSON.stringify(detalhesBling);
 
+    if (isErroTransitorioBling(error)) {
+      const tentativaAtual = (tentativasPorPedido.get(pedido.id) || 0) + 1;
+
+      if (tentativaAtual < MAX_TENTATIVAS_TRANSITORIAS) {
+        tentativasPorPedido.set(pedido.id, tentativaAtual);
+        console.warn(
+          `[Bling NF-e] Erro transitório no pedido #${pedido.numeroPedido} (tentativa ${tentativaAtual}/${MAX_TENTATIVAS_TRANSITORIAS}). Mantendo em FILA.`
+        );
+        const emFila = await prisma.pedido.update({
+          where: { id: pedido.id },
+          data: {
+            nfeStatus: 'FILA',
+            nfeErroMensagem: `Tentativa ${tentativaAtual}/${MAX_TENTATIVAS_TRANSITORIAS} adiada por instabilidade temporária: ${mensagemFormatada}`,
+          },
+        });
+        emitirEventoSocketNotaFiscal(emFila);
+        throw error;
+      }
+
+      tentativasPorPedido.delete(pedido.id);
+      const mensagemLimite = `Limite de ${MAX_TENTATIVAS_TRANSITORIAS} tentativas transitórias atingido: ${mensagemFormatada}`;
+      console.error(
+        `[Bling NF-e] ${mensagemLimite} no pedido #${pedido.numeroPedido}`
+      );
+      const rejeitadoLimite = await prisma.pedido.update({
+        where: { id: pedido.id },
+        data: {
+          nfeStatus: 'REJEITADA',
+          nfeErroMensagem: mensagemLimite,
+        },
+      });
+      emitirEventoSocketNotaFiscal(rejeitadoLimite);
+      throw error;
+    }
+
+    tentativasPorPedido.delete(pedido.id);
     console.error(
       `[Bling NF-e] Erro no pedido #${pedido.numeroPedido}:`,
       mensagemFormatada
     );
 
-    await prisma.pedido.update({
+    const rejeitado = await prisma.pedido.update({
       where: { id: pedido.id },
       data: {
         nfeStatus: 'REJEITADA',
         nfeErroMensagem: mensagemFormatada,
       },
     });
+    emitirEventoSocketNotaFiscal(rejeitado);
 
     throw error;
   }
@@ -498,21 +685,31 @@ export async function processarFilaNfe(): Promise<void> {
 
       if (!proximo) break;
 
-      await prisma.pedido.update({
-        where: { id: proximo.id },
+      const reservou = await prisma.pedido.updateMany({
+        where: {
+          id: proximo.id,
+          nfeStatus: 'FILA',
+        },
         data: { nfeStatus: 'PROCESSANDO' },
       });
+
+      if (reservou.count === 0) {
+        continue;
+      }
+
+      const emProcessamento = await prisma.pedido.findUnique({
+        where: { id: proximo.id },
+      });
+      emitirEventoSocketNotaFiscal(emProcessamento);
 
       try {
         await emitirNfeDoPedido(proximo.id);
       } catch (err: any) {
         if (isErroTransitorioBling(err)) {
-          // Dá uma pausa maior se o Bling pediu respiro antes de pegar o próximo
           await sleep(5000);
         }
       }
 
-      // Cadência segura de ~1.2s entre emissões para respeitar o rate limit do Bling
       await sleep(1200);
     }
   } finally {
@@ -524,10 +721,8 @@ export function iniciarWorkerFilaNfe() {
   if (workerIniciado) return;
   workerIniciado = true;
 
-  // Retoma imediatamente eventuais notas que ficaram em FILA antes de um restart
   void processarFilaNfe();
 
-  // Varredura de segurança a cada 15s (também tenta sincronizar notas que ficaram em PROCESSANDO)
   setInterval(async () => {
     try {
       await processarFilaNfe();

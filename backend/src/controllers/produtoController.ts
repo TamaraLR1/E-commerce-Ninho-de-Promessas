@@ -4,6 +4,21 @@ import fs from 'fs';
 import path from 'path';
 import { getIO } from '../socket'; // Ajuste o caminho relativo para onde está o seu arquivo socket.ts
 
+const NCM_PADRAO = '61112000';
+
+function normalizarNcm(rawNcm: unknown, fallback: string = NCM_PADRAO): { valido: boolean; valor: string } {
+  if (rawNcm === undefined || rawNcm === null || String(rawNcm).trim() === '') {
+    return { valido: true, valor: fallback };
+  }
+
+  const limpo = String(rawNcm).replace(/\D/g, '').slice(0, 8);
+  if (limpo.length !== 8) {
+    return { valido: false, valor: limpo };
+  }
+
+  return { valido: true, valor: limpo };
+}
+
 // 🧮 Função auxiliar para calcular estoque ativo, percentual de desconto e vendas de forma padronizada
 export function formatarProduto(produto: any) {
   if (!produto) return null;
@@ -36,8 +51,8 @@ export const produtoController = {
 
   async criar(req: Request, res: Response) {
     try {
-      // 1. Extrair os campos do req.body, incluindo o isNovidade
-      const { nome, preco, descricao, categoryId, genero, tamanhos, coresMapeamentoImagens, isNovidade } = req.body;
+      // 1. Extrair os campos do req.body, incluindo o isNovidade e ncm
+      const { nome, preco, descricao, categoryId, genero, ncm, tamanhos, coresMapeamentoImagens, isNovidade } = req.body;
       
       const arquivos = (req.files as Express.Multer.File[]) || [];
 
@@ -55,6 +70,11 @@ export const produtoController = {
       const precoNumerico = Number(preco);
       if (isNaN(precoNumerico) || precoNumerico <= 0) {
         return res.status(400).json({ message: 'O preço do produto deve ser maior que zero.' });
+      }
+
+      const ncmResultado = normalizarNcm(ncm, NCM_PADRAO);
+      if (!ncmResultado.valido) {
+        return res.status(400).json({ message: 'O código NCM deve conter exatamente 8 dígitos numéricos.' });
       }
 
       const categoriaExiste = await prisma.categoria.findUnique({
@@ -110,6 +130,7 @@ export const produtoController = {
           descricao: descricao || null,
           categoryId: String(categoryId),
           genero: genero || 'Unissex',
+          ncm: ncmResultado.valor,
           isVisible: false,
           isNovidade: isNovidadeBoolean, // 3. Salva a flag de novidade no banco
           criadoPorId: adminId,
@@ -253,7 +274,7 @@ export const produtoController = {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : String(req.params.id);
       
-      const { nome, preco, descricao, categoryId, genero, tamanhos, coresMapeamentoImagens, isVisible, isNovidade } = req.body;
+      const { nome, preco, descricao, categoryId, genero, ncm, tamanhos, coresMapeamentoImagens, isVisible, isNovidade } = req.body;
       const arquivos = (req.files as Express.Multer.File[]) || [];
 
       const rawAdminId = (req as any).admin?.id || (req as any).admin?.adminId || (req as any).user?.id || (req as any).user?.adminId;
@@ -279,6 +300,11 @@ export const produtoController = {
       const precoNumerico = Number(preco);
       if (isNaN(precoNumerico) || precoNumerico <= 0) {
         return res.status(400).json({ message: 'O preço do produto deve ser maior que zero.' });
+      }
+
+      const ncmResultado = normalizarNcm(ncm, produtoExistente.ncm || NCM_PADRAO);
+      if (!ncmResultado.valido) {
+        return res.status(400).json({ message: 'O código NCM deve conter exatamente 8 dígitos numéricos.' });
       }
 
       const tamanhosParsed = typeof tamanhos === 'string' ? JSON.parse(tamanhos) : tamanhos;
@@ -358,6 +384,7 @@ export const produtoController = {
             descricao: descricao || null,
             categoryId: String(categoryId),
             genero: genero || produtoExistente.genero || 'Unissex',
+            ncm: ncmResultado.valor,
             isVisible: isVisibleParsed,
             isNovidade: isNovidadeParsed,
             atualizadoPorId: adminId,

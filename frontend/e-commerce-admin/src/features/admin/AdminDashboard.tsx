@@ -5,11 +5,24 @@ import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tool
 import { CupomManager } from './cupons/CupomManager';
 import { RelatorioVendas } from './components/relatorios/RelatorioVendas';
 
+const NCM_PADRAO = '61112000';
+
+const OPCOES_NCM: Array<{ codigo: string; descricao: string }> = [
+  { codigo: '61112000', descricao: 'Vestuário e acessórios de malha para bebês (algodão) — Ex: bodies, mijões/culotes' },
+  { codigo: '61091000', descricao: 'Camisetas e camisetas interiores de malha de algodão' },
+  { codigo: '62092000', descricao: 'Vestuário e acessórios para bebês (não malha / tecido plano, algodão)' },
+  { codigo: '61044200', descricao: 'Vestidos de malha de algodão' },
+  { codigo: '61142000', descricao: 'Outros vestuários de malha de algodão (ex: macacões/conjuntos)' },
+  { codigo: '64059000', descricao: 'Outros calçados (ex: sapatinhos/pantufas infantis)' },
+  { codigo: '42022220', descricao: 'Bolsas / mochilas de matéria têxtil (ex: bolsas maternidade)' },
+];
+
 interface ProductMaster {
   id: string;
   name: string;
   category: string;
   gender?: string;
+  ncm?: string;
   description: string;
   images: string[];
   rawImages?: any[];
@@ -261,6 +274,7 @@ export const AdminDashboard: React.FC = () => {
   const [newName, setNewName] = useState('');
   const [newCategoryId, setNewCategoryId] = useState('');
   const [newGender, setNewGender] = useState<string>('Unissex');
+  const [newNcm, setNewNcm] = useState<string>(NCM_PADRAO);
   const [newDesc, setNewDesc] = useState('');
   const [newPrice, setNewPrice] = useState('');
   const [newIsNovidade, setNewIsNovidade] = useState<boolean>(false);
@@ -739,6 +753,7 @@ export const AdminDashboard: React.FC = () => {
             name: p.nome,
             category: p.categoria?.nome || 'Geral',
             gender: p.genero || 'Unissex',
+            ncm: p.ncm || NCM_PADRAO,
             description: p.descricao || '',
             images: p.imagens && p.imagens.length > 0 ? p.imagens.map((img: any) => img.url) : ['https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?q=80&w=200'],
             rawImages: p.imagens || [],
@@ -1331,6 +1346,7 @@ export const AdminDashboard: React.FC = () => {
     setNewDesc(prod.description);
     setNewPrice(prod.originalPrice.toString());
     setNewGender(prod.gender || 'Unissex');
+    setNewNcm((prod.ncm || NCM_PADRAO).replace(/\D/g, '').slice(0, 8) || NCM_PADRAO);
     setNewIsNovidade(prod.isNovidade || false);
 
     const catMatch = categoriasList.find(c => c.nome === prod.category);
@@ -1396,6 +1412,7 @@ export const AdminDashboard: React.FC = () => {
     setColorSizeConfigs([]);
     setColorImages({});
     setNewGender('Unissex');
+    setNewNcm(NCM_PADRAO);
     setNewIsNovidade(false);
     setActiveTab('lista');
   };
@@ -1404,6 +1421,12 @@ export const AdminDashboard: React.FC = () => {
     e.preventDefault();
     if (!newName || !newPrice || !newCategoryId) {
       alert('Preencha o nome, preço e selecione uma categoria.');
+      return;
+    }
+
+    const ncmLimpo = newNcm.replace(/\D/g, '').slice(0, 8);
+    if (ncmLimpo.length !== 8) {
+      alert('Selecione ou informe um código NCM válido com 8 dígitos numéricos.');
       return;
     }
 
@@ -1514,6 +1537,7 @@ export const AdminDashboard: React.FC = () => {
       formData.append('descricao', newDesc);
       formData.append('categoryId', newCategoryId);
       formData.append('genero', newGender);
+      formData.append('ncm', ncmLimpo);
       formData.append('isNovidade', String(newIsNovidade));
 
       formData.append('tamanhos', JSON.stringify(arrayPlanoTamanhos));
@@ -1861,6 +1885,7 @@ export const AdminDashboard: React.FC = () => {
                 setNewDesc('');
                 setNewPrice('');
                 setNewGender('Unissex');
+                setNewNcm(NCM_PADRAO);
                 setNewIsNovidade(false);
                 setActiveTab('cadastro');
                 setIsMenuOpen(false);
@@ -2946,6 +2971,24 @@ export const AdminDashboard: React.FC = () => {
                       <option value="Feminino">Feminino</option>
                     </select>
                   </div>
+                </div>
+
+                <div className={styles.group}>
+                  <label>Código NCM (NF-e / Bling)</label>
+                  <select
+                    value={newNcm}
+                    onChange={e => setNewNcm(e.target.value)}
+                    required
+                  >
+                    {OPCOES_NCM.map(item => (
+                      <option key={item.codigo} value={item.codigo}>
+                        {item.codigo} — {item.descricao}
+                      </option>
+                    ))}
+                  </select>
+                  <small className={styles.slugPreviewText}>
+                    NCM selecionado: <b>{newNcm}</b> (você pode adicionar novos códigos na lista depois, se precisar).
+                  </small>
                 </div>
 
                 <div className={styles.group}>

@@ -5,7 +5,6 @@ import { getIO } from '../socket';
 import { formatarPedidoFiscal } from './notaFiscalController';
 import { limparDocumento, validarCnpjAlfanumerico } from '../utils/documento';
 import { enfileirarNfeDoPedido } from '../services/blingService';
-import { processarFilaNfe } from '../jobs/nfeFilaWorker';
 
 const mpAccessToken =
   process.env.MERCADOPAGO_ACCESS_TOKEN ||
@@ -14,25 +13,9 @@ const client = new MercadoPagoConfig({ accessToken: mpAccessToken });
 const paymentClient = new Payment(client);
 const BACKEND_URL = process.env.BACKEND_URL || 'https://ninhoback.tamaralr.com.br';
 
-function emitirEventoNotaFiscalPedido(pedido: any) {
-  if (!pedido) return;
-  const fiscal = formatarPedidoFiscal(pedido);
-  const payload = { pedidoId: pedido.id, ...fiscal };
-
-  const io = getIO();
-  if (io) {
-    if (pedido.userId) {
-      io.to(`usuario_${pedido.userId}`).emit('notaFiscalAtualizada', payload);
-    }
-    io.emit('notaFiscalAtualizada', payload);
-  }
-}
-
 async function enfileirarNfeAssincrona(pedidoId: string, origem: string) {
   try {
-    const { pedido } = await enfileirarNfeDoPedido(pedidoId);
-    emitirEventoNotaFiscalPedido(pedido);
-    void processarFilaNfe();
+    await enfileirarNfeDoPedido(pedidoId);
   } catch (err: any) {
     console.error(
       `[NF-e Fila ${origem}] Falha ao enfileirar pedido ${pedidoId}:`,
@@ -53,6 +36,7 @@ export const pedidoController = {
         enderecoFiscalId: enderecoFiscalIdBody,
         faturarParaEmpresa,
         tipoFaturamento: tipoFaturamentoBody,
+        subtotal,
         valorTotal,
         valorFrete,
         servicoFrete,
@@ -69,7 +53,12 @@ export const pedidoController = {
         clienteFone: clienteFoneBody,
       } = req.body;
 
+      const freteFinal = Number(valorFrete || 0);
       const valorFinalPedido = Number(valorTotal || transaction_amount || 0);
+      const subtotalFinal =
+        subtotal !== undefined && subtotal !== null
+          ? Number(subtotal)
+          : Math.max(0, Number((valorFinalPedido - freteFinal).toFixed(2)));
 
       if (!itens || !Array.isArray(itens) || itens.length === 0) {
         return res.status(400).json({ message: 'O carrinho está vazio.' });
@@ -96,7 +85,7 @@ export const pedidoController = {
         const isCnpj =
           (pedidoExistente as any).tipoFaturamento === 'PJ' || validarCnpjAlfanumerico(documentoLimpo);
 
-        let paymentBody: any = {
+        const paymentBody: any = {
           transaction_amount: Number(pedidoExistente.valorTotal),
           description: `Refazendo pagamento Pedido #${pedidoExistente.id.slice(0, 8)}`,
           notification_url: `${BACKEND_URL}/api/webhooks/mercadopago`,
@@ -128,6 +117,7 @@ export const pedidoController = {
           data: {
             mpPaymentId: String(mpResponse.id),
             status: statusMapeado,
+            expiraEm: statusMapeado === 'PAGO' ? null : pedidoExistente.expiraEm,
             metodoPagamento: isCartao ? 'credit_card' : 'pix',
             createdAt: new Date(),
             historicoStatus: {
@@ -241,8 +231,14 @@ export const pedidoController = {
           const produtoEstoque = await tx.produtoEstoque.findFirst({
             where: {
               produtoId,
-              cor: corNome !== 'Padrão' ? { nome: corNome } : undefined,
-              tamanho: { nome: tamanhoNome },
+              ...(item.corId
+                ? { corId: String(item.corId) }
+                : corNome !== 'Padrão'
+                  ? { cor: { nome: corNome } }
+                  : {}),
+              ...(item.tamanhoId
+                ? { tamanhoId: String(item.tamanhoId) }
+                : { tamanho: { nome: tamanhoNome } }),
               ativo: true,
             },
             include: {
@@ -276,8 +272,9 @@ export const pedidoController = {
 
         const pedidoCriado = await tx.pedido.create({
           data: {
+            subtotal: subtotalFinal,
+            valorFrete: freteFinal,
             valorTotal: Number(valorFinalPedido),
-            valorFrete: Number(valorFrete || 0),
             servicoFrete: servicoFrete || 'Entrega Padrão',
             metodoPagamento: metodoPagamento || 'PIX',
             status: 'PENDENTE',
@@ -613,6 +610,9 @@ export const pedidoController = {
 
       if (status && status !== pedidoExistente.status) {
         dataUpdate.status = status;
+        if (status === 'PAGO') {
+          dataUpdate.expiraEm = null;
+        }
         dataUpdate.historicoStatus = {
           create: {
             status: status,
@@ -779,6 +779,12 @@ export const pedidoController = {
         },
         include: { itens: true, historicoStatus: { orderBy: { data: 'asc' } } },
       });
+
+      const io = getIO();
+      if (io && userIdLogado) {
+        io.to(`usuario_${Number(userIdLogado)}`).emit('pedidoAtualizado', pedidoAtualizado);
+        io.emit('pedidoAtualizado', pedidoAtualizado);
+      }
 
       return res.status(200).json({
         success: true,

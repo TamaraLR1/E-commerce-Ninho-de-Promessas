@@ -4,34 +4,17 @@ exports.pagamentoController = void 0;
 const mercadopago_1 = require("mercadopago");
 const prisma_1 = require("../lib/prisma");
 const socket_1 = require("../socket");
-const notaFiscalController_1 = require("./notaFiscalController");
 const documento_1 = require("../utils/documento");
 const blingService_1 = require("../services/blingService");
-const nfeFilaWorker_1 = require("../jobs/nfeFilaWorker");
 const mpAccessToken = process.env.MERCADOPAGO_ACCESS_TOKEN ||
     'APP_USR-6241648762325115-101109-22bbdb4d167baad86cf6c9f6f2776dc8-3529610690';
 const client = new mercadopago_1.MercadoPagoConfig({ accessToken: mpAccessToken });
 const paymentClient = new mercadopago_1.Payment(client);
 // URL base do Backend em produção para o Webhook
 const BACKEND_URL = process.env.BACKEND_URL || 'https://ninhoback.tamaralr.com.br';
-function emitirEventoNotaFiscalPedido(pedido) {
-    if (!pedido)
-        return;
-    const fiscal = (0, notaFiscalController_1.formatarPedidoFiscal)(pedido);
-    const payload = { pedidoId: pedido.id, ...fiscal };
-    const io = (0, socket_1.getIO)();
-    if (io) {
-        if (pedido.userId) {
-            io.to(`usuario_${pedido.userId}`).emit('notaFiscalAtualizada', payload);
-        }
-        io.emit('notaFiscalAtualizada', payload);
-    }
-}
 async function enfileirarNfeAssincrona(pedidoId, origem) {
     try {
-        const { pedido } = await (0, blingService_1.enfileirarNfeDoPedido)(pedidoId);
-        emitirEventoNotaFiscalPedido(pedido);
-        void (0, nfeFilaWorker_1.processarFilaNfe)();
+        await (0, blingService_1.enfileirarNfeDoPedido)(pedidoId);
     }
     catch (err) {
         console.error(`[NF-e Fila ${origem}] Falha ao enfileirar pedido ${pedidoId}:`, err?.response?.data || err?.message || err);
@@ -364,6 +347,8 @@ exports.pagamentoController = {
                     });
                 }
                 let enderecoId;
+                const ibgeRecebido = endereco.codigoIbge || endereco.codigo_ibge;
+                const ibgeLimpo = ibgeRecebido ? String(ibgeRecebido).replace(/\D/g, '') : '';
                 const dadosTratados = {
                     tipo: 'ENTREGA',
                     cep: String(endereco.cep).replace(/\D/g, ''),
@@ -373,6 +358,7 @@ exports.pagamentoController = {
                     bairro: endereco.bairro,
                     cidade: endereco.cidade,
                     estado: String(endereco.estado || '').trim().toUpperCase(),
+                    ...(ibgeLimpo.length === 7 ? { codigoIbge: ibgeLimpo } : {}),
                     destinatario: endereco.destinatario || snapshotClienteNome,
                     userId: user.id,
                 };

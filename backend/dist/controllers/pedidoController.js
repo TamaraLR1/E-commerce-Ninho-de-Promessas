@@ -7,30 +7,14 @@ const socket_1 = require("../socket");
 const notaFiscalController_1 = require("./notaFiscalController");
 const documento_1 = require("../utils/documento");
 const blingService_1 = require("../services/blingService");
-const nfeFilaWorker_1 = require("../jobs/nfeFilaWorker");
 const mpAccessToken = process.env.MERCADOPAGO_ACCESS_TOKEN ||
     'APP_USR-6241648762325115-101109-22bbdb4d167baad86cf6c9f6f2776dc8-3529610690';
 const client = new mercadopago_1.MercadoPagoConfig({ accessToken: mpAccessToken });
 const paymentClient = new mercadopago_1.Payment(client);
 const BACKEND_URL = process.env.BACKEND_URL || 'https://ninhoback.tamaralr.com.br';
-function emitirEventoNotaFiscalPedido(pedido) {
-    if (!pedido)
-        return;
-    const fiscal = (0, notaFiscalController_1.formatarPedidoFiscal)(pedido);
-    const payload = { pedidoId: pedido.id, ...fiscal };
-    const io = (0, socket_1.getIO)();
-    if (io) {
-        if (pedido.userId) {
-            io.to(`usuario_${pedido.userId}`).emit('notaFiscalAtualizada', payload);
-        }
-        io.emit('notaFiscalAtualizada', payload);
-    }
-}
 async function enfileirarNfeAssincrona(pedidoId, origem) {
     try {
-        const { pedido } = await (0, blingService_1.enfileirarNfeDoPedido)(pedidoId);
-        emitirEventoNotaFiscalPedido(pedido);
-        void (0, nfeFilaWorker_1.processarFilaNfe)();
+        await (0, blingService_1.enfileirarNfeDoPedido)(pedidoId);
     }
     catch (err) {
         console.error(`[NF-e Fila ${origem}] Falha ao enfileirar pedido ${pedidoId}:`, err?.response?.data || err?.message || err);
@@ -42,8 +26,12 @@ exports.pedidoController = {
         try {
             const rawUserId = req.user?.id || req.userId || req.user?.userId;
             const userId = rawUserId ? Number(rawUserId) : null;
-            const { itens, enderecoId, enderecoFiscalId: enderecoFiscalIdBody, faturarParaEmpresa, tipoFaturamento: tipoFaturamentoBody, valorTotal, valorFrete, servicoFrete, metodoPagamento, pedidoParaRefazerId, transaction_amount, token, installments, issuer_id, description, clienteNome: clienteNomeBody, clienteEmail: clienteEmailBody, clienteCpf: clienteCpfBody, clienteFone: clienteFoneBody, } = req.body;
+            const { itens, enderecoId, enderecoFiscalId: enderecoFiscalIdBody, faturarParaEmpresa, tipoFaturamento: tipoFaturamentoBody, subtotal, valorTotal, valorFrete, servicoFrete, metodoPagamento, pedidoParaRefazerId, transaction_amount, token, installments, issuer_id, description, clienteNome: clienteNomeBody, clienteEmail: clienteEmailBody, clienteCpf: clienteCpfBody, clienteFone: clienteFoneBody, } = req.body;
+            const freteFinal = Number(valorFrete || 0);
             const valorFinalPedido = Number(valorTotal || transaction_amount || 0);
+            const subtotalFinal = subtotal !== undefined && subtotal !== null
+                ? Number(subtotal)
+                : Math.max(0, Number((valorFinalPedido - freteFinal).toFixed(2)));
             if (!itens || !Array.isArray(itens) || itens.length === 0) {
                 return res.status(400).json({ message: 'O carrinho está vazio.' });
             }
@@ -63,7 +51,7 @@ exports.pedidoController = {
                 const docBruto = pedidoExistente.clienteCpf || user?.cpf || '';
                 const documentoLimpo = (0, documento_1.limparDocumento)(docBruto) || '00000000000';
                 const isCnpj = pedidoExistente.tipoFaturamento === 'PJ' || (0, documento_1.validarCnpjAlfanumerico)(documentoLimpo);
-                let paymentBody = {
+                const paymentBody = {
                     transaction_amount: Number(pedidoExistente.valorTotal),
                     description: `Refazendo pagamento Pedido #${pedidoExistente.id.slice(0, 8)}`,
                     notification_url: `${BACKEND_URL}/api/webhooks/mercadopago`,
@@ -94,6 +82,7 @@ exports.pedidoController = {
                     data: {
                         mpPaymentId: String(mpResponse.id),
                         status: statusMapeado,
+                        expiraEm: statusMapeado === 'PAGO' ? null : pedidoExistente.expiraEm,
                         metodoPagamento: isCartao ? 'credit_card' : 'pix',
                         createdAt: new Date(),
                         historicoStatus: {
@@ -186,8 +175,14 @@ exports.pedidoController = {
                     const produtoEstoque = await tx.produtoEstoque.findFirst({
                         where: {
                             produtoId,
-                            cor: corNome !== 'Padrão' ? { nome: corNome } : undefined,
-                            tamanho: { nome: tamanhoNome },
+                            ...(item.corId
+                                ? { corId: String(item.corId) }
+                                : corNome !== 'Padrão'
+                                    ? { cor: { nome: corNome } }
+                                    : {}),
+                            ...(item.tamanhoId
+                                ? { tamanhoId: String(item.tamanhoId) }
+                                : { tamanho: { nome: tamanhoNome } }),
                             ativo: true,
                         },
                         include: {
@@ -213,8 +208,9 @@ exports.pedidoController = {
                 }
                 const pedidoCriado = await tx.pedido.create({
                     data: {
+                        subtotal: subtotalFinal,
+                        valorFrete: freteFinal,
                         valorTotal: Number(valorFinalPedido),
-                        valorFrete: Number(valorFrete || 0),
                         servicoFrete: servicoFrete || 'Entrega Padrão',
                         metodoPagamento: metodoPagamento || 'PIX',
                         status: 'PENDENTE',
@@ -512,6 +508,9 @@ exports.pedidoController = {
             };
             if (status && status !== pedidoExistente.status) {
                 dataUpdate.status = status;
+                if (status === 'PAGO') {
+                    dataUpdate.expiraEm = null;
+                }
                 dataUpdate.historicoStatus = {
                     create: {
                         status: status,
@@ -660,6 +659,11 @@ exports.pedidoController = {
                 },
                 include: { itens: true, historicoStatus: { orderBy: { data: 'asc' } } },
             });
+            const io = (0, socket_1.getIO)();
+            if (io && userIdLogado) {
+                io.to(`usuario_${Number(userIdLogado)}`).emit('pedidoAtualizado', pedidoAtualizado);
+                io.emit('pedidoAtualizado', pedidoAtualizado);
+            }
             return res.status(200).json({
                 success: true,
                 sucesso: true,
