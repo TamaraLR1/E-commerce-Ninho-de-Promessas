@@ -6,6 +6,7 @@ exports.formatarTelefone = formatarTelefone;
 exports.formatarCep = formatarCep;
 exports.formatarCnpjAlfanumerico = formatarCnpjAlfanumerico;
 exports.validarCnpjAlfanumerico = validarCnpjAlfanumerico;
+exports.normalizarDocumentoMercadoPago = normalizarDocumentoMercadoPago;
 /**
  * Remove máscara mantendo letras e números (ideal para CNPJ alfanumérico)
  */
@@ -120,4 +121,34 @@ function validarCnpjAlfanumerico(valor) {
     const resto2 = soma2 % 11;
     const dv2Calculado = resto2 < 2 ? 0 : 11 - resto2;
     return dvInformado === `${dv1Calculado}${dv2Calculado}`;
+}
+/**
+ * Retorna documento numérico para o campo identification do Mercado Pago.
+ * Se for CNPJ alfanumérico, converte de forma determinística para 14 dígitos numéricos
+ * sem alterar o CNPJ original salvo no pedido, banco ou NF-e.
+ */
+function normalizarDocumentoMercadoPago(tipo, documento) {
+    if (tipo === 'PF') {
+        return (documento || '').replace(/\D/g, '').slice(0, 11);
+    }
+    const limpo = limparDocumento(documento);
+    const apenasDigitos = limpo.replace(/\D/g, '');
+    if (apenasDigitos.length === 14) {
+        return apenasDigitos;
+    }
+    const expandido = limpo
+        .split('')
+        .map((char) => String(valorCaractereCnpj(char)))
+        .join('');
+    const base12 = expandido.padEnd(12, '0').slice(0, 12).split('').map(Number);
+    const pesos1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const soma1 = base12.reduce((acc, n, idx) => acc + n * pesos1[idx], 0);
+    const resto1 = soma1 % 11;
+    const dv1 = resto1 < 2 ? 0 : 11 - resto1;
+    const base13 = [...base12, dv1];
+    const pesos2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const soma2 = base13.reduce((acc, n, idx) => acc + n * pesos2[idx], 0);
+    const resto2 = soma2 % 11;
+    const dv2 = resto2 < 2 ? 0 : 11 - resto2;
+    return `${base13.join('')}${dv2}`;
 }

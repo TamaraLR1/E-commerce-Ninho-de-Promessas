@@ -20,13 +20,87 @@ async function enfileirarNfeAssincrona(pedidoId, origem) {
         console.error(`[NF-e Fila ${origem}] Falha ao enfileirar pedido ${pedidoId}:`, err?.response?.data || err?.message || err);
     }
 }
+function valorCaractereCnpjMp(char) {
+    const code = char.charCodeAt(0);
+    if (code >= 48 && code <= 57)
+        return code - 48;
+    if (code >= 65 && code <= 90)
+        return code - 48;
+    return 0;
+}
+/**
+ * Preserva o documento original no pedido/NF-e, mas gera CPF (11 dígitos) ou
+ * CNPJ numérico (14 dígitos) para o campo identification do Mercado Pago.
+ */
+function resolverIdentificacaoMercadoPago(isCnpj, documentoBruto) {
+    if (!isCnpj) {
+        return {
+            type: 'CPF',
+            number: String(documentoBruto || '').replace(/\D/g, '').slice(0, 11),
+        };
+    }
+    const limpo = (0, documento_1.limparDocumento)(documentoBruto);
+    const apenasDigitos = limpo.replace(/\D/g, '');
+    if (apenasDigitos.length === 14) {
+        return {
+            type: 'CNPJ',
+            number: apenasDigitos,
+        };
+    }
+    const expandido = limpo
+        .split('')
+        .map((char) => String(valorCaractereCnpjMp(char)))
+        .join('');
+    const base12 = expandido.padEnd(12, '0').slice(0, 12).split('').map(Number);
+    const pesos1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const soma1 = base12.reduce((acc, n, idx) => acc + n * pesos1[idx], 0);
+    const resto1 = soma1 % 11;
+    const dv1 = resto1 < 2 ? 0 : 11 - resto1;
+    const base13 = [...base12, dv1];
+    const pesos2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const soma2 = base13.reduce((acc, n, idx) => acc + n * pesos2[idx], 0);
+    const resto2 = soma2 % 11;
+    const dv2 = resto2 < 2 ? 0 : 11 - resto2;
+    return {
+        type: 'CNPJ',
+        number: `${base13.join('')}${dv2}`,
+    };
+}
+function obterMensagemStatusCartao(status, statusDetail) {
+    if (status === 'approved') {
+        return 'Pagamento aprovado com sucesso!';
+    }
+    if (status === 'in_process' || status === 'pending') {
+        return 'Pagamento em análise pela operadora. Avisaremos assim que houver confirmação.';
+    }
+    switch (statusDetail) {
+        case 'cc_rejected_insufficient_amount':
+            return 'Saldo ou limite insuficiente neste cartão. Tente outro cartão ou pague via Pix.';
+        case 'cc_rejected_bad_filled_other':
+        case 'cc_rejected_bad_filled_card_number':
+        case 'cc_rejected_bad_filled_security_code':
+        case 'cc_rejected_bad_filled_date':
+            return 'Dados do cartão inválidos ou incorretos. Confira número, validade, CVV e documento do titular.';
+        case 'cc_rejected_call_for_authorize':
+            return 'A operadora do cartão exige autorização prévia. Entre em contato com o banco emissor ou use outro cartão.';
+        case 'cc_rejected_card_disabled':
+            return 'Cartão desabilitado para compras online. Fale com o banco emissor ou use outro meio de pagamento.';
+        case 'cc_rejected_duplicated_payment':
+            return 'Você já enviou um pagamento com este mesmo valor recentemente. Aguarde alguns minutos ou tente outro cartão.';
+        case 'cc_rejected_high_risk':
+            return 'Pagamento não autorizado por prevenção a fraude. Tente outro cartão ou utilize o Pix.';
+        case 'cc_rejected_other_reason':
+        default:
+            return 'O cartão não autorizou a compra no momento. Tente novamente ou pague via Pix.';
+    }
+}
 exports.pedidoController = {
-    // 🛒 0. Método para Criar Pedido (ou Atualizar se vier de "Refazer Pagamento" via Checkout)
+    // 0. Método para Criar Pedido (ou Atualizar se vier de "Refazer Pagamento" via Checkout)
     async criarPedido(req, res) {
         try {
             const rawUserId = req.user?.id || req.userId || req.user?.userId;
             const userId = rawUserId ? Number(rawUserId) : null;
-            const { itens, enderecoId, enderecoFiscalId: enderecoFiscalIdBody, faturarParaEmpresa, tipoFaturamento: tipoFaturamentoBody, subtotal, valorTotal, valorFrete, servicoFrete, metodoPagamento, pedidoParaRefazerId, transaction_amount, token, installments, issuer_id, description, clienteNome: clienteNomeBody, clienteEmail: clienteEmailBody, clienteCpf: clienteCpfBody, clienteFone: clienteFoneBody, } = req.body;
+            const { itens, enderecoId, enderecoFiscalId: enderecoFiscalIdBody, faturarParaEmpresa, tipoFaturamento: tipoFaturamentoBody, subtotal, valorTotal, valorFrete, servicoFrete, metodoPagamento, payment_method_id, pedidoParaRefazerId, transaction_amount, token, installments, issuer_id, description, clienteNome: clienteNomeBody, clienteEmail: clienteEmailBody, clienteCpf: clienteCpfBody, clienteFone: clienteFoneBody, } = req.body;
             const freteFinal = Number(valorFrete || 0);
             const valorFinalPedido = Number(valorTotal || transaction_amount || 0);
             const subtotalFinal = subtotal !== undefined && subtotal !== null
@@ -35,7 +109,7 @@ exports.pedidoController = {
             if (!itens || !Array.isArray(itens) || itens.length === 0) {
                 return res.status(400).json({ message: 'O carrinho está vazio.' });
             }
-            // Se for um pedido sendo refeito via checkout, vamos processar o pagamento e atualizar o pedido existente
+            // Se for um pedido sendo refeito via checkout, processa o pagamento e atualiza o pedido existente
             if (pedidoParaRefazerId) {
                 const pedidoExistente = await prisma_1.prisma.pedido.findFirst({
                     where: { id: String(pedidoParaRefazerId), userId: userId ? Number(userId) : undefined },
@@ -47,36 +121,57 @@ exports.pedidoController = {
                 const user = userId
                     ? await prisma_1.prisma.user.findUnique({ where: { id: Number(userId) } })
                     : null;
-                const isCartao = metodoPagamento === 'credit_card' || metodoPagamento !== 'pix';
+                const isPix = metodoPagamento === 'pix' || payment_method_id === 'pix';
+                const isCartao = !isPix;
+                if (isCartao && !token) {
+                    return res.status(400).json({
+                        message: 'Token do cartão não informado. Preencha os dados do cartão novamente.',
+                    });
+                }
                 const docBruto = pedidoExistente.clienteCpf || user?.cpf || '';
-                const documentoLimpo = (0, documento_1.limparDocumento)(docBruto) || '00000000000';
+                const documentoLimpo = (0, documento_1.limparDocumento)(docBruto);
                 const isCnpj = pedidoExistente.tipoFaturamento === 'PJ' || (0, documento_1.validarCnpjAlfanumerico)(documentoLimpo);
+                const identificacaoMp = resolverIdentificacaoMercadoPago(isCnpj, documentoLimpo);
                 const paymentBody = {
                     transaction_amount: Number(pedidoExistente.valorTotal),
-                    description: `Refazendo pagamento Pedido #${pedidoExistente.id.slice(0, 8)}`,
+                    description: description || `Refazendo pagamento Pedido #${pedidoExistente.id.slice(0, 8)}`,
                     notification_url: `${BACKEND_URL}/api/webhooks/mercadopago`,
                     payer: {
                         email: pedidoExistente.clienteEmail || user?.email || 'cliente@ninhodepromessas.com.br',
                         first_name: (user?.nome || pedidoExistente.clienteNome || 'Cliente').trim().split(' ')[0],
                         last_name: (user?.sobrenome || '').trim(),
                         identification: {
-                            type: isCnpj ? 'CNPJ' : 'CPF',
-                            number: documentoLimpo,
+                            type: identificacaoMp.type,
+                            number: identificacaoMp.number,
                         },
                     },
                 };
                 if (isCartao) {
-                    paymentBody.payment_method_id = metodoPagamento !== 'credit_card' ? metodoPagamento : 'master';
+                    paymentBody.payment_method_id =
+                        payment_method_id && payment_method_id !== 'credit_card'
+                            ? payment_method_id
+                            : 'master';
                     paymentBody.token = token;
                     paymentBody.installments = Number(installments || 1);
                     if (issuer_id)
-                        paymentBody.issuer_id = issuer_id;
+                        paymentBody.issuer_id = Number(issuer_id);
                 }
                 else {
                     paymentBody.payment_method_id = 'pix';
                 }
                 const mpResponse = await paymentClient.create({ body: paymentBody });
-                const statusMapeado = mpResponse.status === 'approved' ? 'PAGO' : 'PENDENTE';
+                const mpStatusDetail = String(mpResponse.status_detail || '');
+                const mensagemPagamento = obterMensagemStatusCartao(mpResponse.status, mpStatusDetail);
+                const statusMapeado = mpResponse.status === 'approved'
+                    ? 'PAGO'
+                    : mpResponse.status === 'rejected'
+                        ? 'RECUSADO'
+                        : 'PENDENTE';
+                const observacaoRefazer = statusMapeado === 'PAGO'
+                    ? 'Pagamento aprovado via Cartão de Crédito no Checkout.'
+                    : statusMapeado === 'RECUSADO'
+                        ? `Pagamento recusado pelo Mercado Pago (${mpStatusDetail || 'sem detalhe'}).`
+                        : 'Novo código PIX gerado no Checkout.';
                 const pedidoAtualizado = await prisma_1.prisma.pedido.update({
                     where: { id: pedidoExistente.id },
                     data: {
@@ -88,9 +183,7 @@ exports.pedidoController = {
                         historicoStatus: {
                             create: {
                                 status: statusMapeado,
-                                observacao: statusMapeado === 'PAGO'
-                                    ? 'Pagamento aprovado via Cartão de Crédito no Checkout.'
-                                    : 'Novo código PIX gerado no Checkout.',
+                                observacao: observacaoRefazer,
                             },
                         },
                     },
@@ -112,6 +205,9 @@ exports.pedidoController = {
                 return res.status(200).json({
                     success: true,
                     sucesso: true,
+                    mpStatus: mpResponse.status,
+                    statusDetail: mpStatusDetail,
+                    mensagemPagamento,
                     pedido: {
                         ...pedidoAtualizado,
                         ...(0, notaFiscalController_1.formatarPedidoFiscal)(pedidoAtualizado),
@@ -625,8 +721,9 @@ exports.pedidoController = {
                 return res.status(404).json({ message: 'Pedido não encontrado.' });
             const user = await prisma_1.prisma.user.findUnique({ where: { id: Number(userIdLogado) } });
             const docBruto = pedido.clienteCpf || user?.cpf || '';
-            const documentoLimpo = (0, documento_1.limparDocumento)(docBruto) || '00000000000';
+            const documentoLimpo = (0, documento_1.limparDocumento)(docBruto);
             const isCnpj = pedido.tipoFaturamento === 'PJ' || (0, documento_1.validarCnpjAlfanumerico)(documentoLimpo);
+            const identificacaoMp = resolverIdentificacaoMercadoPago(isCnpj, documentoLimpo);
             const paymentBody = {
                 transaction_amount: Number(pedido.valorTotal),
                 description: `Refazendo pagamento Pedido #${pedido.id.slice(0, 8)}`,
@@ -637,8 +734,8 @@ exports.pedidoController = {
                     first_name: (user?.nome || pedido.clienteNome || 'Cliente').trim().split(' ')[0],
                     last_name: (user?.sobrenome || '').trim(),
                     identification: {
-                        type: isCnpj ? 'CNPJ' : 'CPF',
-                        number: documentoLimpo,
+                        type: identificacaoMp.type,
+                        number: identificacaoMp.number,
                     },
                 },
             };

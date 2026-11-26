@@ -50,6 +50,91 @@ function validarCPF(cpf: string): boolean {
   return true;
 }
 
+function valorCaractereCnpjMp(char: string): number {
+  const code = char.charCodeAt(0);
+  if (code >= 48 && code <= 57) return code - 48;
+  if (code >= 65 && code <= 90) return code - 48;
+  return 0;
+}
+
+/**
+ * Mantém o CNPJ alfanumérico intacto no banco/NF-e, mas gera 14 dígitos
+ * numéricos para o campo payer.identification exigido pelo Mercado Pago.
+ */
+function resolverDocumentoParaMercadoPago(
+  usarPJ: boolean,
+  cnpjAlfanumerico: string,
+  cpfNumerico: string
+): { type: 'CNPJ' | 'CPF'; number: string } {
+  if (!usarPJ) {
+    return {
+      type: 'CPF',
+      number: cpfNumerico.replace(/\D/g, '').slice(0, 11),
+    };
+  }
+
+  const limpo = limparDocumento(cnpjAlfanumerico);
+  const apenasDigitos = limpo.replace(/\D/g, '');
+  if (apenasDigitos.length === 14) {
+    return {
+      type: 'CNPJ',
+      number: apenasDigitos,
+    };
+  }
+
+  const expandido = limpo
+    .split('')
+    .map((char) => String(valorCaractereCnpjMp(char)))
+    .join('');
+
+  const base12 = expandido.padEnd(12, '0').slice(0, 12).split('').map(Number);
+  const pesos1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const soma1 = base12.reduce((acc, n, idx) => acc + n * pesos1[idx], 0);
+  const resto1 = soma1 % 11;
+  const dv1 = resto1 < 2 ? 0 : 11 - resto1;
+
+  const base13 = [...base12, dv1];
+  const pesos2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const soma2 = base13.reduce((acc, n, idx) => acc + n * pesos2[idx], 0);
+  const resto2 = soma2 % 11;
+  const dv2 = resto2 < 2 ? 0 : 11 - resto2;
+
+  return {
+    type: 'CNPJ',
+    number: `${base13.join('')}${dv2}`,
+  };
+}
+
+function obterMensagemStatusCartao(status?: string | null, statusDetail?: string | null): string {
+  if (status === 'approved') {
+    return 'Pagamento aprovado com sucesso!';
+  }
+  if (status === 'in_process' || status === 'pending') {
+    return 'Pagamento em análise pela operadora. Avisaremos assim que houver confirmação.';
+  }
+
+  switch (statusDetail) {
+    case 'cc_rejected_insufficient_amount':
+      return 'Saldo ou limite insuficiente neste cartão. Tente outro cartão ou pague via Pix.';
+    case 'cc_rejected_bad_filled_other':
+    case 'cc_rejected_bad_filled_card_number':
+    case 'cc_rejected_bad_filled_security_code':
+    case 'cc_rejected_bad_filled_date':
+      return 'Dados do cartão inválidos ou incorretos. Confira número, validade, CVV e documento do titular.';
+    case 'cc_rejected_call_for_authorize':
+      return 'A operadora do cartão exige autorização prévia. Entre em contato com o banco emissor ou use outro cartão.';
+    case 'cc_rejected_card_disabled':
+      return 'Cartão desabilitado para compras online. Fale com o banco emissor ou use outro meio de pagamento.';
+    case 'cc_rejected_duplicated_payment':
+      return 'Você já enviou um pagamento com este mesmo valor recentemente. Aguarde alguns minutos ou tente outro cartão.';
+    case 'cc_rejected_high_risk':
+      return 'Pagamento não autorizado por prevenção a fraude. Tente outro cartão ou utilize o Pix.';
+    case 'cc_rejected_other_reason':
+    default:
+      return 'O cartão não autorizou a compra no momento. Tente novamente ou pague via Pix.';
+  }
+}
+
 export const pagamentoController = {
   async processarPagamento(req: Request, res: Response) {
     try {
@@ -141,7 +226,7 @@ export const pagamentoController = {
       const snapshotClienteNomeFantasia = usarPJ ? user.empresa!.nomeFantasia || null : null;
       const snapshotClienteCpf = usarPJ
         ? cnpjLimpo
-        : String(clienteCpfBody || cpfLimpo || '').trim();
+        : String(clienteCpfBody || cpfLimpo || '').replace(/\D/g, '').trim();
       const snapshotClienteIndicadorIE = usarPJ ? user.empresa!.indicadorIE : 'NAO_CONTRIBUINTE';
       const snapshotClienteInscricaoEstadual =
         usarPJ && user.empresa!.indicadorIE === 'CONTRIBUINTE'
@@ -157,7 +242,7 @@ export const pagamentoController = {
         enderecoFiscalFinalId = user.empresa.enderecoFiscalId;
       }
 
-      const documentoCobrancaLimpo = usarPJ ? cnpjLimpo : cpfLimpo;
+      const identificacaoMercadoPago = resolverDocumentoParaMercadoPago(usarPJ, cnpjLimpo, cpfLimpo);
 
       // Recalcula subtotal no servidor com base nos itens enviados
       const subtotalCalculado = Number(
@@ -193,7 +278,6 @@ export const pagamentoController = {
         });
       }
 
-      // Validação de valor mínimo para Cartão de Crédito (< R$ 1,00)
       const isCartaoCredito =
         payment_method_id === 'credit_card' || (payment_method_id && payment_method_id !== 'pix');
 
@@ -294,8 +378,8 @@ export const pagamentoController = {
           ? snapshotClienteNome.trim().split(' ').slice(1).join(' ')
           : (user.sobrenome || '').trim(),
         identification: {
-          type: usarPJ ? 'CNPJ' : 'CPF',
-          number: documentoCobrancaLimpo,
+          type: identificacaoMercadoPago.type,
+          number: identificacaoMercadoPago.number,
         },
         address: {
           zip_code: String(endereco.cep).replace(/\D/g, ''),
@@ -350,6 +434,9 @@ export const pagamentoController = {
         }
       }
 
+      const mpStatusDetail = String(mpResponse.status_detail || '');
+      const mensagemPagamento = obterMensagemStatusCartao(mpResponse.status, mpStatusDetail);
+
       let statusPedido: 'PENDENTE' | 'PAGO' | 'RECUSADO' = 'PENDENTE';
       if (mpResponse.status === 'approved') {
         statusPedido = 'PAGO';
@@ -358,6 +445,13 @@ export const pagamentoController = {
       } else {
         statusPedido = 'PENDENTE';
       }
+
+      const observacaoHistorico =
+        statusPedido === 'RECUSADO'
+          ? `Pagamento recusado pelo Mercado Pago (${mpStatusDetail || 'sem detalhe'}).`
+          : pedidoParaRefazerId
+          ? 'Tentativa de pagamento refeita. Status reativado para PENDENTE e estoque reservado novamente.'
+          : 'Pedido criado. Estoque reservado temporariamente.';
 
       // -------------------------------------------------------------------------
       // 4. TRANSAÇÃO PRISMA: ESTOQUE ATÔMICO, RESERVA E EXPIRAÇÃO
@@ -466,7 +560,7 @@ export const pagamentoController = {
           valorTotal: valorCobranca,
           servicoFrete: servicoFrete || 'Padrão',
           prazoEntrega: prazoEntrega || null,
-          metodoPagamento: payment_method_id,
+          metodoPagamento: payment_method_id === 'pix' ? 'pix' : 'credit_card',
           mpPaymentId: String(mpResponse.id),
           expiraEm: statusPedido === 'PAGO' ? null : expiraEm,
           createdAt: new Date(),
@@ -500,8 +594,7 @@ export const pagamentoController = {
               historicoStatus: {
                 create: {
                   status: statusPedido,
-                  observacao:
-                    'Tentativa de pagamento refeita. Status reativado para PENDENTE e estoque reservado novamente.',
+                  observacao: observacaoHistorico,
                 },
               },
             },
@@ -515,7 +608,7 @@ export const pagamentoController = {
               historicoStatus: {
                 create: {
                   status: statusPedido,
-                  observacao: 'Pedido criado. Estoque reservado temporariamente.',
+                  observacao: observacaoHistorico,
                 },
               },
             },
@@ -540,6 +633,8 @@ export const pagamentoController = {
         sucesso: true,
         pedido: resultado,
         mpStatus: mpResponse.status,
+        statusDetail: mpStatusDetail,
+        mensagemPagamento,
         qrCode: mpResponse.point_of_interaction?.transaction_data?.qr_code,
         qrCodeBase64: mpResponse.point_of_interaction?.transaction_data?.qr_code_base64,
       });
@@ -635,6 +730,7 @@ export const pagamentoController = {
         ) {
           const novoStatus = 'RECUSADO' as const;
           let foiRecusado = false;
+          const detalheWebhook = String(paymentInfo.status_detail || '').trim();
 
           await prisma.$transaction(async (tx) => {
             const atualizado = await tx.pedido.updateMany({
@@ -655,7 +751,9 @@ export const pagamentoController = {
               data: {
                 pedidoId: pedidoExistente.id,
                 status: novoStatus,
-                observacao: `Pagamento ${paymentInfo.status === 'rejected' ? 'recusado' : 'cancelado/expirado'} pelo Mercado Pago.`,
+                observacao: `Pagamento ${
+                  paymentInfo.status === 'rejected' ? 'recusado' : 'cancelado/expirado'
+                } pelo Mercado Pago${detalheWebhook ? ` (${detalheWebhook})` : ''}.`,
               },
             });
 

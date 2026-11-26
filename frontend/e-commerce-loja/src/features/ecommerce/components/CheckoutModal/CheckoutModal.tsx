@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { initMercadoPago, CardPayment } from '@mercadopago/sdk-react';
+import { initMercadoPago, Payment } from '@mercadopago/sdk-react';
 import { useCart } from '../../components/CartContext/CartContext';
 import { socket } from '../../../../services/socket';
 import styles from './CheckoutModal.module.css';
@@ -8,7 +8,7 @@ import {
   formatarCep,
   formatarCnpjAlfanumerico,
   formatarCpf,
-} from '../../../../utils/documento'; // ajuste o caminho relativo conforme a pasta do CheckoutModal.tsx
+} from '../../../../utils/documento';
 
 const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const API_URL = isLocal
@@ -73,6 +73,7 @@ interface OpcaoFrete {
 }
 
 type StatusConferenciaItem = 'DISPONIVEL' | 'QUANTIDADE_AJUSTADA' | 'ESGOTADO';
+type MetodoPagamentoTipo = 'pix' | 'credit_card';
 
 interface ItemConferido {
   produtoId: string;
@@ -137,9 +138,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   const [itensPedidoRefazer, setItensPedidoRefazer] = useState<any[]>([]);
   const [carregandoRefazer, setCarregandoRefazer] = useState<boolean>(false);
 
+  // Preserva os itens enviados na tentativa de pagamento para evitar "itens não encontrados" após recusa
+  const [itensTentativaAtual, setItensTentativaAtual] = useState<any[]>([]);
+  const [brickAttemptKey, setBrickAttemptKey] = useState<number>(0);
+
   const pedidoIdRefazer = localStorage.getItem('pedidoParaRefazerId');
 
-  // Efeito para buscar os itens do pedido original caso esteja a refazer o pagamento
   useEffect(() => {
     if (pedidoIdRefazer) {
       const buscarPedidoOriginal = async () => {
@@ -170,12 +174,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
     }
   }, [pedidoIdRefazer]);
 
-  // Itens iniciais selecionados (do pedido antigo ao refazer ou do carrinho)
   const itensSelecionadosOriginais = pedidoIdRefazer
     ? itensPedidoRefazer
     : itens.filter((item) => item.selecionado);
 
-  // Lista ativa usada para pagamento (pode ser confirmada após conferência de estoque)
+  const listaReferenciaEtapa3 =
+    itensSelecionadosOriginais.length > 0 ? itensSelecionadosOriginais : itensTentativaAtual;
+
   const [itensConfirmadosPagamento, setItensConfirmadosPagamento] = useState<any[] | null>(null);
   const [itensConferidos, setItensConferidos] = useState<ItemConferido[]>([]);
   const [quantidadesReferenciaEtapa3, setQuantidadesReferenciaEtapa3] = useState<Record<string, number>>({});
@@ -183,16 +188,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   const [erroConferencia, setErroConferencia] = useState<string>('');
   const [revisaoConfirmada, setRevisaoConfirmada] = useState<boolean>(false);
 
-  // Reseta a conferência caso o pedido de refazer mude
   useEffect(() => {
     setItensConfirmadosPagamento(null);
     setItensConferidos([]);
     setQuantidadesReferenciaEtapa3({});
     setErroConferencia('');
     setRevisaoConfirmada(false);
+    setItensTentativaAtual([]);
   }, [pedidoIdRefazer]);
 
-  const itensAtivos = itensConfirmadosPagamento ?? itensSelecionadosOriginais;
+  const itensAtivos =
+    itensConfirmadosPagamento ??
+    (itensSelecionadosOriginais.length > 0 ? itensSelecionadosOriginais : itensTentativaAtual);
 
   const valorTotalBase = itensConfirmadosPagamento
     ? Number(
@@ -202,6 +209,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
       )
     : pedidoIdRefazer
     ? Number(itensPedidoRefazer.reduce((acc, item) => acc + Number(item.totalItem || 0), 0).toFixed(2))
+    : itensSelecionadosOriginais.length > 0
+    ? Number((subtotalSelecionados || total).toFixed(2))
+    : itensTentativaAtual.length > 0
+    ? Number(
+        itensTentativaAtual
+          .reduce((acc, item) => {
+            const d = extrairIdsItem(item);
+            return acc + d.precoUnitario * d.quantidade;
+          }, 0)
+          .toFixed(2)
+      )
     : Number((subtotalSelecionados || total).toFixed(2));
 
   const [step, setStep] = useState<number>(1);
@@ -260,7 +278,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   const [erroCupom, setErroCupom] = useState<string>('');
 
   // Etapa 3: Pagamento
-  const [metodoPagamento, setMetodoPagamento] = useState<'pix' | 'credit_card'>('pix');
+  const [metodoPagamento, setMetodoPagamento] = useState<MetodoPagamentoTipo>('pix');
   const [loadingPagamento, setLoadingPagamento] = useState<boolean>(false);
   const [erroPagamento, setErroPagamento] = useState<string>('');
 
@@ -563,7 +581,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
     }
   };
 
-  // Escuta alterações de estoque/preço em tempo real enquanto estiver na Etapa 3
   useEffect(() => {
     if (step !== 3 || dadosPix) return;
 
@@ -678,7 +695,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
       setMetodoPagamento('pix');
     }
     setStep(3);
-    await conferirDisponibilidadeItens(itensSelecionadosOriginais);
+    await conferirDisponibilidadeItens(listaReferenciaEtapa3);
   };
 
   const handleContinuarComDisponiveis = () => {
@@ -700,7 +717,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
     const novoSubtotal = aprovados.reduce((acc, i) => acc + i.totalItem, 0);
     const novoTotalEstimado = Number((Math.max(0, novoSubtotal - valorDesconto) + valorFreteNum).toFixed(2));
 
-    if (novoTotalEstimado < 1.0 && metodoPagamento === 'credit_card') {
+    if (novoTotalEstimado < 1.0 && metodoPagamento !== 'pix') {
       setMetodoPagamento('pix');
     }
 
@@ -713,6 +730,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
     localStorage.removeItem('pedidoParaRefazerId');
     setItensConfirmadosPagamento(null);
     setItensConferidos([]);
+    setItensTentativaAtual([]);
     setRevisaoConfirmada(false);
     onClose();
   };
@@ -794,7 +812,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
       setLoadingFrete(true);
       setStep(2);
 
-      const produtosParaEnvio = itensSelecionadosOriginais.map((item) => {
+      const produtosParaEnvio = listaReferenciaEtapa3.map((item) => {
         const dados = extrairIdsItem(item);
         return {
           produtoId: dados.produtoId,
@@ -836,7 +854,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
     }
   };
 
-  const enviarPedidoParaBackend = async (payloadCard: any = null) => {
+  const enviarPedidoParaBackend = async (brickData: any = null) => {
+    const formData = brickData?.formData || brickData || {};
+
     const itensEnvioBase =
       itensConfirmadosPagamento && itensConfirmadosPagamento.length > 0
         ? itensConfirmadosPagamento
@@ -848,6 +868,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
               tamanhoId: c.tamanhoId,
               corId: c.corId,
               nome: c.nome,
+              imagemUrl: c.imagemUrl || '',
               precoUnitario: c.precoUnitario,
               quantidade: c.quantidadeAprovada,
             }))
@@ -873,14 +894,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
     if (metodoPagamento === 'credit_card' && totalEnvio < 1.0) {
       const msg = 'O valor mínimo para pagamentos com cartão de crédito é de R$ 1,00.';
       setErroPagamento(msg);
-      alert(msg);
       setMetodoPagamento('pix');
+      return;
+    }
+
+    if (metodoPagamento === 'credit_card' && !formData?.token) {
+      const msgToken =
+        'Não foi possível validar os dados do cartão. Confira número, validade, CVV ou tente outro cartão.';
+      setErroPagamento(msgToken);
+      setBrickAttemptKey((prev) => prev + 1);
       return;
     }
 
     try {
       setLoadingPagamento(true);
       setErroPagamento('');
+      setItensTentativaAtual(itensEnvioBase);
 
       const enderecoFiscalIdEnvio = await resolverEnderecoFiscalIdParaEnvio();
       const usarPJ = Boolean(faturarParaEmpresa && empresaUsuario);
@@ -906,18 +935,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
         clienteNome: usarPJ
           ? empresaUsuario!.razaoSocial
           : dadosCliente.nomeCompleto || undefined,
-        clienteEmail: dadosCliente.email || undefined,
+        clienteEmail: formData?.payer?.email || dadosCliente.email || undefined,
         clienteCpf: usarPJ
           ? empresaUsuario!.cnpj
           : dadosCliente.cpf || undefined,
         clienteFone: dadosCliente.telefone || undefined,
         enderecoFiscalId: enderecoFiscalIdEnvio,
         transaction_amount: totalEnvio,
-        token: payloadCard?.token || null,
+        token: formData?.token || null,
         description: 'Compra Ninho de Promessas',
-        installments: Number(payloadCard?.installments || 1),
-        payment_method_id: metodoPagamento === 'pix' ? 'pix' : payloadCard?.payment_method_id || 'master',
-        issuer_id: payloadCard?.issuer_id || null,
+        installments: Number(formData?.installments || 1),
+        payment_method_id:
+          metodoPagamento === 'pix' ? 'pix' : formData?.payment_method_id || 'master',
+        payment_type_id: metodoPagamento,
+        issuer_id: formData?.issuer_id || null,
         subtotal: subtotalEnvio,
         descontoCupom: descontoEnvio,
         cupomCodigo: cupomAplicado?.codigo || null,
@@ -951,7 +982,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
         const qrCodePix = res.data.qrCode || res.data.pixCopiaECola || res.data.pedido?.qrCodePix;
         const qrCodeBase64Pix = res.data.qrCodeBase64 || res.data.pedido?.qrCodeBase64Pix;
 
-        if (!pedidoIdRefazer && limparCarrinho) {
+        if (!pedidoIdRefazer && limparCarrinho && res.data.mpStatus !== 'rejected') {
           await limparCarrinho();
         }
 
@@ -961,13 +992,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
             qrCodeBase64: qrCodeBase64Pix,
           });
           setTempoRestantePix(15 * 60);
+          return;
+        }
+
+        if (res.data.mpStatus === 'rejected') {
+          const msgRecusa =
+            res.data.mensagemPagamento ||
+            'O cartão não autorizou a compra. Verifique os dados, tente outro cartão ou pague via PIX.';
+          setErroPagamento(msgRecusa);
+          setBrickAttemptKey((prev) => prev + 1);
+          return;
+        }
+
+        alert(`🎉 ${res.data.mensagemPagamento || 'Pagamento processado com sucesso!'}`);
+        if (onPaymentSuccess) {
+          onPaymentSuccess();
         } else {
-          alert('🎉 Pagamento processado com sucesso!');
-          if (onPaymentSuccess) {
-            onPaymentSuccess();
-          } else {
-            onClose();
-          }
+          onClose();
         }
       }
     } catch (err: any) {
@@ -976,12 +1017,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
       if (err.response?.status === 409 && Array.isArray(err.response?.data?.itensIndisponiveis)) {
         setRevisaoConfirmada(false);
         setItensConfirmadosPagamento(null);
-        await conferirDisponibilidadeItens(itensSelecionadosOriginais);
+        await conferirDisponibilidadeItens(listaReferenciaEtapa3);
       }
 
       const mensagemErro = err.response?.data?.message || 'Erro ao processar o pagamento ou verificar estoque.';
       setErroPagamento(mensagemErro);
-      alert(mensagemErro);
+      setBrickAttemptKey((prev) => prev + 1);
     } finally {
       setLoadingPagamento(false);
     }
@@ -1000,7 +1041,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
   );
   const haAlgumItemValido =
     itensConferidos.length === 0
-      ? itensSelecionadosOriginais.length > 0
+      ? listaReferenciaEtapa3.length > 0
       : itensConferidos.some((i) => i.status !== 'ESGOTADO' && i.quantidadeAprovada > 0);
 
   const podeExibirPagamento =
@@ -1215,7 +1256,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                   </div>
                 </div>
 
-                {/* Opção discreta: Usar outro endereço para a nota fiscal */}
                 <div className={styles.couponBox} style={{ marginTop: '0.75rem' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
                     <input
@@ -1447,7 +1487,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
 
                 <div className={styles.summaryFooter}>
                   <div className={styles.summaryRow}>
-                    <span>Subtotal ({itensSelecionadosOriginais.length} itens selecionados):</span>
+                    <span>Subtotal ({listaReferenciaEtapa3.length} itens selecionados):</span>
                     <span>R$ {valorTotalBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                   </div>
                   {cupomAplicado && (
@@ -1513,13 +1553,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                       <button
                         type="button"
                         className={styles.primaryButton}
-                        onClick={() => conferirDisponibilidadeItens(itensSelecionadosOriginais)}
+                        onClick={() => conferirDisponibilidadeItens(listaReferenciaEtapa3)}
                       >
                         Tentar Conferir Novamente
                       </button>
                     </div>
                   </div>
-                ) : itensSelecionadosOriginais.length === 0 ? (
+                ) : listaReferenciaEtapa3.length === 0 ? (
                   <div className={styles.reviewAlertBox}>
                     <p className={styles.errorText}>⚠️ Não foram encontrados itens selecionados para este pedido.</p>
                     <button
@@ -1535,7 +1575,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                     {/* BLOCO DE CONFERÊNCIA DE TODOS OS ITENS SELECIONADOS */}
                     <div className={styles.reviewSection}>
                       <div className={styles.reviewHeader}>
-                        <strong>Itens selecionados ({itensConferidos.length || itensSelecionadosOriginais.length})</strong>
+                        <strong>Itens selecionados ({itensConferidos.length || listaReferenciaEtapa3.length})</strong>
                         {haItensComDivergencia && (
                           <span className={styles.badgeWarning}>Quantidade / estoque alterado</span>
                         )}
@@ -1550,7 +1590,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                       <ul className={styles.reviewList}>
                         {(itensConferidos.length > 0
                           ? itensConferidos
-                          : itensSelecionadosOriginais.map((item) => {
+                          : listaReferenciaEtapa3.map((item) => {
                               const d = extrairIdsItem(item);
                               return {
                                 produtoId: d.produtoId,
@@ -1666,7 +1706,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                         })}
                       </ul>
 
-                      {/* Ações quando há divergência de estoque (esgotado ou quantidade ajustada) */}
                       {haItensComDivergencia && !revisaoConfirmada && (
                         <div className={styles.reviewActionsBox}>
                           {haAlgumItemValido ? (
@@ -1713,7 +1752,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                             className={`${styles.paymentMethodCard} ${
                               metodoPagamento === 'pix' ? styles.paymentMethodSelected : ''
                             }`}
-                            onClick={() => setMetodoPagamento('pix')}
+                            onClick={() => {
+                              setMetodoPagamento('pix');
+                              setErroPagamento('');
+                            }}
                           >
                             <span className={styles.paymentIcon}>⚡</span>
                             <strong>PIX</strong>
@@ -1726,11 +1768,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                               className={`${styles.paymentMethodCard} ${
                                 metodoPagamento === 'credit_card' ? styles.paymentMethodSelected : ''
                               }`}
-                              onClick={() => setMetodoPagamento('credit_card')}
+                              onClick={() => {
+                                setMetodoPagamento('credit_card');
+                                setErroPagamento('');
+                              }}
                             >
                               <span className={styles.paymentIcon}>💳</span>
                               <strong>Cartão de Crédito</strong>
-                              <small>Reserva de até 48h úteis</small>
+                              <small>Até 6x · Reserva 48h</small>
                             </button>
                           )}
                         </div>
@@ -1762,13 +1807,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
 
                         {permiteCartao && metodoPagamento === 'credit_card' && totalGeral >= 1.0 && (
                           <div className={styles.cardBrickContainer}>
-                            <CardPayment
-                              key={`card-${totalGeral}`}
+                            <Payment
+                              key={`card-${totalGeral}-${brickAttemptKey}`}
                               initialization={{
                                 amount: totalGeral,
+                                ...(dadosCliente.email ? { payer: { email: dadosCliente.email } } : {}),
                               }}
                               customization={{
                                 paymentMethods: {
+                                  creditCard: 'all',
                                   maxInstallments: 6,
                                 },
                                 visual: {
@@ -1781,9 +1828,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ onClose, onPayment
                                 await enviarPedidoParaBackend(param);
                               }}
                               onError={(error) => {
-                                console.error('Erro no Card Brick:', JSON.stringify(error, null, 2), error);
+                                console.error('Erro no Payment Brick:', JSON.stringify(error, null, 2), error);
                               }}
-                              onReady={() => console.log('Card Payment Brick pronto e montado!')}
+                              onReady={() => console.log('Payment Brick (crédito) pronto!')}
                             />
                           </div>
                         )}
