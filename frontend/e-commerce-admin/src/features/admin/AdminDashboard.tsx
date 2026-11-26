@@ -7,14 +7,52 @@ import { RelatorioVendas } from './components/relatorios/RelatorioVendas';
 
 const NCM_PADRAO = '61112000';
 
-const OPCOES_NCM: Array<{ codigo: string; descricao: string }> = [
-  { codigo: '61112000', descricao: 'Vestuário e acessórios de malha para bebês (algodão) — Ex: bodies, mijões/culotes' },
-  { codigo: '61091000', descricao: 'Camisetas e camisetas interiores de malha de algodão' },
-  { codigo: '62092000', descricao: 'Vestuário e acessórios para bebês (não malha / tecido plano, algodão)' },
-  { codigo: '61044200', descricao: 'Vestidos de malha de algodão' },
-  { codigo: '61142000', descricao: 'Outros vestuários de malha de algodão (ex: macacões/conjuntos)' },
-  { codigo: '64059000', descricao: 'Outros calçados (ex: sapatinhos/pantufas infantis)' },
-  { codigo: '42022220', descricao: 'Bolsas / mochilas de matéria têxtil (ex: bolsas maternidade)' },
+const OPCOES_NCM: Array<{ codigo: string; descricao: string; quandoUsar: string }> = [
+  {
+    codigo: '61112000',
+    descricao: 'Vestuário de bebê em malha de algodão (bodies, macacões, conjuntos)',
+    quandoUsar: 'Padrão principal: Bodies, macacões, mijões/culotes, camisetas, shorts, calças e vestidos para bebês em meia malha, canelado ou cotton de algodão.',
+  },
+  {
+    codigo: '61113000',
+    descricao: 'Vestuário de bebê em malha de fibras sintéticas (poliéster/outros)',
+    quandoUsar: 'Peças de bebê em que predominar poliéster ou outra fibra sintética em vez de algodão.',
+  },
+  {
+    codigo: '62092000',
+    descricao: 'Vestuário de bebê em tecido plano de algodão (não malha)',
+    quandoUsar: 'Peças de bebê em tecido plano (ex.: tricoline, cambraia, sarja, jeans de algodão — que não estica como malha).',
+  },
+  {
+    codigo: '61091000',
+    descricao: 'Camisetas (T-shirts) de malha de algodão (infantil maior)',
+    quandoUsar: 'Camisetas ou regatas em malha de algodão em tamanhos maiores (acima de bebê).',
+  },
+  {
+    codigo: '61046200',
+    descricao: 'Calças, bermudas e shorts de malha de algodão (infantil maior)',
+    quandoUsar: 'Calças, shorts ou bermudas em malha de algodão em tamanhos maiores (acima de bebê).',
+  },
+  {
+    codigo: '61044200',
+    descricao: 'Vestidos de malha de algodão (infantil maior)',
+    quandoUsar: 'Vestidos em malha de algodão em tamanhos maiores (acima de bebê).',
+  },
+  {
+    codigo: '61142000',
+    descricao: 'Outros vestuários de malha de algodão (ex.: macacões/conjuntos)',
+    quandoUsar: 'Outras peças de vestuário de malha de algodão que não se encaixam nos itens específicos anteriores.',
+  },
+  {
+    codigo: '64059000',
+    descricao: 'Outros calçados (ex.: sapatinhos/pantufas infantis)',
+    quandoUsar: 'Sapatinhos, pantufas ou calçados infantis fora das demais posições de calçados.',
+  },
+  {
+    codigo: '42022220',
+    descricao: 'Bolsas / mochilas de matéria têxtil (ex.: bolsas maternidade)',
+    quandoUsar: 'Bolsas maternidade, mochilas ou necessaires de matéria têxtil.',
+  },
 ];
 
 interface ProductMaster {
@@ -275,6 +313,7 @@ export const AdminDashboard: React.FC = () => {
   const [newCategoryId, setNewCategoryId] = useState('');
   const [newGender, setNewGender] = useState<string>('Unissex');
   const [newNcm, setNewNcm] = useState<string>(NCM_PADRAO);
+  const [showNcmInfoModal, setShowNcmInfoModal] = useState<boolean>(false);
   const [newDesc, setNewDesc] = useState('');
   const [newPrice, setNewPrice] = useState('');
   const [newIsNovidade, setNewIsNovidade] = useState<boolean>(false);
@@ -2379,7 +2418,6 @@ export const AdminDashboard: React.FC = () => {
 
                   <div className={styles.orderDetailsGrid}>
 
-                    {/* BLOCO NOTA FISCAL ELETRÔNICA (NF-e / BLING) */}
                     <div className={styles.orderInfoBlock} style={{ backgroundColor: '#f8fafc', borderColor: '#cbd5e1' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
                         <h4 className={styles.orderInfoTitle} style={{ margin: 0, borderBottom: 'none', paddingBottom: 0 }}>
@@ -2974,7 +3012,18 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div className={styles.group}>
-                  <label>Código NCM (NF-e / Bling)</label>
+                  <div className={styles.ncmLabelRow}>
+                    <label style={{ margin: 0 }}>Código NCM (NF-e / Bling)</label>
+                    <button
+                      type="button"
+                      className={styles.ncmInfoButton}
+                      onClick={() => setShowNcmInfoModal(true)}
+                      title="Ver descrição detalhada de todos os códigos NCM"
+                      aria-label="Ver descrição detalhada de todos os códigos NCM"
+                    >
+                      i
+                    </button>
+                  </div>
                   <select
                     value={newNcm}
                     onChange={e => setNewNcm(e.target.value)}
@@ -2987,9 +3036,66 @@ export const AdminDashboard: React.FC = () => {
                     ))}
                   </select>
                   <small className={styles.slugPreviewText}>
-                    NCM selecionado: <b>{newNcm}</b> (você pode adicionar novos códigos na lista depois, se precisar).
+                    NCM selecionado: <b>{newNcm}</b> —{' '}
+                    {OPCOES_NCM.find(item => item.codigo === newNcm)?.quandoUsar || ''}
                   </small>
                 </div>
+
+                {showNcmInfoModal && (
+                  <div className={styles.modalOverlay} onClick={() => setShowNcmInfoModal(false)}>
+                    <div
+                      className={styles.modalContentBox}
+                      onClick={e => e.stopPropagation()}
+                      style={{ maxWidth: '720px' }}
+                    >
+                      <button
+                        type="button"
+                        className={styles.modalCloseButton}
+                        onClick={() => setShowNcmInfoModal(false)}
+                      >
+                        ✕
+                      </button>
+
+                      <h3 style={{ marginTop: 0, marginBottom: '6px' }}>
+                        Guia de Códigos NCM (8 dígitos) — NF-e / Bling
+                      </h3>
+                      <p className={styles.infoText} style={{ marginBottom: '16px' }}>
+                        Clique em <strong>Usar este NCM</strong> para preencher o campo automaticamente.
+                      </p>
+
+                      <div className={styles.ncmGuideList}>
+                        {OPCOES_NCM.map(item => {
+                          const isSelected = newNcm === item.codigo;
+                          return (
+                            <div
+                              key={item.codigo}
+                              className={`${styles.ncmGuideItem} ${isSelected ? styles.ncmGuideItemActive : ''}`}
+                            >
+                              <div className={styles.ncmGuideTopRow}>
+                                <div>
+                                  <span className={styles.ncmCodeBadge}>{item.codigo}</span>
+                                  <strong className={styles.ncmGuideTitle}>{item.descricao}</strong>
+                                </div>
+                                <button
+                                  type="button"
+                                  className={isSelected ? styles.btnSecondary : styles.btnEditTable}
+                                  style={{ flex: 'none', padding: '5px 10px' }}
+                                  onClick={() => {
+                                    setNewNcm(item.codigo);
+                                    setShowNcmInfoModal(false);
+                                  }}
+                                >
+                                  {isSelected ? '✓ Selecionado' : 'Usar este NCM'}
+                                </button>
+                              </div>
+                              <p className={styles.ncmGuideDesc}>{item.quandoUsar}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className={styles.group}>
                   <label className={styles.sizeCheckboxLabel} style={{ width: 'fit-content', marginTop: '4px' }}>
